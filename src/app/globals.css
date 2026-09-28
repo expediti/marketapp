@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-canvas: #FBFBFA;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F4F4F0;
+    --bg-dark: #121214;
+    
+    --border-light: #E5E5DE;
+    --border-subtle: #ECECE6;
+    --border-dark: #262629;
+    
+    --text-primary: #121214;
+    --text-muted: #6B7280;
+    --text-light: #9CA3AF;
+    
+    /* Restrained International Orange Accent */
+    --accent-orange: #FF5416;
+    --accent-orange-hover: #E8460A;
+    --accent-orange-soft: #FFF2EC;
+    --accent-orange-border: #FFD2C1;
+  }
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Editorial Monospace and Tabular Numbers */
+.num-stat {
+  font-family: var(--font-geist-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Restrained Retro Editorial Label */
+.editorial-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #71717A;
+}
+
+/* Subtle Card Movement Hover */
+.retro-card {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
+}
+
+.retro-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.08);
+}
+
+/* Clean Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D4D4D0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A1A19A;
+}
