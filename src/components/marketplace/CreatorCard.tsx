@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { CreatorProfile } from '@/types/marketplace';
-import { CheckCircle2, ArrowRight, Play, Film } from 'lucide-react';
+import { CheckCircle2, ArrowRight, Play, Film, Sparkles } from 'lucide-react';
 
 interface CreatorCardProps {
   creator: CreatorProfile;
@@ -19,14 +19,14 @@ export function CreatorCard({ creator }: CreatorCardProps) {
     creator.starting_price ||
     (creator.packages && creator.packages.length > 0
       ? Math.min(...creator.packages.map((p) => p.price))
-      : 2500);
+      : 2999);
 
   const primaryCity = creator.profile?.city || 'India';
   const featuredReel = creator.reels && creator.reels.length > 0 ? creator.reels[0] : null;
   const sampleImages = creator.samples && creator.samples.length > 0 ? creator.samples.slice(0, 2) : [];
 
   return (
-    <div className="bg-white border border-[#E5E5DE] rounded-xl p-5 flex flex-col justify-between hover:border-[#121214]/40 hover:shadow-md transition-all duration-200 group relative">
+    <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-5 flex flex-col justify-between hover:border-[#FF5416]/40 dark:hover:border-[#FF5416]/50 hover:shadow-lg dark:hover:shadow-black/50 transition-all duration-200 group relative">
       <div>
         {/* Creator Header with Avatar */}
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -35,29 +35,29 @@ export function CreatorCard({ creator }: CreatorCardProps) {
               <img
                 src={creator.profile.avatar_url}
                 alt={creator.profile.display_name}
-                className="w-12 h-12 rounded-full object-cover border border-[#E5E5DE] shrink-0"
+                className="w-12 h-12 rounded-full object-cover border border-[#E5E5DE] dark:border-[#27272A] shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-[#F4F4F0] flex items-center justify-center font-mono font-bold text-[#121214] border border-[#E5E5DE] shrink-0">
-                {(creator.profile?.display_name || 'C')[0]}
+              <div className="w-12 h-12 rounded-full bg-[#F4F4F0] dark:bg-[#27272A] flex items-center justify-center font-mono font-bold text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-[#27272A] shrink-0">
+                {(creator.profile?.display_name || 'I')[0]}
               </div>
             )}
             <div>
               <span className="editorial-label text-[#FF5416]">{creator.niche}</span>
-              <h3 className="font-mono text-lg font-bold text-[#121214] leading-tight group-hover:text-[#FF5416] transition-colors">
-                {creator.profile?.display_name || 'Creator'}
+              <h3 className="font-mono text-base sm:text-lg font-bold text-[#121214] dark:text-white leading-tight group-hover:text-[#FF5416] transition-colors">
+                {creator.profile?.display_name || 'Influencer'}
               </h3>
-              <p className="text-xs text-[#71717A] mt-0.5">{primaryCity}</p>
+              <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-0.5">{primaryCity}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 text-[10px] font-mono text-[#047857] bg-[#ECFDF5] px-2 py-0.5 rounded border border-[#A7F3D0]">
-            <CheckCircle2 className="w-3 h-3 text-[#047857]" />
-            <span>Verified</span>
+          <div className="flex items-center gap-1 text-[10px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
+            <CheckCircle2 className="w-3 h-3" />
+            <span>Platform</span>
           </div>
         </div>
 
-        {/* WORK SAMPLE PREVIEW (Prominent) */}
+        {/* WORK SAMPLE PREVIEW (Prominent Reels / Videos) */}
         <div className="mb-4">
           <Link href={`/creators/${creator.user_id}`} className="block relative group/preview">
             {featuredReel ? (
@@ -70,15 +70,15 @@ export function CreatorCard({ creator }: CreatorCardProps) {
                   />
                 )}
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-full bg-white/90 text-[#121214] flex items-center justify-center shadow group-hover/preview:scale-110 transition-transform">
+                  <div className="w-10 h-10 rounded-full bg-white/95 text-[#121214] flex items-center justify-center shadow group-hover/preview:scale-110 transition-transform">
                     <Play className="w-4 h-4 ml-0.5 fill-[#121214]" />
                   </div>
                 </div>
                 <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white/90 drop-shadow">
-                  <span className="truncate max-w-[180px] font-semibold">{featuredReel.title}</span>
-                  <span className="text-[10px] bg-black/60 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <span className="truncate max-w-[170px] font-semibold">{featuredReel.title}</span>
+                  <span className="text-[10px] bg-black/70 px-1.5 py-0.5 rounded flex items-center gap-1">
                     <Film className="w-2.5 h-2.5" />
-                    <span>Watch Reel</span>
+                    <span>Watch Sample</span>
                   </span>
                 </div>
               </div>
@@ -95,7 +95,7 @@ export function CreatorCard({ creator }: CreatorCardProps) {
                 ))}
               </div>
             ) : (
-              <div className="aspect-[16/9] w-full rounded-lg bg-[#F4F4F0] border border-dashed border-[#E5E5DE] flex items-center justify-center text-xs font-mono text-[#71717A]">
+              <div className="aspect-[16/9] w-full rounded-lg bg-[#F4F4F0] dark:bg-[#1C1C1F] border border-dashed border-[#E5E5DE] dark:border-[#27272A] flex items-center justify-center text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
                 Portfolio Available
               </div>
             )}
@@ -103,23 +103,23 @@ export function CreatorCard({ creator }: CreatorCardProps) {
         </div>
 
         {/* Bio snippet */}
-        <p className="text-xs text-[#52525B] line-clamp-2 mb-3 leading-relaxed">
+        <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] line-clamp-2 mb-3 leading-relaxed">
           {creator.bio}
         </p>
 
-        {/* Secondary Audience Metrics */}
-        <div className="flex items-center justify-between py-2 border-y border-[#ECECE6] text-xs font-mono text-[#71717A] mb-4">
+        {/* Metrics Row: Followers, Reach, Engagement */}
+        <div className="flex items-center justify-between py-2 border-y border-[#ECECE6] dark:border-[#27272A] text-xs font-mono text-[#71717A] dark:text-[#A1A1AA] mb-4">
           <div>
-            <span className="font-bold text-[#121214]">{formatFollowers(creator.follower_count)}</span>
+            <span className="font-bold text-[#121214] dark:text-white">{formatFollowers(creator.follower_count)}</span>
             <span className="text-[10px] ml-1 uppercase">Followers</span>
           </div>
           <div className="text-center">
-            <span className="font-bold text-[#121214]">{creator.engagement_rate}%</span>
-            <span className="text-[10px] ml-1 uppercase">Eng.</span>
+            <span className="font-bold text-[#121214] dark:text-white">{(creator.average_reach / 1000).toFixed(0)}K</span>
+            <span className="text-[10px] ml-1 uppercase">Reach</span>
           </div>
           <div className="text-right">
-            <span className="font-bold text-[#121214]">{creator.local_reach_percentage || 35}%</span>
-            <span className="text-[10px] ml-1 uppercase">in {primaryCity}</span>
+            <span className="font-bold text-[#FF5416]">{creator.engagement_rate}%</span>
+            <span className="text-[10px] ml-1 uppercase">Eng.</span>
           </div>
         </div>
       </div>
@@ -127,17 +127,17 @@ export function CreatorCard({ creator }: CreatorCardProps) {
       {/* Card Footer: Starting Price & View CTA */}
       <div className="flex items-center justify-between pt-1">
         <div>
-          <span className="text-[10px] uppercase font-mono text-[#71717A] block">Packages from</span>
-          <span className="font-mono font-bold text-lg text-[#121214]">
+          <span className="text-[10px] uppercase font-mono text-[#71717A] dark:text-[#A1A1AA] block">Packages from</span>
+          <span className="font-mono font-bold text-lg text-[#121214] dark:text-white">
             ₹{startingPrice.toLocaleString('en-IN')}
           </span>
         </div>
 
         <Link
           href={`/creators/${creator.user_id}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-[#121214] hover:bg-[#FF5416] px-3.5 py-2 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-[#121214] dark:bg-white dark:text-[#121214] hover:bg-[#FF5416] dark:hover:bg-[#FF5416] dark:hover:text-white px-3.5 py-2 rounded-lg transition-colors"
         >
-          <span>View Work</span>
+          <span>View Profile</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>

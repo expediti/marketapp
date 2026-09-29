@@ -17,13 +17,28 @@ import {
   Globe,
   MapPin,
   ExternalLink,
+  Bookmark,
+  Smartphone,
+  Sparkles,
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
   const { orders, businesses, creators } = useMarketplace();
-  const currentBusiness = businesses[0]; // Kashi Craft Coffee
+  const currentBusiness = businesses[0] || {
+    id: 'b1',
+    user_id: 'biz_01',
+    business_name: 'DevPulse Mobile',
+    business_type: 'app',
+    industry: 'Technology & SaaS',
+    city: 'Bengaluru',
+    website: 'https://devpulse.app',
+    app_url: 'https://play.google.com/store/apps/details?id=app.devpulse',
+    budget_range: '₹25,000 - ₹50,000',
+    description: 'DevPulse is a developer productivity app that tracks coding focus metrics and GitHub PR reviews.',
+  };
 
-  const [activeTab, setActiveTab] = useState<'find' | 'orders' | 'messages' | 'profile'>('find');
+  const [activeTab, setActiveTab] = useState<'overview' | 'find' | 'saved' | 'orders' | 'messages' | 'profile'>('overview');
+  const [savedCreatorIds, setSavedCreatorIds] = useState<string[]>([creators[0]?.user_id || 'c1']);
 
   const businessOrders = orders.filter(
     (o) => o.business_id === currentBusiness.user_id || o.business?.user_id === currentBusiness.user_id
@@ -35,22 +50,30 @@ export default function BusinessDashboardPage() {
 
   const totalCommitted = businessOrders.reduce((sum, o) => sum + o.total_amount, 0);
 
+  const toggleSaveCreator = (id: string) => {
+    if (savedCreatorIds.includes(id)) {
+      setSavedCreatorIds(savedCreatorIds.filter((cid) => cid !== id));
+    } else {
+      setSavedCreatorIds([...savedCreatorIds, id]);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-6">
         <div>
           <div className="flex items-center gap-2">
-            <span className="editorial-label text-[#FF5416]">Business Workspace</span>
-            <span className="text-[11px] font-mono text-[#047857] bg-[#ECFDF5] px-2 py-0.5 rounded border border-[#A7F3D0]">
-              Verified Business
+            <span className="editorial-label text-[#FF5416]">Advertiser Workspace</span>
+            <span className="text-[11px] font-mono text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800">
+              Verified Brand
             </span>
           </div>
-          <h1 className="font-mono text-3xl font-extrabold text-[#121214] mt-1">
+          <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white mt-1">
             {currentBusiness.business_name}
           </h1>
-          <p className="text-xs text-[#71717A] mt-0.5">
-            {currentBusiness.industry} • {currentBusiness.city}
+          <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+            {currentBusiness.industry} • {currentBusiness.city || 'India'}
           </p>
         </div>
 
@@ -58,41 +81,18 @@ export default function BusinessDashboardPage() {
           <Link href="/discover">
             <Button variant="primary" size="sm">
               <Search className="w-3.5 h-3.5 mr-1" />
-              <span>Browse All Creators</span>
+              <span>Find Influencers</span>
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* DASHBOARD STATS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Active Collaborations"
-          value={activeOrders.length}
-          subtext="In production / review"
-          badge="ACTIVE"
-        />
-        <StatCard
-          label="Total Value Committed"
-          value={`₹${totalCommitted.toLocaleString('en-IN')}`}
-          subtext="Protected collaborative workflow"
-        />
-        <StatCard
-          label="Pending Approvals"
-          value={businessOrders.filter((o) => o.order_status === 'DELIVERED').length}
-          subtext="Drafts awaiting your review"
-        />
-        <StatCard
-          label="Completed Campaigns"
-          value={businessOrders.filter((o) => o.order_status === 'COMPLETED').length}
-          subtext="Successfully published"
-        />
-      </div>
-
-      {/* 4 PRIMARY TABS */}
-      <div className="flex items-center gap-2 border-b border-[#E5E5DE] pb-2 font-mono text-xs overflow-x-auto">
+      {/* TABS NAVIGATION */}
+      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 font-mono text-xs overflow-x-auto">
         {[
-          { key: 'find', label: 'Find Creators' },
+          { key: 'overview', label: 'Overview' },
+          { key: 'find', label: 'Find Influencers' },
+          { key: 'saved', label: `Saved Influencers (${savedCreatorIds.length})` },
           { key: 'orders', label: `My Orders (${businessOrders.length})` },
           { key: 'messages', label: 'Messages' },
           { key: 'profile', label: 'Business Profile' },
@@ -102,8 +102,8 @@ export default function BusinessDashboardPage() {
             onClick={() => setActiveTab(tab.key as any)}
             className={`px-3 py-1.5 rounded transition-colors shrink-0 ${
               activeTab === tab.key
-                ? 'bg-[#121214] text-white font-bold'
-                : 'text-[#71717A] hover:text-[#121214] hover:bg-[#F4F4F0]'
+                ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
+                : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
             }`}
           >
             {tab.label}
@@ -111,30 +111,116 @@ export default function BusinessDashboardPage() {
         ))}
       </div>
 
-      {/* TAB 1: FIND CREATORS */}
+      {/* TAB: OVERVIEW */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Active Promotions"
+              value={activeOrders.length}
+              subtext="Reels in production / review"
+              badge="ACTIVE"
+            />
+            <StatCard
+              label="Total Committed Budget"
+              value={`₹${totalCommitted.toLocaleString('en-IN')}`}
+              subtext="Platform collaboration protection"
+            />
+            <StatCard
+              label="Pending Deliveries"
+              value={businessOrders.filter((o) => o.order_status === 'DELIVERED').length}
+              subtext="Drafts awaiting your review"
+            />
+            <StatCard
+              label="Completed Campaigns"
+              value={businessOrders.filter((o) => o.order_status === 'COMPLETED').length}
+              subtext="Successfully published"
+            />
+          </div>
+
+          {/* Quick Actions & Recent */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Active Influencer Campaigns</h3>
+                <Link href="/discover" className="text-xs font-mono text-[#FF5416] hover:underline">
+                  + Find more creators
+                </Link>
+              </div>
+
+              {activeOrders.length === 0 ? (
+                <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                  No active orders at the moment. Browse influencers to launch your next campaign.
+                </div>
+              ) : (
+                <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
+                  {activeOrders.map((ord) => (
+                    <div key={ord.id} className="py-3 flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-[#121214] dark:text-white">{ord.order_number}</span>
+                          <StatusBadge status={ord.order_status} size="sm" />
+                        </div>
+                        <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                          {ord.creator?.profile?.display_name} • {ord.package?.name}
+                        </p>
+                      </div>
+
+                      <Link href={`/orders/${ord.id}`}>
+                        <Button variant="outline" size="sm">
+                          <span>View Details</span>
+                        </Button>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+              <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Quick Discovery</h3>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400">
+                Explore popular Indian niches with high app-install conversions:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {['Technology', 'Gaming', 'AI & Tools', 'Finance', 'Education', 'Productivity'].map((cat) => (
+                  <Link key={cat} href={`/discover?niche=${encodeURIComponent(cat)}`}>
+                    <span className="text-xs font-mono px-2.5 py-1 rounded bg-[#F4F4F0] dark:bg-zinc-800 text-[#121214] dark:text-zinc-200 hover:bg-[#FF5416] hover:text-white transition-colors cursor-pointer inline-block">
+                      {cat}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: FIND INFLUENCERS */}
       {activeTab === 'find' && (
         <div className="space-y-6">
-          <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] pb-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
               <div>
                 <span className="editorial-label text-[#FF5416]">Creator Discovery</span>
-                <h2 className="font-mono text-xl font-bold text-[#121214]">What are you looking for?</h2>
-                <p className="text-xs text-[#71717A] mt-0.5">
-                  Browse creators, watch their work, and book fixed packages.
+                <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                  Find the right creators for your app
+                </h2>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                  Filter by niche, verified audience reach, and starting package pricing.
                 </p>
               </div>
 
               <Link href="/discover">
                 <Button variant="outline" size="sm">
-                  <span>Open Full Discovery & Filters</span>
+                  <span>Open Full Discovery Page</span>
                   <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </Link>
             </div>
 
-            {/* Quick Creator Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {creators.slice(0, 3).map((creator) => (
+              {creators.map((creator) => (
                 <CreatorCard key={creator.user_id} creator={creator} />
               ))}
             </div>
@@ -142,40 +228,71 @@ export default function BusinessDashboardPage() {
         </div>
       )}
 
-      {/* TAB 2: MY ORDERS */}
+      {/* TAB: SAVED INFLUENCERS */}
+      {activeTab === 'saved' && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <span className="editorial-label text-[#FF5416]">Bookmarked Creators</span>
+            <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+              Shortlisted Influencers
+            </h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+              Creators you have bookmarked for upcoming app launches and promotional cycles.
+            </p>
+          </div>
+
+          {creators.filter((c) => savedCreatorIds.includes(c.user_id)).length === 0 ? (
+            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
+              No saved influencers yet. Browse creators and click bookmark to save them here.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {creators
+                .filter((c) => savedCreatorIds.includes(c.user_id))
+                .map((creator) => (
+                  <CreatorCard key={creator.user_id} creator={creator} />
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: MY ORDERS */}
       {activeTab === 'orders' && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#ECECE6] pb-4">
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
             <div>
-              <span className="editorial-label text-[#71717A]">Campaign Tracking</span>
-              <h3 className="font-mono text-lg font-bold text-[#121214]">
-                Collaboration Orders
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400">Campaign Tracking</span>
+              <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+                Promotion Orders
               </h3>
             </div>
 
             <Link href="/discover" className="text-xs font-mono text-[#FF5416] hover:underline">
-              + Book another creator
+              + Find more influencers
             </Link>
           </div>
 
           {businessOrders.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] rounded-xl text-xs font-mono text-[#71717A]">
-              No collaboration orders yet. Start by finding a creator.
+            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
+              No collaboration orders yet. Start by finding an influencer.
             </div>
           ) : (
-            <div className="divide-y divide-[#ECECE6]">
+            <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
               {businessOrders.map((ord) => (
                 <div
                   key={ord.id}
-                  className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#FBFBFA] px-2 rounded-lg transition-colors"
+                  className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#FBFBFA] dark:hover:bg-zinc-900/60 px-2 rounded-lg transition-colors"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
-                      <strong className="font-mono text-[#121214] text-base">{ord.order_number}</strong>
+                      <strong className="font-mono text-[#121214] dark:text-white text-base">
+                        {ord.order_number}
+                      </strong>
                       <StatusBadge status={ord.order_status} size="sm" />
                     </div>
-                    <div className="text-xs text-[#52525B] font-mono">
-                      <span>Creator: <strong>{ord.creator?.profile?.display_name}</strong></span>
+                    <div className="text-xs text-[#52525B] dark:text-zinc-400 font-mono">
+                      <span>Influencer: <strong>{ord.creator?.profile?.display_name}</strong></span>
                       <span className="mx-2">•</span>
                       <span>Package: {ord.package?.name}</span>
                     </div>
@@ -183,7 +300,7 @@ export default function BusinessDashboardPage() {
 
                   <div className="flex items-center gap-4">
                     <div className="text-right font-mono">
-                      <span className="text-sm font-bold text-[#121214] block">
+                      <span className="text-sm font-bold text-[#121214] dark:text-white block">
                         ₹{ord.total_amount.toLocaleString('en-IN')}
                       </span>
                       <span className="text-[10px] text-[#047857]">Protected</span>
@@ -203,77 +320,85 @@ export default function BusinessDashboardPage() {
         </div>
       )}
 
-      {/* TAB 3: MESSAGES */}
+      {/* TAB: MESSAGES */}
       {activeTab === 'messages' && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] pb-4">
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
             <span className="editorial-label text-[#FF5416]">Communications</span>
-            <h3 className="font-mono text-lg font-bold text-[#121214]">Order Discussions</h3>
-            <p className="text-xs text-[#71717A] mt-0.5">
-              Conversations are linked directly to your collaboration orders to keep briefs and revisions organized.
+            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+              Order Discussions
+            </h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+              Messages are organized around active campaign orders so revision notes and app briefs are never lost.
             </p>
           </div>
 
           <div className="space-y-3">
-            {businessOrders.map((ord) => (
-              <div
-                key={ord.id}
-                className="p-4 bg-[#FBFBFA] border border-[#E5E5DE] rounded-xl flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white border border-[#E5E5DE] flex items-center justify-center text-[#121214]">
-                    <MessageSquare className="w-4 h-4 text-[#FF5416]" />
-                  </div>
-                  <div>
-                    <h4 className="font-mono text-sm font-bold text-[#121214]">
-                      {ord.creator?.profile?.display_name}
-                    </h4>
-                    <span className="text-[11px] font-mono text-[#71717A]">
-                      Order #{ord.order_number} • {ord.package?.name}
-                    </span>
-                  </div>
-                </div>
-
-                <Link href={`/orders/${ord.id}`}>
-                  <Button variant="outline" size="sm">
-                    <span>Open Chat</span>
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </Link>
+            {businessOrders.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                No active discussions yet. Book an influencer to start a campaign conversation.
               </div>
-            ))}
+            ) : (
+              businessOrders.map((ord) => (
+                <div
+                  key={ord.id}
+                  className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center text-[#121214] dark:text-white">
+                      <MessageSquare className="w-4 h-4 text-[#FF5416]" />
+                    </div>
+                    <div>
+                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                        {ord.creator?.profile?.display_name}
+                      </h4>
+                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                        Order #{ord.order_number} • {ord.package?.name}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Link href={`/orders/${ord.id}`}>
+                    <Button variant="outline" size="sm">
+                      <span>Open Chat</span>
+                      <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 4: BUSINESS PROFILE */}
+      {/* TAB: BUSINESS PROFILE */}
       {activeTab === 'profile' && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] pb-4 flex items-center justify-between">
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4 flex items-center justify-between">
             <div>
-              <span className="editorial-label text-[#FF5416]">Identity</span>
-              <h3 className="font-mono text-lg font-bold text-[#121214]">Business Profile</h3>
-              <p className="text-xs text-[#71717A] mt-0.5">
-                Creators see this information when receiving your collaboration briefs.
+              <span className="editorial-label text-[#FF5416]">App / Business Identity</span>
+              <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Profile Details</h3>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Influencers see this information when receiving your promotion requests.
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs font-mono text-[#047857] bg-[#ECFDF5] px-3 py-1 rounded border border-[#A7F3D0]">
+            <div className="flex items-center gap-1.5 text-xs font-mono text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-3 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800">
               <CheckCircle2 className="w-4 h-4 text-[#047857]" />
-              <span>Verified Business</span>
+              <span>Verified Advertiser</span>
             </div>
           </div>
 
           <div className="flex items-center gap-5 pt-2">
-            <div className="w-16 h-16 rounded-xl bg-[#121214] text-white flex items-center justify-center font-mono font-bold text-xl border border-[#E5E5DE]">
+            <div className="w-16 h-16 rounded-xl bg-[#121214] dark:bg-zinc-800 text-white flex items-center justify-center font-mono font-bold text-xl border border-[#E5E5DE] dark:border-zinc-700">
               {currentBusiness.business_name.charAt(0)}
             </div>
 
             <div>
-              <h4 className="font-mono text-xl font-bold text-[#121214]">
+              <h4 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
                 {currentBusiness.business_name}
               </h4>
-              <div className="flex items-center gap-2 text-xs font-mono text-[#71717A] mt-0.5">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#71717A] dark:text-zinc-400 mt-0.5">
                 <span>{currentBusiness.industry}</span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
@@ -299,16 +424,16 @@ export default function BusinessDashboardPage() {
           </div>
 
           <div className="space-y-2 pt-2">
-            <span className="text-xs font-semibold text-[#121214] block">About the Business</span>
-            <p className="text-xs text-[#52525B] leading-relaxed bg-[#FBFBFA] border border-[#E5E5DE] rounded-xl p-4">
-              {currentBusiness.description || 'Specialty coffee roastery and cafe based in Varanasi, producing artisan pour-overs and single-origin beans.'}
+            <span className="text-xs font-semibold text-[#121214] dark:text-white block">Description & Campaign Goals</span>
+            <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4">
+              {currentBusiness.description || 'App developer seeking tech, gaming, and lifestyle creators to drive downloads across India.'}
             </p>
           </div>
 
-          <div className="pt-2 border-t border-[#ECECE6]">
-            <span className="text-xs font-semibold text-[#121214] block mb-2">Past Collaborations</span>
-            <div className="text-xs font-mono text-[#71717A]">
-              {businessOrders.length} total collaboration{businessOrders.length === 1 ? '' : 's'} managed on Marketur.
+          <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+            <span className="text-xs font-semibold text-[#121214] dark:text-white block mb-2">Campaign Budget</span>
+            <div className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
+              {currentBusiness.budget_range || '₹25,000 - ₹50,000 per month'}
             </div>
           </div>
         </div>

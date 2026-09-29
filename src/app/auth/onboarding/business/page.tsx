@@ -1,118 +1,326 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
-import { Building2, ArrowRight } from 'lucide-react';
+import { reelStorageService } from '@/lib/services/reelStorageService';
+import {
+  Building2,
+  ArrowRight,
+  Smartphone,
+  Globe,
+  Package,
+  Briefcase,
+  Upload,
+  CheckCircle2,
+  Sparkles,
+} from 'lucide-react';
+
+const PROMOTION_TYPES = [
+  {
+    id: 'app',
+    label: 'Mobile App',
+    description: 'iOS & Android mobile applications looking for installs & active users',
+    icon: Smartphone,
+  },
+  {
+    id: 'website',
+    label: 'Website / Web App',
+    description: 'SaaS platforms, developer tools, web applications, and portals',
+    icon: Globe,
+  },
+  {
+    id: 'product',
+    label: 'Physical / D2C Product',
+    description: 'Consumer hardware, apparel, wellness, food & beverage products',
+    icon: Package,
+  },
+  {
+    id: 'service',
+    label: 'Service / Agency',
+    description: 'Consulting, educational courses, financial services, or agencies',
+    icon: Briefcase,
+  },
+];
+
+const INDUSTRIES = [
+  'Technology & SaaS',
+  'Fintech & Banking',
+  'Gaming & Esports',
+  'EdTech & Learning',
+  'Health & Fitness',
+  'E-commerce & D2C',
+  'Food & Beverages',
+  'Fashion & Apparel',
+  'Travel & Hospitality',
+  'Productivity Tools',
+  'AI & Automation',
+];
+
+const BUDGET_RANGES = [
+  '₹5,000 - ₹15,000',
+  '₹15,000 - ₹35,000',
+  '₹35,000 - ₹75,000',
+  '₹75,000 - ₹1,50,000',
+  '₹1,50,000+',
+];
 
 export default function BusinessOnboardingPage() {
   const router = useRouter();
   const { onboardBusiness } = useMarketplace();
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const [businessName, setBusinessName] = useState('Varanasi Silk Works');
-  const [industry, setIndustry] = useState('Handloom & Fashion');
-  const [city, setCity] = useState('Varanasi');
-  const [website, setWebsite] = useState('https://varanashisilkworks.in');
-  const [description, setDescription] = useState(
-    'Heritage handloom weaving cluster partnering with Indian creators to present authentic Banarasi weaves to modern Gen-Z consumers.'
-  );
+  const [promotionType, setPromotionType] = useState<'app' | 'website' | 'product' | 'service'>('app');
+  const [businessName, setBusinessName] = useState('');
+  const [website, setWebsite] = useState('');
+  const [appUrl, setAppUrl] = useState('');
+  const [industry, setIndustry] = useState('Technology & SaaS');
+  const [targetAudience, setTargetAudience] = useState('Tech-savvy Gen-Z and young professionals (18-32)');
+  const [targetLocations, setTargetLocations] = useState('Metro & Tier-1 cities (Delhi NCR, Bengaluru, Mumbai)');
+  const [budgetRange, setBudgetRange] = useState('₹15,000 - ₹35,000');
+  const [description, setDescription] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingLogo(true);
+    const res = await reelStorageService.uploadBusinessLogo(file, 'biz_temp');
+    if (res.success && res.logoUrl) {
+      setLogoUrl(res.logoUrl);
+    }
+    setIsUploadingLogo(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onboardBusiness({
-      business_name: businessName,
+      business_name: businessName || 'My Application',
+      business_type: promotionType,
       industry,
-      city,
-      website,
-      description,
+      category: industry,
+      website: website || 'https://example.com',
+      app_url: appUrl,
+      target_audience: targetAudience,
+      target_locations: targetLocations.split(',').map((s) => s.trim()),
+      budget_range: budgetRange,
+      description: description || 'Promoting our product via targeted Indian influencers.',
+      logo_url: logoUrl,
     });
-    router.push('/dashboard/business');
+    router.push('/discover');
   };
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+      {/* Header */}
       <div className="text-center space-y-2">
-        <span className="editorial-label text-[#FF5416]">Business Onboarding</span>
-        <h1 className="font-mono text-3xl font-extrabold text-[#121214] tracking-tight">
-          Register Your Brand
+        <span className="editorial-label text-[#FF5416]">Advertiser Onboarding</span>
+        <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white tracking-tight">
+          Market Your App or Product
         </h1>
-        <p className="text-xs text-[#71717A]">
-          Set up your organization profile to commission verified creators and fund campaigns with escrow protection.
+        <p className="text-xs text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
+          Tell creators what you are building so we can match you with influencers whose audiences actually convert.
         </p>
       </div>
 
-      <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-[#121214] block mb-1">
-              Registered Brand / Company Name
+      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* STEP 1: What are you promoting? */}
+          <div className="space-y-3">
+            <label className="text-xs font-semibold text-[#121214] dark:text-white block">
+              1. What are you promoting?
             </label>
-            <input
-              type="text"
-              required
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
-              className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {PROMOTION_TYPES.map((type) => {
+                const Icon = type.icon;
+                const isSelected = promotionType === type.id;
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setPromotionType(type.id as any)}
+                    className={`p-3.5 rounded-lg border text-left transition-all flex items-start gap-3 ${
+                      isSelected
+                        ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
+                        : 'border-[#E5E5DE] dark:border-zinc-700 bg-[#FBFBFA] dark:bg-zinc-900 text-[#121214] dark:text-zinc-200 hover:border-[#121214]/40'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-md shrink-0 ${isSelected ? 'bg-[#FF5416] text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-mono font-bold leading-tight">{type.label}</h4>
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 leading-snug">
+                        {type.description}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
+          {/* Logo Upload + Business Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+            <div className="flex items-center gap-3 sm:col-span-1">
+              <div className="w-16 h-16 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-2 border-dashed border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center overflow-hidden shrink-0">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                ) : (
+                  <Building2 className="w-6 h-6 text-zinc-400" />
+                )}
+              </div>
+              <div>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                  id="logo-upload"
+                />
+                <label
+                  htmlFor="logo-upload"
+                  className="text-[11px] font-mono font-semibold text-[#FF5416] hover:underline cursor-pointer block"
+                >
+                  {isUploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                </label>
+                <span className="text-[10px] text-zinc-400 font-mono">Max 5MB</span>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                App / Business Name
+              </label>
+              <input
+                type="text"
+                required
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="e.g. DevPulse App"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+              />
+            </div>
+          </div>
+
+          {/* Website & App Store URL */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">Industry</label>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                Website / Landing Page URL
+              </label>
+              <input
+                type="url"
+                required
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://yourapp.in"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                Play Store / App Store URL {promotionType !== 'app' && '(Optional)'}
+              </label>
+              <input
+                type="url"
+                value={appUrl}
+                onChange={(e) => setAppUrl(e.target.value)}
+                placeholder="https://play.google.com/store/apps/..."
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+              />
+            </div>
+          </div>
+
+          {/* Industry & Target Budget */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">Industry / Category</label>
               <select
                 value={industry}
                 onChange={(e) => setIndustry(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
               >
-                <option value="Food & Beverage">Food & Beverage</option>
-                <option value="Handloom & Fashion">Handloom & Fashion</option>
-                <option value="Wellness & Skincare">Wellness & Skincare</option>
-                <option value="D2C Consumer Goods">D2C Consumer Goods</option>
-                <option value="Tech & SaaS">Tech & SaaS</option>
-                <option value="Hospitality & Travel">Hospitality & Travel</option>
+                {INDUSTRIES.map((ind) => (
+                  <option key={ind} value={ind}>
+                    {ind}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">Headquarters City</label>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">Campaign Budget Range</label>
+              <select
+                value={budgetRange}
+                onChange={(e) => setBudgetRange(e.target.value)}
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+              >
+                {BUDGET_RANGES.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Target Audience & Target Locations */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                Target User Demographic
+              </label>
               <input
                 type="text"
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="e.g. College students, Gamers, Android users"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                Target Regions / Cities
+              </label>
+              <input
+                type="text"
+                value={targetLocations}
+                onChange={(e) => setTargetLocations(e.target.value)}
+                placeholder="e.g. All India, Bengaluru, Mumbai, Pune"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#121214] block mb-1">Website or Store URL</label>
-            <input
-              type="url"
-              required
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-[#121214] block mb-1">Brand Description</label>
+            <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+              App / Campaign Description
+            </label>
             <textarea
               rows={3}
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+              placeholder="Tell influencers what your app does, its primary value proposition, and the call to action you want (e.g. install from link in bio, use discount coupon, signup)..."
+              className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
             />
           </div>
 
-          <div className="pt-4 border-t border-[#ECECE6]">
-            <Button type="submit" variant="primary" size="md" className="w-full">
-              <span>Complete Setup & Open Workspace</span>
-              <ArrowRight className="w-4 h-4" />
+          <div className="pt-4 border-t border-[#ECECE6] dark:border-[#27272A] flex flex-col sm:flex-row items-center justify-between gap-3">
+            <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+              Matches you with vetted Indian influencers in your category
+            </span>
+            <Button type="submit" variant="primary" size="md" className="w-full sm:w-auto">
+              <span>Find Matching Influencers</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </form>

@@ -13,8 +13,8 @@ interface ReelCarouselProps {
 
 export function ReelCarousel({
   reels,
-  title = 'See the kind of content creators make.',
-  subtitle = 'Watch authentic promotional reels, client campaigns, and portfolio work created on Marketur.',
+  title = 'See the kind of content influencers create.',
+  subtitle = 'Watch short-form promotional reels, app walkthroughs, and portfolio samples created by Indian influencers on Market My App.',
 }: ReelCarouselProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -34,12 +34,12 @@ export function ReelCarousel({
       {/* Carousel Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <span className="editorial-label text-[#FF5416]">Creator Work Samples</span>
-          <h2 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] mt-1 tracking-tight">
+          <span className="editorial-label text-[#FF5416]">Influencer Work Samples</span>
+          <h2 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] dark:text-white mt-1 tracking-tight">
             {title}
           </h2>
           {subtitle && (
-            <p className="text-xs sm:text-sm text-[#71717A] mt-1 max-w-xl">
+            <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA] mt-1 max-w-xl">
               {subtitle}
             </p>
           )}
@@ -49,14 +49,14 @@ export function ReelCarousel({
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
             onClick={() => scroll('left')}
-            className="p-2 rounded-lg border border-[#E5E5DE] bg-white text-[#121214] hover:bg-[#F4F4F0] hover:border-[#121214] transition-colors focus:outline-none"
+            className="p-2 rounded-lg border border-[#E5E5DE] dark:border-[#27272A] bg-white dark:bg-[#18181B] text-[#121214] dark:text-white hover:bg-[#F4F4F0] dark:hover:bg-[#27272A] transition-colors focus:outline-none"
             aria-label="Previous reel"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={() => scroll('right')}
-            className="p-2 rounded-lg border border-[#E5E5DE] bg-white text-[#121214] hover:bg-[#F4F4F0] hover:border-[#121214] transition-colors focus:outline-none"
+            className="p-2 rounded-lg border border-[#E5E5DE] dark:border-[#27272A] bg-white dark:bg-[#18181B] text-[#121214] dark:text-white hover:bg-[#F4F4F0] dark:hover:bg-[#27272A] transition-colors focus:outline-none"
             aria-label="Next reel"
           >
             <ChevronRight className="w-4 h-4" />

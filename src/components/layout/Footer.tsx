@@ -10,15 +10,15 @@ export function Footer() {
           <div className="md:col-span-2 space-y-4">
             <Link href="/" className="flex items-center gap-1.5 group">
               <span className="font-mono text-xl font-bold tracking-tight text-white">
-                MARKETUR
+                MARKET MY APP
               </span>
               <span className="w-2 h-2 rounded-full bg-[#FF5416]" />
             </Link>
             <p className="text-sm text-[#A1A1AA] max-w-sm leading-relaxed">
-              Marketur connects businesses that need promotion with creators who can create and promote content. Discover creators, see their work, choose a package, and manage campaigns in one place.
+              Market your app or website to a wider audience through influencers. Discover Indian creators by niche, audience, reach and budget — and find the right creators to promote your app, website or product.
             </p>
             <div className="pt-2 text-xs font-mono text-[#71717A]">
-              CURRENCY: INR (₹) • REGION: INDIA MARKET
+              CURRENCY: INR (₹) • REGION: INDIAN INFLUENCER MARKETPLACE
             </div>
           </div>
 
@@ -28,22 +28,22 @@ export function Footer() {
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/discover" className="hover:text-white transition-colors">
-                  Discover Creators
+                  Discover Influencers
                 </Link>
               </li>
               <li>
                 <Link href="/how-it-works" className="hover:text-white transition-colors">
-                  How it Works
+                  How It Works
                 </Link>
               </li>
               <li>
                 <Link href="/pricing" className="hover:text-white transition-colors">
-                  Pricing & Fees
+                  Pricing & Packages
                 </Link>
               </li>
               <li>
-                <Link href="/auth/signup?role=creator" className="hover:text-white transition-colors">
-                  Join as Creator
+                <Link href="/auth/signup?role=influencer" className="hover:text-white transition-colors">
+                  Join as an Influencer
                 </Link>
               </li>
             </ul>
@@ -55,17 +55,17 @@ export function Footer() {
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/for-businesses" className="hover:text-white transition-colors">
-                  For Businesses
+                  For Advertisers
                 </Link>
               </li>
               <li>
                 <Link href="/for-creators" className="hover:text-white transition-colors">
-                  For Creators
+                  For Influencers
                 </Link>
               </li>
               <li>
                 <Link href="/discover" className="hover:text-white transition-colors">
-                  Featured Portfolios
+                  Featured App Promos
                 </Link>
               </li>
             </ul>
@@ -77,7 +77,7 @@ export function Footer() {
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/about" className="hover:text-white transition-colors">
-                  About Marketur
+                  About Market My App
                 </Link>
               </li>
               <li>
@@ -91,21 +91,25 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <span className="text-[#71717A] text-xs">Protected Collaboration Guarantee</span>
+                <span className="text-[#71717A] text-xs">Direct Collaboration Protection</span>
               </li>
             </ul>
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#71717A] gap-4">
-          <p>© {new Date().getFullYear()} Marketur Technologies India Pvt. Ltd. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            <span className="hover:text-[#D4D4D8] cursor-pointer">Instagram (Community)</span>
-            <span>•</span>
-            <span className="hover:text-[#D4D4D8] cursor-pointer">X / Twitter</span>
-            <span>•</span>
-            <span className="hover:text-[#D4D4D8] cursor-pointer">LinkedIn</span>
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
+          <div>
+            © {new Date().getFullYear()} Market My App. Dedicated Indian Influencer Marketing Marketplace.
+          </div>
+          <div className="flex items-center gap-6">
+            <Link href="/terms" className="hover:text-[#A1A1AA] transition-colors">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-[#A1A1AA] transition-colors">
+              Privacy
+            </Link>
+            <span>v2.0 Production</span>
           </div>
         </div>
       </div>

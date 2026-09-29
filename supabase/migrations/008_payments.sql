@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-    provider TEXT NOT NULL DEFAULT 'escrow_service',
+    provider TEXT NOT NULL DEFAULT 'payment_gateway',
     provider_payment_id TEXT NOT NULL,
     amount NUMERIC(10, 2) NOT NULL CHECK (amount >= 0),
     currency TEXT NOT NULL DEFAULT 'INR',

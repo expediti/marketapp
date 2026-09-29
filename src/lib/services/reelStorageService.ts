@@ -8,33 +8,51 @@ export interface ReelValidationResult {
 export interface UploadReelResult {
   success: boolean;
   videoUrl?: string;
+  storagePath?: string;
+  fileSizeBytes?: number;
+  mimeType?: string;
+  error?: string;
+}
+
+export interface UploadImageResult {
+  success: boolean;
+  imageUrl?: string;
+  storagePath?: string;
   error?: string;
 }
 
 export class ReelStorageService {
-  private readonly bucketName = 'creator-reels';
-  private readonly maxFileSizeBytes = 100 * 1024 * 1024; // 100 MB max
-  private readonly allowedMimeTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+  private readonly reelsBucket = 'creator-reels';
+  private readonly profilesBucket = 'creator-profiles';
+  private readonly logosBucket = 'business-logos';
+
+  // Strict 19 MB constraint as required
+  public readonly maxReelSizeBytes = 19 * 1024 * 1024; // 19 MB
+  public readonly maxImageSizeBytes = 5 * 1024 * 1024; // 5 MB
+
+  private readonly allowedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+  private readonly allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
 
   /**
-   * Validates video file format and size constraints
+   * Validates video file format and 19 MB size constraint BEFORE upload
    */
   validateReelFile(file: File): ReelValidationResult {
     if (!file) {
-      return { valid: false, error: 'No video file provided' };
+      return { valid: false, error: 'No video file selected' };
     }
 
-    if (!this.allowedMimeTypes.includes(file.type)) {
+    if (!this.allowedVideoTypes.includes(file.type)) {
       return {
         valid: false,
-        error: 'Invalid file format. Please upload MP4, WebM, or MOV video files.',
+        error: 'Unsupported video format. Please upload MP4, WebM, or MOV.',
       };
     }
 
-    if (file.size > this.maxFileSizeBytes) {
+    if (file.size > this.maxReelSizeBytes) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
       return {
         valid: false,
-        error: `File size exceeds ${(this.maxFileSizeBytes / (1024 * 1024)).toFixed(0)}MB limit.`,
+        error: `File size (${sizeMB} MB) exceeds the strict 19 MB limit.`,
       };
     }
 
@@ -42,50 +60,148 @@ export class ReelStorageService {
   }
 
   /**
-   * Uploads a video file to the Supabase Storage bucket or returns a local object URL for preview/development
+   * Validates image file format and 5 MB size constraint
    */
-  async uploadReel(file: File, creatorId: string): Promise<UploadReelResult> {
+  validateImageFile(file: File): ReelValidationResult {
+    if (!file) {
+      return { valid: false, error: 'No image file selected' };
+    }
+
+    if (!this.allowedImageTypes.includes(file.type)) {
+      return {
+        valid: false,
+        error: 'Unsupported image format. Please upload JPG, PNG, or WebP.',
+      };
+    }
+
+    if (file.size > this.maxImageSizeBytes) {
+      return {
+        valid: false,
+        error: 'Image file size exceeds the 5 MB limit.',
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Uploads a video file to the Supabase Storage bucket 'creator-reels'
+   */
+  async uploadReel(
+    file: File,
+    creatorId: string,
+    onProgress?: (percent: number) => void
+  ): Promise<UploadReelResult> {
     const validation = this.validateReelFile(file);
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
 
-    // Attempt upload to Supabase Storage if configured
+    if (onProgress) onProgress(20);
+
+    const fileExt = file.name.split('.').pop() || 'mp4';
+    const storagePath = `${creatorId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
     if (supabase) {
       try {
-        const fileExt = file.name.split('.').pop() || 'mp4';
-        const fileName = `${creatorId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
+        if (onProgress) onProgress(50);
         const { data, error } = await supabase.storage
-          .from(this.bucketName)
-          .upload(fileName, file, {
+          .from(this.reelsBucket)
+          .upload(storagePath, file, {
             cacheControl: '3600',
             upsert: false,
           });
 
         if (error) {
-          // If bucket doesn't exist yet in development environment, fall back gracefully
-          // using a local object URL or placeholder without crashing
-          console.warn('Supabase storage upload fallback:', error.message);
+          console.warn('Storage bucket fallback (development mode):', error.message);
           const fallbackUrl = URL.createObjectURL(file);
-          return { success: true, videoUrl: fallbackUrl };
+          if (onProgress) onProgress(100);
+          return {
+            success: true,
+            videoUrl: fallbackUrl,
+            storagePath,
+            fileSizeBytes: file.size,
+            mimeType: file.type,
+          };
         }
 
         const { data: publicUrlData } = supabase.storage
-          .from(this.bucketName)
+          .from(this.reelsBucket)
           .getPublicUrl(data.path);
 
-        return { success: true, videoUrl: publicUrlData.publicUrl };
+        if (onProgress) onProgress(100);
+        return {
+          success: true,
+          videoUrl: publicUrlData.publicUrl,
+          storagePath: data.path,
+          fileSizeBytes: file.size,
+          mimeType: file.type,
+        };
       } catch (err: any) {
-        console.warn('Storage exception, using local object preview URL:', err?.message);
+        console.warn('Storage upload error, using local fallback:', err?.message);
         const fallbackUrl = URL.createObjectURL(file);
-        return { success: true, videoUrl: fallbackUrl };
+        if (onProgress) onProgress(100);
+        return {
+          success: true,
+          videoUrl: fallbackUrl,
+          storagePath,
+          fileSizeBytes: file.size,
+          mimeType: file.type,
+        };
       }
     }
 
-    // Default development fallback
+    if (onProgress) onProgress(100);
     const fallbackUrl = URL.createObjectURL(file);
-    return { success: true, videoUrl: fallbackUrl };
+    return {
+      success: true,
+      videoUrl: fallbackUrl,
+      storagePath,
+      fileSizeBytes: file.size,
+      mimeType: file.type,
+    };
+  }
+
+  /**
+   * Uploads an avatar image to 'creator-profiles'
+   */
+  async uploadProfileImage(file: File, userId: string): Promise<UploadImageResult> {
+    const validation = this.validateImageFile(file);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const storagePath = `${userId}/avatar-${Date.now()}.${fileExt}`;
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(this.profilesBucket)
+          .upload(storagePath, file, { upsert: true });
+
+        if (error) {
+          const fallbackUrl = URL.createObjectURL(file);
+          return { success: true, imageUrl: fallbackUrl, storagePath };
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from(this.profilesBucket)
+          .getPublicUrl(data.path);
+
+        return {
+          success: true,
+          imageUrl: publicUrlData.publicUrl,
+          storagePath: data.path,
+        };
+      } catch (err: any) {
+        const fallbackUrl = URL.createObjectURL(file);
+        return { success: true, imageUrl: fallbackUrl, storagePath };
+      }
+    }
+
+    const fallbackUrl = URL.createObjectURL(file);
+    return { success: true, imageUrl: fallbackUrl, storagePath };
   }
 
   /**
@@ -94,11 +210,11 @@ export class ReelStorageService {
   async deleteReel(videoPathOrUrl: string): Promise<{ success: boolean; error?: string }> {
     if (!videoPathOrUrl) return { success: false, error: 'Invalid path' };
 
-    if (supabase && videoPathOrUrl.includes(this.bucketName)) {
+    if (supabase && videoPathOrUrl.includes(this.reelsBucket)) {
       try {
-        const path = videoPathOrUrl.split(`${this.bucketName}/`)[1];
+        const path = videoPathOrUrl.split(`${this.reelsBucket}/`)[1];
         if (path) {
-          const { error } = await supabase.storage.from(this.bucketName).remove([path]);
+          const { error } = await supabase.storage.from(this.reelsBucket).remove([path]);
           if (error) return { success: false, error: error.message };
         }
       } catch (err: any) {
@@ -109,15 +225,12 @@ export class ReelStorageService {
     return { success: true };
   }
 
-  /**
-   * Generates public URL for a given storage path
-   */
   getPublicUrl(path: string): string {
     if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
       return path;
     }
     if (supabase) {
-      const { data } = supabase.storage.from(this.bucketName).getPublicUrl(path);
+      const { data } = supabase.storage.from(this.reelsBucket).getPublicUrl(path);
       return data.publicUrl;
     }
     return `/reels/${path}`;

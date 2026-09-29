@@ -1,4 +1,10 @@
-export type UserRole = 'creator' | 'business' | 'promoter' | 'admin';
+export type UserRole =
+  | 'advertiser'
+  | 'influencer'
+  | 'creator'
+  | 'business'
+  | 'promoter'
+  | 'admin';
 
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
 
@@ -61,8 +67,14 @@ export interface CreatorReel {
   id: string;
   creator_id: string;
   title: string;
+  description?: string;
+  storage_path?: string;
   video_url: string;
+  thumbnail_path?: string;
   thumbnail_url?: string;
+  mime_type?: string;
+  file_size_bytes?: number;
+  duration_seconds?: number;
   type: ReelType;
   sort_order: number;
   is_featured: boolean;
@@ -84,12 +96,19 @@ export interface CreatorPackage {
   id: string;
   creator_id: string;
   name: string;
-  description: string;
+  platform?: string;
+  content_type?: string;
   price: number;
+  currency?: string;
+  description: string;
+  deliverables?: string;
   delivery_days: number;
   revision_count: number;
+  revisions?: number;
   active: boolean;
+  is_active?: boolean;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface CreatorProfile {
@@ -97,11 +116,19 @@ export interface CreatorProfile {
   profile?: Profile;
   niche: string;
   bio: string;
+  profile_image_path?: string;
+  state?: string;
+  languages?: string[];
+  categories?: string[];
   instagram_connected: boolean;
   instagram_verified: boolean;
+  instagram_user_id?: string;
   follower_count: number;
+  followers_count?: number;
   average_reach: number;
   engagement_rate: number;
+  metrics_source?: 'instagram_api' | 'platform_metrics' | 'manual';
+  metrics_verified_at?: string;
   audience_gender: { female: number; male: number };
   audience_age: { '18-24': number; '25-34': number; '35+': number };
   audience_locations: AudienceLocation[];
@@ -119,8 +146,15 @@ export interface BusinessProfile {
   business_name: string;
   industry: string;
   city: string;
+  logo_path?: string;
   website?: string;
+  app_url?: string;
   description: string;
+  business_type?: 'app' | 'website' | 'product' | 'service';
+  category?: string;
+  target_audience?: string;
+  target_locations?: string[];
+  budget_range?: string;
   verification_status: VerificationStatus;
 }
 

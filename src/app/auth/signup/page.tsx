@@ -2,82 +2,73 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, Sparkles, Building2, Megaphone } from 'lucide-react';
+import { ArrowRight, Smartphone, Film, Sparkles } from 'lucide-react';
 
 export default function RoleSelectionPage() {
   const roles = [
     {
-      id: 'creator',
-      title: 'Creator',
-      subtitle: 'Turn your audience into paid collaborations.',
-      badge: 'Instagram Influencers',
-      href: '/auth/onboarding/creator',
-      icon: Sparkles,
-      color: 'border-[#121214]',
-    },
-    {
-      id: 'business',
-      title: 'Business',
-      subtitle: 'Find creators who already speak to your customers.',
-      badge: 'D2C & Local Brands',
+      id: 'advertiser',
+      title: 'Application / Advertiser',
+      subtitle: 'Market your mobile app, website, SaaS or product through relevant Indian influencers.',
+      badge: 'Apps & Businesses',
       href: '/auth/onboarding/business',
-      icon: Building2,
-      color: 'border-[#FF5416]',
+      icon: Smartphone,
+      cta: 'Find Influencers',
     },
     {
-      id: 'promoter',
-      title: 'Promoter / Agency',
-      subtitle: 'Manage creator campaigns for brands and clients.',
-      badge: 'Marketing Agencies',
-      href: '/auth/onboarding/business?role=promoter',
-      icon: Megaphone,
-      color: 'border-[#121214]',
+      id: 'influencer',
+      title: 'Influencer / Creator',
+      subtitle: 'Showcase your reels, define your audience, create packages, and earn from paid app promotions.',
+      badge: 'Creators & Streamers',
+      href: '/auth/onboarding/creator',
+      icon: Film,
+      cta: 'Join as an Influencer',
     },
   ];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 space-y-12">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 space-y-12">
       <div className="text-center space-y-3">
-        <span className="editorial-label text-[#FF5416]">Join Marketur</span>
-        <h1 className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] tracking-tight">
-          What brings you here?
+        <span className="editorial-label text-[#FF5416]">Join Market My App</span>
+        <h1 className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white tracking-tight">
+          What is your goal?
         </h1>
-        <p className="text-sm text-[#71717A] max-w-md mx-auto">
-          Select your primary role to configure your collaboration workspace.
+        <p className="text-sm text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
+          Market My App connects products needing promotion with creators who produce high-converting short content.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {roles.map((r) => {
           const Icon = r.icon;
           return (
             <Link
               key={r.id}
               href={r.href}
-              className="retro-card group bg-white border-2 border-[#E5E5DE] hover:border-[#121214] rounded-xl p-6 sm:p-7 flex flex-col justify-between transition-all shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+              className="group bg-white dark:bg-[#18181B] border-2 border-[#E5E5DE] dark:border-zinc-800 hover:border-[#FF5416] dark:hover:border-[#FF5416] rounded-xl p-6 sm:p-7 flex flex-col justify-between transition-all shadow-sm"
             >
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-md bg-[#F4F4F0] border border-[#E5E5DE] flex items-center justify-center text-[#FF5416] group-hover:bg-[#FF5416] group-hover:text-white transition-colors">
+                  <div className="w-11 h-11 rounded-lg bg-[#F4F4F0] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center text-[#FF5416] group-hover:bg-[#FF5416] group-hover:text-white transition-colors">
                     <Icon className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] font-mono uppercase bg-[#F4F4F0] text-[#71717A] px-2 py-0.5 rounded border border-[#E5E5DE]">
+                  <span className="text-[10px] font-mono uppercase bg-[#F4F4F0] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300 px-2.5 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700">
                     {r.badge}
                   </span>
                 </div>
 
                 <div>
-                  <h3 className="font-mono text-xl font-bold text-[#121214] group-hover:text-[#FF5416] transition-colors">
+                  <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white group-hover:text-[#FF5416] transition-colors">
                     {r.title}
                   </h3>
-                  <p className="text-xs text-[#52525B] mt-2 leading-relaxed">
+                  <p className="text-xs text-[#52525B] dark:text-zinc-400 mt-2 leading-relaxed">
                     {r.subtitle}
                   </p>
                 </div>
               </div>
 
-              <div className="pt-6 border-t border-[#ECECE6] flex items-center justify-between text-xs font-mono font-semibold text-[#121214] group-hover:text-[#FF5416]">
-                <span>Get Started</span>
+              <div className="pt-6 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between text-xs font-mono font-semibold text-[#121214] dark:text-white group-hover:text-[#FF5416]">
+                <span>{r.cta}</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </div>
             </Link>
@@ -85,9 +76,9 @@ export default function RoleSelectionPage() {
         })}
       </div>
 
-      <div className="text-center text-xs font-mono text-[#71717A]">
-        Already have an account?{' '}
-        <Link href="/auth/login" className="text-[#121214] font-bold underline">
+      <div className="text-center text-xs font-mono text-[#71717A] dark:text-zinc-400">
+        Already registered?{' '}
+        <Link href="/auth/login" className="text-[#FF5416] font-bold hover:underline">
           Log In
         </Link>
       </div>
