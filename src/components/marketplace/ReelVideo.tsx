@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
-import { Play, Volume2, VolumeX, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { AlertCircle } from 'lucide-react';
 import { reelStorageService } from '@/lib/services/reelStorageService';
 
 export interface ReelVideoProps {
   /** Video URL or Supabase Storage relative path */
   src: string;
-  /** Optional poster image URL (used while loading or if video fails/autoplay is blocked) */
+  /** Optional poster image URL (used while loading or if video fails) */
   poster?: string;
   /** Alt or title text for accessibility */
   title?: string;
@@ -25,9 +25,9 @@ export interface ReelVideoProps {
   className?: string;
   /** Additional CSS class for the video element */
   videoClassName?: string;
-  /** Whether to show a mute/unmute control overlay (default: false) */
+  /** Optional mute toggle support (default: false) */
   showMuteToggle?: boolean;
-  /** Whether to show a play/pause toggle overlay on click (default: false) */
+  /** Optional interactive click toggle (default: false) */
   interactive?: boolean;
   /** Callback when video enters playback */
   onPlay?: () => void;
@@ -37,8 +37,8 @@ export interface ReelVideoProps {
 
 /**
  * Reusable production ReelVideo component.
- * Ensures consistent autoplay, muted, playsInline, and loop behaviors
- * across mobile browsers and desktop without duplicating video logic.
+ * Ensures consistent automatic muted playback, playsInline, and continuous looping
+ * across mobile browsers and desktop without controls or play buttons.
  */
 export function ReelVideo({
   src,
@@ -51,52 +51,55 @@ export function ReelVideo({
   preload = 'metadata',
   className = '',
   videoClassName = '',
-  showMuteToggle = false,
-  interactive = false,
   onPlay,
   onError,
 }: ReelVideoProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [isMuted, setIsMuted] = useState(muted);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
-  // Resolve storage path or direct URL
+  // Resolve storage path or direct URL from Supabase Storage / local assets
   const resolvedSrc = reelStorageService.getPublicUrl(src);
 
-  // Setup video element with required autoplay attributes
+  // Directly enforce DOM properties for browser autoplay compatibility
+  const applyDOMProperties = useCallback((video: HTMLVideoElement | null) => {
+    if (!video) return;
+    video.defaultMuted = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.loop = true;
+  }, []);
+
+  const startPlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    applyDOMProperties(video);
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          if (onPlay) onPlay();
+        })
+        .catch((err) => {
+          console.debug('Autoplay attempt caught:', err);
+        });
+    }
+  }, [applyDOMProperties, onPlay]);
+
+  // Initial playback attempt on mount and source change
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    // Mobile Safari & Chrome require muted on the element property
-    video.defaultMuted = true;
-    video.muted = isMuted;
+    applyDOMProperties(video);
 
     if (autoPlay) {
-      const playPromise = video.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            setIsPlaying(true);
-            setAutoplayBlocked(false);
-            if (onPlay) onPlay();
-          })
-          .catch((err) => {
-            // Autoplay was prevented by browser policy (e.g., low power mode or user interaction policy)
-            console.debug('Autoplay prevented by browser policy:', err);
-            setAutoplayBlocked(true);
-            setIsPlaying(false);
-          });
-      }
+      startPlayback();
     }
-  }, [resolvedSrc, autoPlay, isMuted, onPlay]);
+  }, [resolvedSrc, autoPlay, applyDOMProperties, startPlayback]);
 
-  // Handle visibility changes via IntersectionObserver to save bandwidth & performance
+  // IntersectionObserver: play when visible, pause when far outside the viewport
   useEffect(() => {
     const container = containerRef.current;
     const video = videoRef.current;
@@ -105,25 +108,88 @@ export function ReelVideo({
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting && !video.paused) {
-            // Pause video when out of viewport to optimize browser performance
-            video.pause();
-            setIsPlaying(false);
-          } else if (entry.isIntersecting && autoPlay && !autoplayBlocked) {
-            // Resume playback when scrolled back into view
-            video.play().then(() => setIsPlaying(true)).catch(() => {});
+          if (!video) return;
+          if (entry.isIntersecting) {
+            applyDOMProperties(video);
+            if (autoPlay) {
+              const playPromise = video.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(() => {});
+              }
+            }
+          } else {
+            // When sufficiently far outside the viewport: pause
+            if (!video.paused) {
+              video.pause();
+            }
           }
         });
       },
-      { threshold: 0.25 }
+      {
+        threshold: 0.05,
+        rootMargin: '100px 50px 100px 50px',
+      }
     );
 
     observer.observe(container);
     return () => observer.disconnect();
-  }, [autoPlay, autoplayBlocked]);
+  }, [autoPlay, applyDOMProperties]);
+
+  // Autoplay fallback: retry playback on first user touch/click/scroll in the window
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !autoPlay) return;
+
+    const resumePlaybackIfVisible = () => {
+      const v = videoRef.current;
+      const c = containerRef.current;
+      if (!v || !c || !v.paused) return;
+
+      const rect = c.getBoundingClientRect();
+      const inView =
+        rect.top < window.innerHeight &&
+        rect.bottom > 0 &&
+        rect.left < window.innerWidth &&
+        rect.right > 0;
+
+      if (inView) {
+        applyDOMProperties(v);
+        v.play().catch(() => {});
+      }
+    };
+
+    window.addEventListener('touchstart', resumePlaybackIfVisible, { passive: true, once: true });
+    window.addEventListener('click', resumePlaybackIfVisible, { passive: true, once: true });
+    window.addEventListener('scroll', resumePlaybackIfVisible, { passive: true, once: true });
+
+    return () => {
+      window.removeEventListener('touchstart', resumePlaybackIfVisible);
+      window.removeEventListener('click', resumePlaybackIfVisible);
+      window.removeEventListener('scroll', resumePlaybackIfVisible);
+    };
+  }, [autoPlay, applyDOMProperties]);
+
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    applyDOMProperties(video);
+    if (autoPlay) {
+      video.play().catch(() => {});
+    }
+  };
 
   const handleVideoLoadedData = () => {
     setIsLoading(false);
+  };
+
+  // Continuous looping: automatically restart from 0 when video reaches the end
+  const handleEnded = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    if (loop) {
+      video.play().catch(() => {});
+    }
   };
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
@@ -133,106 +199,54 @@ export function ReelVideo({
     if (onError) onError(e);
   };
 
-  const handleContainerClick = () => {
-    if (!interactive) return;
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (video.paused) {
-      video.play().then(() => {
-        setIsPlaying(true);
-        setAutoplayBlocked(false);
-      }).catch((e) => console.warn('Play error:', e));
-    } else {
-      video.pause();
-      setIsPlaying(false);
-    }
-  };
-
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const video = videoRef.current;
-    if (!video) return;
-    const nextMuted = !isMuted;
-    video.muted = nextMuted;
-    setIsMuted(nextMuted);
-  };
-
   return (
     <div
       ref={containerRef}
-      onClick={handleContainerClick}
-      className={`relative overflow-hidden bg-[#121214] select-none ${interactive ? 'cursor-pointer' : ''} ${className}`}
+      className={`relative w-full h-full overflow-hidden bg-[#121214] select-none ${className}`}
       title={title}
     >
-      {/* Video Element */}
-      <video
-        ref={videoRef}
-        src={resolvedSrc}
-        poster={poster}
-        autoPlay={autoPlay}
-        loop={loop}
-        muted={isMuted}
-        playsInline
-        preload={preload}
-        onLoadedData={handleVideoLoadedData}
-        onError={handleVideoError}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${isLoading ? 'opacity-40' : 'opacity-100'} ${videoClassName}`}
-      />
-
-      {/* Loading Skeleton Indicator */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-xs pointer-events-none">
-          <Loader2 className="w-5 h-5 text-white/70 animate-spin" />
-        </div>
+      {/* Background Poster (graceful fallback, no flash of black) */}
+      {poster && (
+        <img
+          src={poster}
+          alt={title || 'Reel preview'}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+            isLoading || hasError ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          loading="lazy"
+        />
       )}
 
-      {/* Fallback Poster if Video Fails */}
-      {hasError && (
+      {/* HTML5 Video Element with automated muted looped inline playback and NO controls */}
+      {!hasError && (
+        <video
+          ref={(el) => {
+            videoRef.current = el;
+            if (el) applyDOMProperties(el);
+          }}
+          src={resolvedSrc}
+          poster={poster}
+          autoPlay={autoPlay}
+          muted={muted}
+          loop={loop}
+          playsInline={playsInline}
+          preload={preload}
+          controls={false}
+          onLoadedMetadata={handleLoadedMetadata}
+          onLoadedData={handleVideoLoadedData}
+          onEnded={handleEnded}
+          onError={handleVideoError}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${
+            isLoading ? 'opacity-0' : 'opacity-100'
+          } ${videoClassName}`}
+        />
+      )}
+
+      {/* Fallback Display if Video Fails (shows poster image, no play button) */}
+      {hasError && !poster && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#18181B] text-zinc-400 p-4 text-center">
-          {poster ? (
-            <img src={poster} alt={title || 'Reel poster'} className="absolute inset-0 w-full h-full object-cover" />
-          ) : (
-            <div className="flex flex-col items-center gap-1.5 z-10">
-              <AlertCircle className="w-6 h-6 text-zinc-500" />
-              <span className="text-[11px] font-mono">Video unavailable</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Autoplay fallback button (when browser aggressively blocks initial autoplay) */}
-      {autoplayBlocked && !isPlaying && !hasError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 pointer-events-auto">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              videoRef.current?.play().then(() => {
-                setIsPlaying(true);
-                setAutoplayBlocked(false);
-              }).catch(() => {});
-            }}
-            className="w-12 h-12 rounded-full bg-white/90 dark:bg-black/80 text-[#121214] dark:text-white flex items-center justify-center shadow-lg border border-white/20 hover:scale-105 transition-transform"
-            aria-label="Play video"
-          >
-            <Play className="w-5 h-5 ml-0.5 fill-current" />
-          </button>
-        </div>
-      )}
-
-      {/* Optional Mute/Unmute Overlay Button */}
-      {showMuteToggle && !hasError && (
-        <div className="absolute top-2.5 right-2.5 z-20">
-          <button
-            type="button"
-            onClick={toggleMute}
-            className="p-1.5 rounded-full bg-black/60 text-white/90 hover:bg-black/80 hover:text-white transition-colors backdrop-blur-xs"
-            title={isMuted ? 'Unmute' : 'Mute'}
-            aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
-          >
-            {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-          </button>
+          <AlertCircle className="w-5 h-5 text-zinc-500 mb-1" />
+          <span className="text-[11px] font-mono">Video preview</span>
         </div>
       )}
     </div>

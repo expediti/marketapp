@@ -86,8 +86,7 @@ export function InfiniteReelShowcase({
                   loop={true}
                   muted={true}
                   playsInline={true}
-                  showMuteToggle={true}
-                  interactive={true}
+                  preload="metadata"
                   className="w-full h-full"
                 />
 

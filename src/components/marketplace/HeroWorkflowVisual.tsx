@@ -29,8 +29,6 @@ export function HeroWorkflowVisual({ heroReel }: HeroWorkflowVisualProps) {
           loop={true}
           muted={true}
           playsInline={true}
-          interactive={true}
-          showMuteToggle={true}
           className="w-full h-full"
         />
 
