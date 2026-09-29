@@ -22,7 +22,9 @@ export function CreatorCard({ creator }: CreatorCardProps) {
       ? Math.min(...creator.packages.map((p) => p.price))
       : 2999);
 
-  const primaryCity = creator.profile?.city || 'India';
+  const primaryCity = creator.state
+    ? `${creator.city || creator.profile?.city}, ${creator.state}`
+    : (creator.city || creator.profile?.city || 'India');
   const featuredReel = creator.reels && creator.reels.length > 0 ? creator.reels[0] : null;
   const sampleImages = creator.samples && creator.samples.length > 0 ? creator.samples.slice(0, 2) : [];
 

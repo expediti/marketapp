@@ -117,7 +117,9 @@ export interface CreatorProfile {
   niche: string;
   bio: string;
   profile_image_path?: string;
+  country?: string;
   state?: string;
+  city?: string;
   languages?: string[];
   categories?: string[];
   instagram_connected: boolean;

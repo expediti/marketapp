@@ -9,6 +9,11 @@ import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorPackage, CreatorReel, ReelType } from '@/types/marketplace';
 import {
+  INDIAN_STATES_AND_CITIES,
+  getAllIndianStates,
+  getCitiesForIndianState,
+} from '@/lib/data/locationsData';
+import {
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
@@ -20,6 +25,7 @@ import {
   Camera,
   AlertCircle,
   Video,
+  MapPin,
 } from 'lucide-react';
 
 const POPULAR_CATEGORIES = [
@@ -48,10 +54,12 @@ export default function CreatorOnboardingPage() {
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
 
-  // Step 1: Basic Information
+  // Step 1: Basic Information & Dedicated Location Section
   const [displayName, setDisplayName] = useState('');
-  const [city, setCity] = useState('');
-  const [stateName, setStateName] = useState('');
+  const [country, setCountry] = useState('India');
+  const [stateName, setStateName] = useState('Uttar Pradesh');
+  const [city, setCity] = useState('Varanasi');
+  const [customCity, setCustomCity] = useState('');
   const [languages, setLanguages] = useState<string[]>(['Hindi', 'English']);
   const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState<string>('');
@@ -205,15 +213,19 @@ export default function CreatorOnboardingPage() {
   };
 
   const handleFinishOnboarding = () => {
+    const finalCity = customCity.trim() || city || 'Varanasi';
     onboardCreator({
       profile: {
         id: 'new_influencer',
         role: 'influencer',
         display_name: displayName || 'Creator',
         email: `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyapp.in`,
-        city: city || 'Bengaluru',
+        city: finalCity,
         created_at: new Date().toISOString(),
       },
+      country: country || 'India',
+      state: stateName || 'Uttar Pradesh',
+      city: finalCity,
       niche: selectedCategories[0] || 'Technology',
       bio: bio || 'Indian content creator helping apps reach targeted users.',
       follower_count: followerCount,
@@ -308,28 +320,124 @@ export default function CreatorOnboardingPage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">City</label>
-                <input
-                  type="text"
-                  required
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="e.g. Bengaluru, Delhi, Mumbai"
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
-                />
+            {/* Dedicated Location Section */}
+            <div className="pt-2 border-t border-[#ECECE6] dark:border-[#27272A] space-y-4">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#FF5416]" />
+                <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white uppercase tracking-wider">
+                  Location
+                </h3>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">State</label>
-                <input
-                  type="text"
-                  value={stateName}
-                  onChange={(e) => setStateName(e.target.value)}
-                  placeholder="e.g. Karnataka, Maharashtra"
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Country */}
+                <div>
+                  <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                    Country
+                  </label>
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                  >
+                    <option value="India">India</option>
+                  </select>
+                </div>
+
+                {/* State */}
+                <div>
+                  <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                    State
+                  </label>
+                  <select
+                    value={stateName}
+                    onChange={(e) => {
+                      const newState = e.target.value;
+                      setStateName(newState);
+                      const availableCities = getCitiesForIndianState(newState);
+                      if (availableCities.length > 0) {
+                        setCity(availableCities[0]);
+                      }
+                      setCustomCity('');
+                    }}
+                    className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                  >
+                    {getAllIndianStates().map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* City */}
+                <div>
+                  <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                    City (Select or Search)
+                  </label>
+                  <select
+                    value={city}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      setCustomCity('');
+                    }}
+                    className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                  >
+                    {getCitiesForIndianState(stateName).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="Other">Other City...</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* If "Other" selected, allow custom city text */}
+              {city === 'Other' && (
+                <div className="pt-1">
+                  <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                    Enter City Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customCity}
+                    onChange={(e) => setCustomCity(e.target.value)}
+                    placeholder="Enter your city name in India"
+                    className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              )}
+
+              {/* Popular City Quick-Pick Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 mr-1">
+                  Quick select:
+                </span>
+                {['Varanasi', 'Bengaluru', 'Mumbai', 'Delhi NCR', 'Jaipur', 'Kochi'].map((pCity) => (
+                  <button
+                    key={pCity}
+                    type="button"
+                    onClick={() => {
+                      if (pCity === 'Varanasi') setStateName('Uttar Pradesh');
+                      else if (pCity === 'Bengaluru') setStateName('Karnataka');
+                      else if (pCity === 'Mumbai') setStateName('Maharashtra');
+                      else if (pCity === 'Delhi NCR') setStateName('Delhi NCR');
+                      else if (pCity === 'Jaipur') setStateName('Rajasthan');
+                      else if (pCity === 'Kochi') setStateName('Kerala');
+                      setCity(pCity);
+                      setCustomCity('');
+                    }}
+                    className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                      (customCity || city) === pCity
+                        ? 'bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] border-[#FFD2C1] dark:border-[#4D1F0E] font-bold'
+                        : 'bg-[#F4F4F0] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300 border-[#E5E5DE] dark:border-zinc-700 hover:border-[#FF5416]/50'
+                    }`}
+                  >
+                    {pCity}
+                  </button>
+                ))}
               </div>
             </div>
 

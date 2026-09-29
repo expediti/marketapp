@@ -89,8 +89,9 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
     display_name TEXT,
     bio TEXT,
     profile_image_path TEXT,
-    city TEXT,
+    country TEXT DEFAULT 'India',
     state TEXT,
+    city TEXT,
     languages TEXT[] DEFAULT ARRAY['Hindi', 'English'],
     categories TEXT[] DEFAULT ARRAY['Technology'],
     niche TEXT NOT NULL DEFAULT 'Technology',
@@ -113,6 +114,10 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_niche ON public.creator_profiles(niche);
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_follower_count ON public.creator_profiles(follower_count);
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_average_reach ON public.creator_profiles(average_reach);
+CREATE INDEX IF NOT EXISTS idx_creator_profiles_location ON public.creator_profiles(country, state, city);
+CREATE INDEX IF NOT EXISTS idx_creator_profiles_city ON public.creator_profiles(city);
+CREATE INDEX IF NOT EXISTS idx_creator_profiles_state ON public.creator_profiles(state);
+CREATE INDEX IF NOT EXISTS idx_creator_profiles_country ON public.creator_profiles(country);
 
 DROP TRIGGER IF EXISTS on_creator_profiles_updated ON public.creator_profiles;
 CREATE TRIGGER on_creator_profiles_updated

@@ -1,13 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, SlidersHorizontal, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, SlidersHorizontal, RotateCcw, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import {
+  getAllIndianStates,
+  getCitiesForIndianState,
+  POPULAR_INDIAN_CITIES,
+} from '@/lib/data/locationsData';
 
 interface FilterBarProps {
   searchQuery: string;
   onSearchChange: (val: string) => void;
   selectedNiche: string;
   onNicheChange: (val: string) => void;
+  selectedCountry?: string;
+  onCountryChange?: (val: string) => void;
+  selectedState: string;
+  onStateChange: (val: string) => void;
   selectedCity: string;
   onCityChange: (val: string) => void;
   selectedFollowerRange: string;
@@ -26,6 +35,10 @@ export function FilterBar({
   onSearchChange,
   selectedNiche,
   onNicheChange,
+  selectedCountry = 'India',
+  onCountryChange,
+  selectedState,
+  onStateChange,
   selectedCity,
   onCityChange,
   selectedFollowerRange,
@@ -59,17 +72,12 @@ export function FilterBar({
     'Student',
   ];
 
-  const cities = [
-    'All Cities',
-    'Delhi NCR',
-    'Bengaluru',
-    'Mumbai',
-    'Jaipur',
-    'Varanasi',
-    'Kochi',
-    'Hyderabad',
-    'Pune',
-  ];
+  const states = ['All States', ...getAllIndianStates()];
+
+  // Dynamically resolve cities based on selected state
+  const availableCities = selectedState && selectedState !== 'All States'
+    ? ['All Cities in ' + selectedState, ...getCitiesForIndianState(selectedState)]
+    : ['All Cities', ...POPULAR_INDIAN_CITIES];
 
   const followerRanges = [
     'Any Reach',
@@ -93,6 +101,16 @@ export function FilterBar({
     'YouTube Shorts',
   ];
 
+  const quickLocations = [
+    { label: 'All India', state: '', city: '' },
+    { label: 'Varanasi', state: 'Uttar Pradesh', city: 'Varanasi' },
+    { label: 'Bengaluru', state: 'Karnataka', city: 'Bengaluru' },
+    { label: 'Mumbai', state: 'Maharashtra', city: 'Mumbai' },
+    { label: 'Delhi NCR', state: 'Delhi NCR', city: 'Delhi NCR' },
+    { label: 'Jaipur', state: 'Rajasthan', city: 'Jaipur' },
+    { label: 'Kochi', state: 'Kerala', city: 'Kochi' },
+  ];
+
   return (
     <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
       {/* Search Input and Quick Actions */}
@@ -103,7 +121,7 @@ export function FilterBar({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search influencers, niches or categories (e.g. Technology, Gaming, AI, Mumbai)..."
+            placeholder="Search by category, city or keywords (e.g. food in Varanasi, fitness in Delhi, SaaS demo)..."
             className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-[#FBFBFA] dark:bg-[#18181B] text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-[#27272A] rounded-xl focus:outline-none focus:border-[#FF5416] transition-colors"
           />
         </div>
@@ -131,8 +149,8 @@ export function FilterBar({
         </div>
       </div>
 
-      {/* Primary Filters Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+      {/* Primary Filters Row: Category + State + City + Sort */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
         {/* Category */}
         <div>
           <label className="editorial-label block mb-1 text-[#71717A] dark:text-[#A1A1AA]">
@@ -151,18 +169,44 @@ export function FilterBar({
           </select>
         </div>
 
-        {/* Location */}
+        {/* State */}
         <div>
           <label className="editorial-label block mb-1 text-[#71717A] dark:text-[#A1A1AA]">
-            Location / City
+            State (India)
+          </label>
+          <select
+            value={selectedState}
+            onChange={(e) => {
+              const newState = e.target.value;
+              onStateChange(newState);
+              // Reset city if not matching new state
+              onCityChange('');
+            }}
+            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-[#18181B] text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-[#27272A] rounded-lg focus:outline-none focus:border-[#FF5416]"
+          >
+            {states.map((st) => (
+              <option key={st} value={st === 'All States' ? '' : st}>
+                {st}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* City */}
+        <div>
+          <label className="editorial-label block mb-1 text-[#71717A] dark:text-[#A1A1AA]">
+            City
           </label>
           <select
             value={selectedCity}
             onChange={(e) => onCityChange(e.target.value)}
             className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-[#18181B] text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-[#27272A] rounded-lg focus:outline-none focus:border-[#FF5416]"
           >
-            {cities.map((city) => (
-              <option key={city} value={city === 'All Cities' ? '' : city}>
+            {availableCities.map((city) => (
+              <option
+                key={city}
+                value={city.startsWith('All Cities') ? '' : city}
+              >
                 {city}
               </option>
             ))}
@@ -187,6 +231,38 @@ export function FilterBar({
             <option value="price_desc">Price: High to Low</option>
           </select>
         </div>
+      </div>
+
+      {/* Quick Location Pills */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+        <span className="text-[11px] font-mono text-[#71717A] dark:text-[#A1A1AA] flex items-center gap-1 mr-1">
+          <MapPin className="w-3 h-3 text-[#FF5416]" />
+          <span>Location:</span>
+        </span>
+        {quickLocations.map((loc) => {
+          const isSelected =
+            (!loc.city && !loc.state && !selectedCity && !selectedState) ||
+            (loc.city && selectedCity === loc.city) ||
+            (loc.state && !loc.city && selectedState === loc.state && !selectedCity);
+
+          return (
+            <button
+              key={loc.label}
+              type="button"
+              onClick={() => {
+                onStateChange(loc.state);
+                onCityChange(loc.city);
+              }}
+              className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition-colors ${
+                isSelected
+                  ? 'bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] border-[#FFD2C1] dark:border-[#4D1F0E] font-bold'
+                  : 'bg-[#FBFBFA] dark:bg-[#18181B] text-[#52525B] dark:text-[#A1A1AA] border-[#E5E5DE] dark:border-[#27272A] hover:border-[#FF5416]/50'
+              }`}
+            >
+              {loc.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Advanced Filters (Expandable) */}

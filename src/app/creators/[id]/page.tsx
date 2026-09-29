@@ -94,7 +94,9 @@ export default function CreatorDetailPage() {
                 <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
                 <span className="flex items-center gap-1 text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
                   <MapPin className="w-3.5 h-3.5 text-[#FF5416]" />
-                  {creator.profile?.city || 'India'}
+                  {creator.state
+                    ? `${creator.city || creator.profile?.city}, ${creator.state}`
+                    : (creator.city || creator.profile?.city || 'India')}
                 </span>
                 <div className="flex items-center gap-1 text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
                   <CheckCircle2 className="w-3 h-3" />
@@ -349,8 +351,12 @@ export default function CreatorDetailPage() {
                 <strong className="text-[#121214] dark:text-white text-sm">{creator.niche}</strong>
               </div>
               <div className="p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                <span className="text-[#71717A] dark:text-[#A1A1AA] block">Base City:</span>
-                <strong className="text-[#121214] dark:text-white text-sm">{creator.profile?.city || 'India'}</strong>
+                <span className="text-[#71717A] dark:text-[#A1A1AA] block">Location:</span>
+                <strong className="text-[#121214] dark:text-white text-sm">
+                  {creator.state
+                    ? `${creator.city || creator.profile?.city}, ${creator.state}`
+                    : (creator.city || creator.profile?.city || 'India')}
+                </strong>
               </div>
             </div>
           </div>

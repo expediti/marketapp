@@ -6,17 +6,21 @@ import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { CreatorCard } from '@/components/marketplace/CreatorCard';
 import { FilterBar } from '@/components/marketplace/FilterBar';
 import { Users, Search, Sparkles } from 'lucide-react';
+import { findStateForCity } from '@/lib/data/locationsData';
 
 function DiscoverContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
   const initialNiche = searchParams.get('niche') || '';
+  const initialCity = searchParams.get('city') || '';
+  const initialState = searchParams.get('state') || '';
 
   const { creators } = useMarketplace();
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedNiche, setSelectedNiche] = useState(initialNiche);
-  const [selectedCity, setSelectedCity] = useState('');
+  const [selectedState, setSelectedState] = useState(initialState);
+  const [selectedCity, setSelectedCity] = useState(initialCity);
   const [selectedFollowerRange, setSelectedFollowerRange] = useState('');
   const [selectedPriceRange, setSelectedPriceRange] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState('');
@@ -25,20 +29,36 @@ function DiscoverContent() {
   const filteredInfluencers = useMemo(() => {
     let result = [...creators];
 
-    // Search query filter
+    // 1. Natural Language Search query filter (understands "food influencers in Varanasi", "fitness in Delhi", etc.)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.profile?.display_name.toLowerCase().includes(q) ||
-          c.niche.toLowerCase().includes(q) ||
-          c.bio.toLowerCase().includes(q) ||
-          c.profile?.city.toLowerCase().includes(q) ||
-          c.categories?.some((cat) => cat.toLowerCase().includes(q))
-      );
+      const q = searchQuery.toLowerCase().trim();
+      const tokens = q.split(/\s+/).filter((t) => !['in', 'for', 'the', 'and', 'with', 'creators', 'influencers'].includes(t));
+
+      result = result.filter((c) => {
+        const creatorName = (c.profile?.display_name || '').toLowerCase();
+        const creatorCity = (c.city || c.profile?.city || '').toLowerCase();
+        const creatorState = (c.state || '').toLowerCase();
+        const creatorCountry = (c.country || 'india').toLowerCase();
+        const creatorNiche = (c.niche || '').toLowerCase();
+        const creatorBio = (c.bio || '').toLowerCase();
+        const categories = (c.categories || []).map((cat) => cat.toLowerCase()).join(' ');
+        const audienceCities = (c.audience_locations || []).map((l) => l.city.toLowerCase()).join(' ');
+
+        const searchableText = `${creatorName} ${creatorCity} ${creatorState} ${creatorCountry} ${creatorNiche} ${creatorBio} ${categories} ${audienceCities}`;
+
+        // Direct full phrase match
+        if (searchableText.includes(q)) return true;
+
+        // If user typed multi-word phrase like "food in Varanasi" or "tech Bengaluru"
+        if (tokens.length > 0) {
+          return tokens.every((token) => searchableText.includes(token));
+        }
+
+        return false;
+      });
     }
 
-    // Category / Niche filter
+    // 2. Category / Niche filter
     if (selectedNiche && selectedNiche !== 'All Categories') {
       const n = selectedNiche.toLowerCase();
       result = result.filter(
@@ -48,16 +68,30 @@ function DiscoverContent() {
       );
     }
 
-    // City / Location filter
-    if (selectedCity && selectedCity !== 'All Cities') {
+    // 3. State filter (Intersection)
+    if (selectedState && selectedState !== 'All States') {
+      const st = selectedState.toLowerCase();
+      result = result.filter((c) => {
+        const creatorState = (c.state || '').toLowerCase();
+        if (creatorState === st) return true;
+        // Check if creator's city belongs to this state
+        const cityState = findStateForCity(c.city || c.profile?.city || '');
+        if (cityState && cityState.toLowerCase() === st) return true;
+        return false;
+      });
+    }
+
+    // 4. City filter (Intersection)
+    if (selectedCity && selectedCity !== 'All Cities' && !selectedCity.startsWith('All Cities in')) {
+      const ct = selectedCity.toLowerCase();
       result = result.filter(
         (c) =>
-          c.profile?.city === selectedCity ||
-          c.audience_locations.some((loc) => loc.city === selectedCity)
+          (c.city || c.profile?.city || '').toLowerCase() === ct ||
+          c.audience_locations.some((loc) => loc.city.toLowerCase() === ct)
       );
     }
 
-    // Follower Range filter
+    // 5. Follower Range filter (Intersection)
     if (selectedFollowerRange && selectedFollowerRange !== 'Any Reach') {
       if (selectedFollowerRange.includes('Micro')) {
         result = result.filter((c) => c.follower_count >= 10000 && c.follower_count < 25000);
@@ -70,7 +104,7 @@ function DiscoverContent() {
       }
     }
 
-    // Price Range filter
+    // 6. Price Range filter (Intersection)
     if (selectedPriceRange && selectedPriceRange !== 'Any Budget') {
       if (selectedPriceRange.includes('Under ₹3,000')) {
         result = result.filter((c) => (c.starting_price || 2500) < 3000);
@@ -89,7 +123,7 @@ function DiscoverContent() {
       }
     }
 
-    // Sort order
+    // 7. Sort order
     if (sortBy === 'followers') {
       result.sort((a, b) => b.follower_count - a.follower_count);
     } else if (sortBy === 'reach') {
@@ -107,6 +141,7 @@ function DiscoverContent() {
     creators,
     searchQuery,
     selectedNiche,
+    selectedState,
     selectedCity,
     selectedFollowerRange,
     selectedPriceRange,
@@ -116,6 +151,7 @@ function DiscoverContent() {
   const handleReset = () => {
     setSearchQuery('');
     setSelectedNiche('');
+    setSelectedState('');
     setSelectedCity('');
     setSelectedFollowerRange('');
     setSelectedPriceRange('');
@@ -137,7 +173,7 @@ function DiscoverContent() {
           Find the right influencer for your app.
         </h1>
         <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA] max-w-2xl">
-          Discover vetted Indian influencers by niche, audience reach, engagement rate, and fixed collaboration packages.
+          Discover vetted Indian influencers by niche, location, audience reach, engagement rate, and fixed collaboration packages.
         </p>
       </div>
 
@@ -147,6 +183,8 @@ function DiscoverContent() {
         onSearchChange={setSearchQuery}
         selectedNiche={selectedNiche}
         onNicheChange={setSelectedNiche}
+        selectedState={selectedState}
+        onStateChange={setSelectedState}
         selectedCity={selectedCity}
         onCityChange={setSelectedCity}
         selectedFollowerRange={selectedFollowerRange}
