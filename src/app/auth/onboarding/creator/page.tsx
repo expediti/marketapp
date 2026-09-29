@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
+import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorPackage, CreatorReel, ReelType } from '@/types/marketplace';
 import {
   CheckCircle2,
@@ -714,10 +715,7 @@ export default function CreatorOnboardingPage() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-16 bg-black rounded overflow-hidden relative shrink-0">
-                      <video src={reel.video_url} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                        <Film className="w-3.5 h-3.5 text-white" />
-                      </div>
+                      <ReelVideo src={reel.video_url} autoPlay={true} loop={true} muted={true} playsInline={true} className="w-full h-full" />
                     </div>
 
                     <div>

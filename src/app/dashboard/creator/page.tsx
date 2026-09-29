@@ -7,6 +7,7 @@ import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
+import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorReel, ReelType, CreatorPackage } from '@/types/marketplace';
 import {
   ArrowRight,
@@ -578,10 +579,15 @@ export default function CreatorDashboardPage() {
                     >
                       <div className="flex gap-3">
                         <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
-                          <video src={reel.video_url} className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
-                            <Film className="w-5 h-5 text-white/80" />
-                          </div>
+                          <ReelVideo
+                            src={reel.video_url}
+                            poster={reel.thumbnail_url}
+                            autoPlay={true}
+                            loop={true}
+                            muted={true}
+                            playsInline={true}
+                            className="w-full h-full"
+                          />
                         </div>
 
                         <div className="space-y-1.5 flex-1 min-w-0">

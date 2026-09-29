@@ -6,6 +6,7 @@ import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
+import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { DisputeResolution, CreatorReel } from '@/types/marketplace';
 import {
   ShieldAlert,
@@ -175,11 +176,15 @@ export default function AdminDashboardPage() {
                 <div>
                   {/* Video / Thumbnail preview */}
                   <div className="aspect-[9/14] w-full rounded-lg bg-[#18181B] overflow-hidden relative mb-3">
-                    {reel.thumbnail_url ? (
-                      <img src={reel.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <video src={reel.video_url} className="w-full h-full object-cover" controls preload="metadata" />
-                    )}
+                    <ReelVideo
+                      src={reel.video_url}
+                      poster={reel.thumbnail_url}
+                      autoPlay={true}
+                      loop={true}
+                      muted={true}
+                      playsInline={true}
+                      className="w-full h-full"
+                    />
                     <div className="absolute top-2 left-2 flex items-center gap-1">
                       <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-black/70 text-white backdrop-blur">
                         {reel.type === 'client_work' ? 'Client Work' : 'Demo Reel'}

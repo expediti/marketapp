@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { CreatorProfile } from '@/types/marketplace';
+import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CheckCircle2, ArrowRight, Play, Film, Sparkles } from 'lucide-react';
 
 interface CreatorCardProps {
@@ -62,23 +63,22 @@ export function CreatorCard({ creator }: CreatorCardProps) {
           <Link href={`/creators/${creator.user_id}`} className="block relative group/preview">
             {featuredReel ? (
               <div className="relative aspect-[16/9] w-full rounded-lg overflow-hidden bg-[#18181B] border border-[#27272A]">
-                {featuredReel.thumbnail_url && (
-                  <img
-                    src={featuredReel.thumbnail_url}
-                    alt={featuredReel.title}
-                    className="w-full h-full object-cover opacity-80 group-hover/preview:scale-105 transition-transform duration-300"
-                  />
-                )}
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-full bg-white/95 text-[#121214] flex items-center justify-center shadow group-hover/preview:scale-110 transition-transform">
-                    <Play className="w-4 h-4 ml-0.5 fill-[#121214]" />
-                  </div>
-                </div>
-                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white/90 drop-shadow">
+                <ReelVideo
+                  src={featuredReel.video_url}
+                  poster={featuredReel.thumbnail_url}
+                  title={featuredReel.title}
+                  autoPlay={true}
+                  loop={true}
+                  muted={true}
+                  interactive={false}
+                  className="w-full h-full"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white/90 drop-shadow z-10 pointer-events-none">
                   <span className="truncate max-w-[170px] font-semibold">{featuredReel.title}</span>
-                  <span className="text-[10px] bg-black/70 px-1.5 py-0.5 rounded flex items-center gap-1">
-                    <Film className="w-2.5 h-2.5" />
-                    <span>Watch Sample</span>
+                  <span className="text-[10px] bg-black/80 backdrop-blur-xs px-1.5 py-0.5 rounded flex items-center gap-1 border border-white/10">
+                    <Film className="w-2.5 h-2.5 text-[#FF5416]" />
+                    <span>Sample</span>
                   </span>
                 </div>
               </div>

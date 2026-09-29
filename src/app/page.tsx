@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { CreatorCard } from '@/components/marketplace/CreatorCard';
 import { ReelCarousel } from '@/components/marketplace/ReelCarousel';
 import { ReelCard } from '@/components/marketplace/ReelCard';
+import { HeroWorkflowVisual } from '@/components/marketplace/HeroWorkflowVisual';
 import { SHOWCASE_REELS } from '@/lib/data/reelsData';
 import { INITIAL_CREATORS } from '@/lib/supabase/mockData';
 
@@ -89,59 +90,9 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Hero Visual: App -> Influencer -> Audience -> Reach */}
+            {/* Right Hero Visual: Looping Interactive Workflow & Autoplay Reel */}
             <div className="lg:col-span-5 flex justify-center">
-              <div className="relative w-full max-w-sm sm:max-w-md">
-                {/* Visual Pipeline Card */}
-                <div className="bg-white dark:bg-[#121214] border-2 border-[#121214] dark:border-[#27272A] rounded-2xl p-5 shadow-xl space-y-4">
-                  <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-                    <span className="editorial-label text-[#FF5416]">Collaboration Pipeline</span>
-                    <span className="text-[11px] font-mono text-[#047857] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-                      Live Flow
-                    </span>
-                  </div>
-
-                  {/* Flow Diagram Mini */}
-                  <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-mono py-2 bg-[#FBFBFA] dark:bg-[#18181B] rounded-lg border border-[#E5E5DE] dark:border-[#27272A]">
-                    <div className="p-1">
-                      <div className="w-7 h-7 mx-auto rounded-md bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] flex items-center justify-center font-bold">
-                        1
-                      </div>
-                      <span className="mt-1 block font-bold text-[#121214] dark:text-white">Your App</span>
-                    </div>
-                    <div className="p-1">
-                      <div className="w-7 h-7 mx-auto rounded-md bg-[#F4F4F0] dark:bg-[#27272A] text-[#121214] dark:text-white flex items-center justify-center font-bold">
-                        2
-                      </div>
-                      <span className="mt-1 block font-bold text-[#121214] dark:text-white">Influencer</span>
-                    </div>
-                    <div className="p-1">
-                      <div className="w-7 h-7 mx-auto rounded-md bg-[#F4F4F0] dark:bg-[#27272A] text-[#121214] dark:text-white flex items-center justify-center font-bold">
-                        3
-                      </div>
-                      <span className="mt-1 block font-bold text-[#121214] dark:text-white">Audience</span>
-                    </div>
-                    <div className="p-1">
-                      <div className="w-7 h-7 mx-auto rounded-md bg-[#ECFDF5] dark:bg-[#064E3B] text-[#047857] dark:text-[#34D399] flex items-center justify-center font-bold">
-                        4
-                      </div>
-                      <span className="mt-1 block font-bold text-[#121214] dark:text-white">Reach</span>
-                    </div>
-                  </div>
-
-                  {/* Live Reel Preview */}
-                  <div className="w-full flex justify-center">
-                    <ReelCard reel={heroReel} showCreatorInfo={true} />
-                  </div>
-
-                  {/* Bottom tagline */}
-                  <div className="text-center pt-1">
-                    <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
-                      Watch authentic reels before you book an influencer.
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <HeroWorkflowVisual heroReel={heroReel} />
             </div>
           </div>
         </div>
