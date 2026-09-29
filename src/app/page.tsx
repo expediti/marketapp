@@ -2,13 +2,10 @@ import React from 'react';
 import Link from 'next/link';
 import { ArrowRight, MapPin, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { HeroWorkflowVisual } from '@/components/marketplace/HeroWorkflowVisual';
 import { InfiniteReelShowcase } from '@/components/marketplace/InfiniteReelShowcase';
 import { SHOWCASE_REELS } from '@/lib/data/reelsData';
 
 export default function HomePage() {
-  const heroReel = SHOWCASE_REELS[0];
-
   const popularLocations = [
     { city: 'Varanasi', state: 'Uttar Pradesh', niche: 'Food & Culture' },
     { city: 'Bengaluru', state: 'Karnataka', niche: 'Tech & SaaS' },
@@ -21,7 +18,7 @@ export default function HomePage() {
   return (
     <div className="space-y-16 sm:space-y-24 pb-20">
       {/* SECTION 1 — HERO */}
-      <section className="relative pt-10 sm:pt-16 lg:pt-20 border-b border-[#E5E5DE] dark:border-[#27272A] pb-16 sm:pb-24 bg-gradient-to-b from-[#FBFBFA] to-[#F4F4F0]/60 dark:from-[#09090B] dark:to-[#121214]/60 transition-colors">
+      <section className="relative pt-12 sm:pt-16 lg:pt-24 border-b border-[#E5E5DE] dark:border-[#27272A] pb-20 sm:pb-28 lg:pb-32 bg-gradient-to-b from-[#FBFBFA] to-[#F4F4F0]/60 dark:from-[#09090B] dark:to-[#121214]/60 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
             {/* Left Hero Content */}
@@ -72,10 +69,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Hero Visual: Clean Looping Reel Preview with subtle line animation */}
-            <div className="lg:col-span-5 flex justify-center">
-              <HeroWorkflowVisual heroReel={heroReel} />
-            </div>
+            {/* Right side: Intentional clean whitespace on desktop, collapsed on mobile */}
+            <div className="hidden lg:block lg:col-span-5" aria-hidden="true" />
           </div>
         </div>
       </section>
