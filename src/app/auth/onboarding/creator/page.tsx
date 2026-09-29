@@ -1,80 +1,132 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
-import { instagramService } from '@/lib/services/instagramService';
+import { reelStorageService } from '@/lib/services/reelStorageService';
+import { CreatorPackage, CreatorReel, ReelType } from '@/types/marketplace';
 import {
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
-  Sparkles,
-  ShieldCheck,
+  Upload,
   Plus,
   Trash2,
+  Play,
+  Film,
+  Sparkles,
 } from 'lucide-react';
-import { CreatorPackage } from '@/types/marketplace';
 
 export default function CreatorOnboardingPage() {
   const router = useRouter();
   const { onboardCreator } = useMarketplace();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
 
-  // Step 1: Basic Info
-  const [fullName, setFullName] = useState('Ananya Verma');
-  const [displayName, setDisplayName] = useState('Creator 099');
+  // Step 1: Basic profile
+  const [displayName, setDisplayName] = useState('Priya Sharma');
   const [city, setCity] = useState('Varanasi');
-  const [niche, setNiche] = useState('Food • Lifestyle');
   const [bio, setBio] = useState(
-    'Culinary trails and heritage food stories across Uttar Pradesh. Dedicated to slow-cooked regional recipes and artisanal kitchen craft.'
+    'Artisanal coffee and heritage lifestyle storyteller. Creating authentic vertical reels for hospitality, food, and culture brands.'
   );
 
-  // Step 2: Instagram connection
-  const [isInstagramConnected, setIsInstagramConnected] = useState(false);
-  const [isConnectingIG, setIsConnectingIG] = useState(false);
+  // Step 2: Categories / niche
+  const [niche, setNiche] = useState('Food & Hospitality');
 
-  // Step 3: Verified Metrics
-  const [followerCount, setFollowerCount] = useState(24600);
-  const [averageReach, setAverageReach] = useState(48200);
-  const [engagementRate, setEngagementRate] = useState(5.1);
+  // Step 3: Audience information
+  const [followerCount, setFollowerCount] = useState(24000);
+  const [averageReach, setAverageReach] = useState(48000);
+  const [engagementRate, setEngagementRate] = useState(4.8);
+  const [topAudienceCity, setTopAudienceCity] = useState('Varanasi');
 
-  // Step 4: Packages
+  // Step 4: Upload work (Reels)
+  const [reels, setReels] = useState<CreatorReel[]>([
+    {
+      id: 'onboard_reel_1',
+      creator_id: 'temp',
+      title: 'Cafe Pour-Over & Pastry Tasting',
+      video_url: '/reels/demo-reel-01.mp4',
+      thumbnail_url: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600&auto=format&fit=crop&q=80',
+      type: 'client_work',
+      sort_order: 1,
+      is_featured: true,
+      is_visible: true,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+  const [isUploadingReel, setIsUploadingReel] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [newReelTitle, setNewReelTitle] = useState('');
+  const [newReelType, setNewReelType] = useState<ReelType>('client_work');
+
+  // Step 5: Packages
   const [packages, setPackages] = useState<CreatorPackage[]>([
     {
-      id: 'p_custom_1',
+      id: 'p_onboard_1',
       creator_id: 'temp',
-      name: '1 Reel',
-      description: '30-45s vertical video featuring your product on-location.',
-      price: 2500,
+      name: '1 Promotional Reel',
+      description: '30-45s vertical reel filmed on-location with organic storytelling.',
+      price: 3500,
       delivery_days: 5,
       revision_count: 1,
       active: true,
     },
     {
-      id: 'p_custom_2',
+      id: 'p_onboard_2',
       creator_id: 'temp',
-      name: '3 Stories',
-      description: 'Sequential vertical frames with interactive sticker and link.',
-      price: 1200,
-      delivery_days: 3,
-      revision_count: 1,
+      name: '1 Reel + 3 Stories',
+      description: 'Full promotional package with on-site reel and interactive story tags.',
+      price: 5500,
+      delivery_days: 6,
+      revision_count: 2,
       active: true,
     },
   ]);
 
-  const handleConnectInstagram = async () => {
-    setIsConnectingIG(true);
-    const metrics = await instagramService.mockDevelopmentConnect('temp_id');
-    setTimeout(() => {
-      setIsInstagramConnected(true);
-      setFollowerCount(metrics.followerCount);
-      setAverageReach(metrics.averageReach);
-      setEngagementRate(metrics.engagementRate);
-      setIsConnectingIG(false);
-    }, 600);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadError(null);
+    setIsUploadingReel(true);
+
+    const validation = reelStorageService.validateReelFile(file);
+    if (!validation.valid) {
+      setUploadError(validation.error || 'Invalid file');
+      setIsUploadingReel(false);
+      return;
+    }
+
+    const uploadRes = await reelStorageService.uploadReel(file, 'onboarding_temp');
+    if (!uploadRes.success || !uploadRes.videoUrl) {
+      setUploadError(uploadRes.error || 'Failed to upload video');
+      setIsUploadingReel(false);
+      return;
+    }
+
+    const newReel: CreatorReel = {
+      id: `reel_${Date.now()}`,
+      creator_id: 'temp',
+      title: newReelTitle.trim() || file.name.replace(/\.[^/.]+$/, ''),
+      video_url: uploadRes.videoUrl,
+      type: newReelType,
+      sort_order: reels.length + 1,
+      is_featured: reels.length === 0,
+      is_visible: true,
+      created_at: new Date().toISOString(),
+    };
+
+    setReels([...reels, newReel]);
+    setNewReelTitle('');
+    setIsUploadingReel(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeReel = (reelId: string) => {
+    setReels(reels.filter((r) => r.id !== reelId));
   };
 
   const handleFinishOnboarding = () => {
@@ -93,87 +145,61 @@ export default function CreatorOnboardingPage() {
       average_reach: averageReach,
       engagement_rate: engagementRate,
       packages,
+      reels,
     });
     router.push('/dashboard/creator');
   };
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      {/* Header & Steps */}
+      {/* Header & Steps Indicator */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <span className="editorial-label text-[#FF5416]">Creator Onboarding</span>
-          <span className="text-xs font-mono text-[#71717A]">Step 0{step} of 05</span>
+          <span className="text-xs font-mono text-[#71717A]">Step 0{step} of 06</span>
         </div>
 
         <div className="w-full bg-[#E5E5DE] h-1.5 rounded-full overflow-hidden">
           <div
             className="bg-[#FF5416] h-full transition-all duration-300 rounded-full"
-            style={{ width: `${(step / 5) * 100}%` }}
+            style={{ width: `${(step / 6) * 100}%` }}
           />
         </div>
       </div>
 
-      {/* STEP 1: BASIC INFORMATION */}
+      {/* STEP 1: BASIC PROFILE */}
       {step === 1 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214]">Basic Information</h2>
+            <h2 className="font-mono text-2xl font-bold text-[#121214]">Basic Profile</h2>
             <p className="text-xs text-[#71717A] mt-1">
-              Your real name remains private. Businesses identify you by your anonymized creator ID.
+              Introduce yourself to businesses looking for creators in your region.
             </p>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">Full Legal Name (Private)</label>
+              <label className="text-xs font-semibold text-[#121214] block mb-1">Display Name</label>
               <input
                 type="text"
                 required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. Priya Sharma"
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-[#121214] block mb-1">Marketplace Display Name</label>
-                <input
-                  type="text"
-                  required
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-[#121214] block mb-1">Primary City</label>
-                <input
-                  type="text"
-                  required
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">Category / Niche</label>
-              <select
-                value={niche}
-                onChange={(e) => setNiche(e.target.value)}
+              <label className="text-xs font-semibold text-[#121214] block mb-1">City / Region</label>
+              <input
+                type="text"
+                required
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="e.g. Varanasi, Bengaluru, Mumbai"
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
-              >
-                <option value="Food • Lifestyle">Food • Lifestyle</option>
-                <option value="Tech • Productivity">Tech • Productivity</option>
-                <option value="Fashion • Editorial">Fashion • Editorial</option>
-                <option value="Design • Architecture">Design • Architecture</option>
-                <option value="Fitness • Calisthenics">Fitness • Calisthenics</option>
-                <option value="Travel • Coastal Living">Travel • Coastal Living</option>
-              </select>
+              />
             </div>
 
             <div>
@@ -183,6 +209,7 @@ export default function CreatorOnboardingPage() {
                 required
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell brands what kind of content you specialize in..."
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
               />
             </div>
@@ -190,127 +217,111 @@ export default function CreatorOnboardingPage() {
 
           <div className="flex justify-end pt-4 border-t border-[#ECECE6]">
             <Button variant="primary" size="md" onClick={() => setStep(2)}>
-              <span>Continue to Step 2</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Next: Categories & Niche</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 2: INSTAGRAM CONNECTION */}
+      {/* STEP 2: CATEGORIES / NICHE */}
       {step === 2 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214]">Instagram Verification</h2>
+            <h2 className="font-mono text-2xl font-bold text-[#121214]">Categories & Niche</h2>
             <p className="text-xs text-[#71717A] mt-1">
-              Connect your account to sync verified metrics. Your handle is strictly confidential and never displayed publicly.
+              Select the primary category that matches the audience and content you produce.
             </p>
           </div>
 
-          <div className="p-6 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-white border border-[#E5E5DE] flex items-center justify-center mx-auto text-[#FF5416] shadow-sm">
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-              </svg>
-            </div>
-
-            <div>
-              <h3 className="font-mono text-base font-bold text-[#121214]">
-                Meta Graph API OAuth Connection
-              </h3>
-              <p className="text-xs text-[#71717A] max-w-sm mx-auto mt-1">
-                Authorizes read-only access to follower analytics and audience demographics.
-              </p>
-            </div>
-
-            {isInstagramConnected ? (
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#ECFDF5] border border-[#A7F3D0] rounded-md text-xs font-mono text-[#047857] font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Instagram account connected ✓</span>
-              </div>
-            ) : (
-              <Button
-                variant="primary"
-                size="md"
-                isLoading={isConnectingIG}
-                onClick={handleConnectInstagram}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              'Food & Hospitality',
+              'Fitness & Wellness',
+              'Fashion & Style',
+              'Travel & Heritage',
+              'Tech & Gadgets',
+              'Art & Handcraft',
+              'Beauty & Skincare',
+              'Business & Finance',
+            ].map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setNiche(cat)}
+                className={`p-3.5 rounded-lg border text-left text-xs font-mono font-medium transition-all ${
+                  niche === cat
+                    ? 'border-[#FF5416] bg-[#FFF2EC] text-[#FF5416]'
+                    : 'border-[#E5E5DE] bg-[#FBFBFA] text-[#121214] hover:border-[#121214]/40'
+                }`}
               >
-                <span>Authorize & Sync Instagram Metrics</span>
-              </Button>
-            )}
-
-            <div className="text-[11px] text-[#A1A1AA] font-mono">
-              Development sample verification mode ready
-            </div>
+                {cat}
+              </button>
+            ))}
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
             <Button variant="outline" size="sm" onClick={() => setStep(1)}>
               Back
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              disabled={!isInstagramConnected}
-              onClick={() => setStep(3)}
-            >
-              <span>Next: Review Metrics</span>
-              <ArrowRight className="w-4 h-4" />
+            <Button variant="primary" size="md" onClick={() => setStep(3)}>
+              <span>Next: Audience Information</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 3: CREATOR STATISTICS */}
+      {/* STEP 3: AUDIENCE INFORMATION */}
       {step === 3 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-          <div className="border-b border-[#ECECE6] pb-3 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] pb-3">
+            <h2 className="font-mono text-2xl font-bold text-[#121214]">Audience Information</h2>
+            <p className="text-xs text-[#71717A] mt-1">
+              Provide your audience numbers. Brands use these as secondary indicators alongside your work.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <h2 className="font-mono text-2xl font-bold text-[#121214]">Verified Creator Metrics</h2>
-              <p className="text-xs text-[#71717A] mt-0.5">
-                Automatically pulled from connected account analytics.
-              </p>
-            </div>
-            <span className="text-xs font-mono text-[#047857] bg-[#ECFDF5] px-2.5 py-1 rounded border border-[#A7F3D0]">
-              Verified metrics ✓
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg p-4 text-center">
-              <span className="editorial-label text-[#71717A]">Followers</span>
-              <div className="font-mono text-2xl font-bold text-[#121214] mt-1">
-                {(followerCount / 1000).toFixed(1)}K
-              </div>
+              <label className="text-xs font-semibold text-[#121214] block mb-1">Total Followers</label>
+              <input
+                type="number"
+                value={followerCount}
+                onChange={(e) => setFollowerCount(Number(e.target.value))}
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md font-mono"
+              />
             </div>
 
-            <div className="bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg p-4 text-center">
-              <span className="editorial-label text-[#71717A]">30-Day Reach</span>
-              <div className="font-mono text-2xl font-bold text-[#121214] mt-1">
-                {(averageReach / 1000).toFixed(1)}K
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-[#121214] block mb-1">Average 30-Day Reach</label>
+              <input
+                type="number"
+                value={averageReach}
+                onChange={(e) => setAverageReach(Number(e.target.value))}
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md font-mono"
+              />
             </div>
 
-            <div className="bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg p-4 text-center">
-              <span className="editorial-label text-[#71717A]">Engagement</span>
-              <div className="font-mono text-2xl font-bold text-[#FF5416] mt-1">
-                {engagementRate}%
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-[#121214] block mb-1">Engagement Rate (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={engagementRate}
+                onChange={(e) => setEngagementRate(Number(e.target.value))}
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md font-mono"
+              />
             </div>
-          </div>
 
-          <div className="p-4 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg text-xs font-mono space-y-2 text-[#52525B]">
-            <div className="flex justify-between">
-              <span>Audience Location:</span>
-              <strong className="text-[#121214]">{city} (38%)</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Age Demographic:</span>
-              <strong className="text-[#121214]">18–24 (48%)</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Gender Split:</span>
-              <strong className="text-[#121214]">58% Female / 42% Male</strong>
+            <div>
+              <label className="text-xs font-semibold text-[#121214] block mb-1">Primary Audience City</label>
+              <input
+                type="text"
+                value={topAudienceCity}
+                onChange={(e) => setTopAudienceCity(e.target.value)}
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md"
+              />
             </div>
           </div>
 
@@ -319,20 +330,143 @@ export default function CreatorOnboardingPage() {
               Back
             </Button>
             <Button variant="primary" size="md" onClick={() => setStep(4)}>
-              <span>Next: Set Rate Card</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Next: Upload Work</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 4: RATE CARD */}
+      {/* STEP 4: UPLOAD WORK (REELS) */}
       {step === 4 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214]">Collaboration Rate Card</h2>
+            <h2 className="font-mono text-2xl font-bold text-[#121214]">Show businesses what you can create.</h2>
             <p className="text-xs text-[#71717A] mt-1">
-              Configure fixed packages for businesses to purchase directly without back-and-forth negotiations.
+              Upload a reel you've made for a client or a sample/demo of your work.
+            </p>
+          </div>
+
+          {/* Current Reels List */}
+          <div className="space-y-3">
+            {reels.map((reel) => (
+              <div
+                key={reel.id}
+                className="flex items-center justify-between p-3.5 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-16 bg-[#18181B] rounded overflow-hidden relative shrink-0">
+                    {reel.thumbnail_url ? (
+                      <img src={reel.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <video src={reel.video_url} className="w-full h-full object-cover" />
+                    )}
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <Film className="w-3.5 h-3.5 text-white" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-mono text-xs font-bold text-[#121214]">{reel.title}</h4>
+                    <span className="text-[10px] font-mono text-[#71717A] block mt-0.5">
+                      {reel.type === 'client_work' ? 'Previous Work' : 'Creative Demo'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => removeReel(reel.id)}
+                  className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors"
+                  aria-label="Remove reel"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Upload Reel Box */}
+          <div className="p-4 bg-[#F4F4F0]/60 border border-dashed border-[#E5E5DE] rounded-xl space-y-3">
+            <span className="editorial-label text-[#FF5416]">Add a Reel</span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="font-semibold text-[#121214] block mb-1">Reel Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Artisanal Cafe Walkthrough"
+                  value={newReelTitle}
+                  onChange={(e) => setNewReelTitle(e.target.value)}
+                  className="w-full py-2 px-3 bg-white border border-[#E5E5DE] rounded-md"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-[#121214] block mb-1">Work Type</label>
+                <select
+                  value={newReelType}
+                  onChange={(e) => setNewReelType(e.target.value as ReelType)}
+                  className="w-full py-2 px-3 bg-white border border-[#E5E5DE] rounded-md font-mono text-xs"
+                >
+                  <option value="client_work">Client Work</option>
+                  <option value="demo">Demo / Sample Reel</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="reel-file-upload"
+              />
+
+              <label
+                htmlFor="reel-file-upload"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#121214] bg-[#121214] text-white hover:bg-[#FF5416] hover:border-[#FF5416] text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{isUploadingReel ? 'Uploading Video...' : 'Upload Video (MP4 / WebM)'}</span>
+              </label>
+
+              <span className="text-[11px] text-[#71717A] font-mono">
+                Vertical 9:16 recommended (max 100MB)
+              </span>
+            </div>
+
+            {uploadError && (
+              <p className="text-xs text-red-600 font-mono">{uploadError}</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
+            <Button variant="outline" size="sm" onClick={() => setStep(3)}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              disabled={reels.length === 0}
+              onClick={() => setStep(5)}
+            >
+              <span>Next: Create Packages</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 5: CREATE PACKAGES */}
+      {step === 5 && (
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] pb-3">
+            <h2 className="font-mono text-2xl font-bold text-[#121214]">Create Packages</h2>
+            <p className="text-xs text-[#71717A] mt-1">
+              Set clear fixed packages so businesses can book without friction.
             </p>
           </div>
 
@@ -377,48 +511,64 @@ export default function CreatorOnboardingPage() {
                   </div>
                 </div>
 
-                <div className="text-xs">
-                  <label className="font-semibold text-[#121214] block mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={pkg.description}
-                    onChange={(e) => {
-                      const updated = [...packages];
-                      updated[idx].description = e.target.value;
-                      setPackages(updated);
-                    }}
-                    className="w-full py-1.5 px-2 bg-white border border-[#E5E5DE] rounded"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-[#121214] block mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={pkg.description}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].description = e.target.value;
+                        setPackages(updated);
+                      }}
+                      className="w-full py-1.5 px-2 bg-white border border-[#E5E5DE] rounded"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-[#121214] block mb-1">Delivery Time (Days)</label>
+                    <input
+                      type="number"
+                      value={pkg.delivery_days}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].delivery_days = Number(e.target.value);
+                        setPackages(updated);
+                      }}
+                      className="w-full py-1.5 px-2 bg-white border border-[#E5E5DE] rounded font-mono"
+                    />
+                  </div>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
-            <Button variant="outline" size="sm" onClick={() => setStep(3)}>
+            <Button variant="outline" size="sm" onClick={() => setStep(4)}>
               Back
             </Button>
-            <Button variant="primary" size="md" onClick={() => setStep(5)}>
-              <span>Next: Preview Profile</span>
-              <ArrowRight className="w-4 h-4" />
+            <Button variant="primary" size="md" onClick={() => setStep(6)}>
+              <span>Next: Review Profile</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 5: PROFILE PREVIEW */}
-      {step === 5 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+      {/* STEP 6: REVIEW PROFILE */}
+      {step === 6 && (
+        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] pb-3">
-            <span className="editorial-label text-[#047857]">Step 05 of 05</span>
-            <h2 className="font-mono text-2xl font-bold text-[#121214] mt-1">Profile Preview</h2>
+            <span className="editorial-label text-[#047857]">Step 06 of 06</span>
+            <h2 className="font-mono text-2xl font-bold text-[#121214] mt-1">Review Your Profile</h2>
             <p className="text-xs text-[#71717A] mt-1">
-              This is exactly how Indian brands and agencies will see your marketplace listing.
+              Your profile is ready. Here is a preview of how businesses will see your listing.
             </p>
           </div>
 
-          {/* Card preview */}
-          <div className="border-2 border-[#121214] rounded-lg p-6 bg-[#FBFBFA] space-y-4">
+          {/* Profile Card Preview */}
+          <div className="border border-[#121214] rounded-xl p-6 bg-[#FBFBFA] space-y-4">
             <div className="flex items-start justify-between">
               <div>
                 <span className="editorial-label text-[#FF5416]">{niche}</span>
@@ -427,7 +577,7 @@ export default function CreatorOnboardingPage() {
               </div>
 
               <span className="text-xs font-mono text-[#047857] bg-[#ECFDF5] px-2.5 py-1 rounded border border-[#A7F3D0]">
-                Verified metrics ✓
+                Verified profile ✓
               </span>
             </div>
 
@@ -439,23 +589,28 @@ export default function CreatorOnboardingPage() {
                 <span className="text-[10px] text-[#71717A]">Followers</span>
               </div>
               <div className="border-x border-[#E5E5DE]">
-                <strong className="block text-sm text-[#121214]">{engagementRate}%</strong>
-                <span className="text-[10px] text-[#71717A]">Engagement</span>
+                <strong className="block text-sm text-[#121214]">{reels.length}</strong>
+                <span className="text-[10px] text-[#71717A]">Reels</span>
               </div>
               <div>
                 <strong className="block text-sm text-[#121214]">₹{packages[0]?.price.toLocaleString('en-IN')}</strong>
                 <span className="text-[10px] text-[#71717A]">Starting</span>
               </div>
             </div>
+
+            <div className="text-xs font-mono text-[#71717A]">
+              <span>Featured Work: </span>
+              <strong className="text-[#121214]">{reels[0]?.title || 'Portfolio Reel'}</strong>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
-            <Button variant="outline" size="sm" onClick={() => setStep(4)}>
+            <Button variant="outline" size="sm" onClick={() => setStep(5)}>
               Back
             </Button>
             <Button variant="primary" size="lg" onClick={handleFinishOnboarding}>
-              <span>Launch Creator Studio</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Publish Profile & Enter Dashboard</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>

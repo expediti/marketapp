@@ -97,7 +97,7 @@ export default function OrderWorkspacePage() {
             </div>
             <div className="flex items-center gap-1.5 text-xs font-mono text-[#047857] justify-end mt-0.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Escrow Funded</span>
+              <span>Payment Protected</span>
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function OrderWorkspacePage() {
           { key: 'workspace', label: 'Delivery & Proofs' },
           { key: 'chat', label: 'Order Chat' },
           { key: 'brief', label: 'Campaign Brief' },
-          { key: 'events', label: 'State Machine Events' },
+          { key: 'events', label: 'Timeline Activity' },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -191,7 +191,7 @@ export default function OrderWorkspacePage() {
           <div className="border-b border-[#ECECE6] pb-3">
             <span className="editorial-label text-[#FF5416]">Audit Trail</span>
             <h3 className="font-mono text-base font-bold text-[#121214] mt-0.5">
-              Immutable Order Events (order_events)
+              Collaboration Activity History
             </h3>
           </div>
 

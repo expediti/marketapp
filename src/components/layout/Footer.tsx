@@ -15,8 +15,7 @@ export function Footer() {
               <span className="w-2 h-2 rounded-full bg-[#FF5416]" />
             </Link>
             <p className="text-sm text-[#A1A1AA] max-w-sm leading-relaxed">
-              India-focused creator ↔ business collaboration marketplace. Escrow-protected
-              deliverables, verified audience metrics, and clear packages without the back-and-forth.
+              Marketur connects businesses that need promotion with creators who can create and promote content. Discover creators, see their work, choose a package, and manage campaigns in one place.
             </p>
             <div className="pt-2 text-xs font-mono text-[#71717A]">
               CURRENCY: INR (₹) • REGION: INDIA MARKET
@@ -43,7 +42,7 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/auth/signup" className="hover:text-white transition-colors">
+                <Link href="/auth/signup?role=creator" className="hover:text-white transition-colors">
                   Join as Creator
                 </Link>
               </li>
@@ -52,21 +51,21 @@ export function Footer() {
 
           {/* Stakeholders Column */}
           <div>
-            <h4 className="editorial-label text-white mb-4">For Partners</h4>
+            <h4 className="editorial-label text-white mb-4">Solutions</h4>
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/for-businesses" className="hover:text-white transition-colors">
-                  For Local Businesses
+                  For Businesses
                 </Link>
               </li>
               <li>
                 <Link href="/for-creators" className="hover:text-white transition-colors">
-                  For Instagram Creators
+                  For Creators
                 </Link>
               </li>
               <li>
-                <Link href="/admin" className="hover:text-white transition-colors">
-                  Admin Portal
+                <Link href="/discover" className="hover:text-white transition-colors">
+                  Featured Portfolios
                 </Link>
               </li>
             </ul>
@@ -92,7 +91,7 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <span className="text-[#71717A] text-xs">Escrow Protection Guarantee</span>
+                <span className="text-[#71717A] text-xs">Protected Collaboration Guarantee</span>
               </li>
             </ul>
           </div>

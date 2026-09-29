@@ -4,7 +4,6 @@ import './globals.css';
 import { MarketplaceProvider } from '@/lib/store/marketplaceStore';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
-import { RoleBanner } from '@/components/layout/RoleBanner';
 
 const fontSans = Plus_Jakarta_Sans({
   variable: '--font-sans',
@@ -25,9 +24,9 @@ const fontMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Marketur — Creators Meet Businesses | India Creator Marketplace',
+  title: 'Marketur — Find Creators to Promote Your Business',
   description:
-    'Modern collaboration marketplace for Indian Instagram creators and businesses. Discover verified creators by city, reach, engagement and buy fixed packages with escrow security.',
+    'Discover creators, see their work, choose a collaboration package, and manage campaigns in one place.',
 };
 
 export default function RootLayout({
@@ -42,7 +41,6 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#FBFBFA] text-[#121214] font-sans">
         <MarketplaceProvider>
-          <RoleBanner />
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />

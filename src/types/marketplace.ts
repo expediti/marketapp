@@ -55,6 +55,22 @@ export interface AudienceLocation {
   percentage: number;
 }
 
+export type ReelType = 'client_work' | 'demo';
+
+export interface CreatorReel {
+  id: string;
+  creator_id: string;
+  title: string;
+  video_url: string;
+  thumbnail_url?: string;
+  type: ReelType;
+  sort_order: number;
+  is_featured: boolean;
+  is_visible: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface CreatorSample {
   id: string;
   creator_id: string;
@@ -92,6 +108,7 @@ export interface CreatorProfile {
   verification_status: VerificationStatus;
   packages?: CreatorPackage[];
   samples?: CreatorSample[];
+  reels?: CreatorReel[];
   starting_price?: number;
   local_reach_percentage?: number;
 }

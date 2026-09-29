@@ -32,7 +32,7 @@ export default function PricingPage() {
           <ul className="space-y-3 text-xs text-[#27272A] font-mono">
             <li className="flex items-center gap-2">
               <Check className="w-4 h-4 text-[#047857]" />
-              <span>Full Escrow Protection & Refund Guarantee</span>
+              <span>Protected Collaboration Workflow</span>
             </li>
             <li className="flex items-center gap-2">
               <Check className="w-4 h-4 text-[#047857]" />
@@ -63,7 +63,7 @@ export default function PricingPage() {
               5% <span className="text-sm font-normal text-[#71717A]">payout settlement</span>
             </div>
             <p className="text-xs text-[#52525B] mt-2">
-              Deducted automatically when escrow funds are transferred to your bank.
+              Deducted automatically when collaboration funds are settled to your bank.
             </p>
           </div>
 
@@ -74,7 +74,7 @@ export default function PricingPage() {
             </li>
             <li className="flex items-center gap-2">
               <Check className="w-4 h-4 text-[#047857]" />
-              <span>100% Pre-Funded Orders Guarantee</span>
+              <span>Committed Client Orders</span>
             </li>
             <li className="flex items-center gap-2">
               <Check className="w-4 h-4 text-[#047857]" />

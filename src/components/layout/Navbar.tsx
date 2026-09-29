@@ -3,34 +3,19 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
-import { Menu, X, ArrowUpRight, ShieldCheck } from 'lucide-react';
+import { Menu, X, ArrowUpRight } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
-  const { activeRole, currentUser } = useMarketplace();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
-    { label: 'Discover', href: '/discover' },
-    { label: 'How it Works', href: '/how-it-works' },
-    { label: 'For Creators', href: '/for-creators' },
+    { label: 'Creators', href: '/discover' },
+    { label: 'How It Works', href: '/how-it-works' },
     { label: 'For Businesses', href: '/for-businesses' },
-    { label: 'About', href: '/about' },
+    { label: 'For Creators', href: '/for-creators' },
   ];
-
-  const getDashboardHref = () => {
-    if (activeRole === 'creator') return '/dashboard/creator';
-    if (activeRole === 'admin') return '/admin';
-    return '/dashboard/business';
-  };
-
-  const getDashboardLabel = () => {
-    if (activeRole === 'creator') return 'Creator Studio';
-    if (activeRole === 'admin') return 'Admin Portal';
-    return 'Dashboard';
-  };
 
   return (
     <header className="sticky top-0 z-40 bg-[#FBFBFA]/95 backdrop-blur border-b border-[#E5E5DE]">
@@ -44,8 +29,8 @@ export function Navbar() {
             <span className="w-2 h-2 rounded-full bg-[#FF5416] group-hover:scale-125 transition-transform" />
           </Link>
 
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[#71717A]">
+          {/* Desktop Nav Links */}
+          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-[#71717A]">
             {navLinks.map((link) => {
               const isActive = pathname === link.href;
               return (
@@ -65,15 +50,15 @@ export function Navbar() {
 
         {/* Right CTA */}
         <div className="hidden md:flex items-center gap-3">
-          <Link href={getDashboardHref()}>
-            <Button variant="secondary" size="sm">
-              <span>{getDashboardLabel()}</span>
+          <Link href="/auth/login">
+            <Button variant="ghost" size="sm" className="text-[#52525B] hover:text-[#121214]">
+              <span>Log in</span>
             </Button>
           </Link>
 
           <Link href="/auth/signup">
             <Button variant="primary" size="sm">
-              <span>Sign Up</span>
+              <span>Get started</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </Button>
           </Link>
@@ -81,9 +66,9 @@ export function Navbar() {
 
         {/* Mobile menu trigger */}
         <div className="md:hidden flex items-center gap-2">
-          <Link href={getDashboardHref()}>
-            <Button variant="secondary" size="sm">
-              {getDashboardLabel()}
+          <Link href="/auth/signup">
+            <Button variant="primary" size="sm">
+              Get started
             </Button>
           </Link>
           <button
@@ -115,12 +100,12 @@ export function Navbar() {
           <div className="pt-3 border-t border-[#E5E5DE] flex flex-col gap-2">
             <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="outline" size="sm" className="w-full">
-                Log In
+                Log in
               </Button>
             </Link>
             <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="primary" size="sm" className="w-full">
-                Sign Up (Role Selection)
+                Get started
               </Button>
             </Link>
           </div>

@@ -12,6 +12,7 @@ import {
   AdminAction,
   Profile,
   UserRole,
+  CreatorReel,
 } from '@/types/marketplace';
 import {
   INITIAL_CREATORS,
@@ -69,6 +70,13 @@ interface MarketplaceContextType {
   adminReleasePayout: (orderId: string) => Promise<void>;
   adminRefundOrder: (orderId: string) => Promise<void>;
   adminToggleCreatorStatus: (creatorId: string, verify: boolean) => void;
+  
+  // Reel / Work Portfolio Actions
+  addCreatorReel: (creatorId: string, reel: Omit<CreatorReel, 'id' | 'created_at'>) => void;
+  deleteCreatorReel: (creatorId: string, reelId: string) => void;
+  toggleFeaturedReel: (creatorId: string, reelId: string) => void;
+  toggleReelVisibility: (creatorId: string, reelId: string) => void;
+  adminModerateReel: (creatorId: string, reelId: string, action: 'remove' | 'feature' | 'unfeature' | 'toggle_visibility') => void;
   
   // Onboarding
   onboardCreator: (profile: Partial<CreatorProfile>) => void;
@@ -626,6 +634,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         },
       ],
       samples: [],
+      reels: profileData.reels || [],
     };
 
     setCreators((prev) => [newCreator, ...prev]);
@@ -658,6 +667,103 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     setActiveRole('business');
   };
 
+  const addCreatorReel = (creatorId: string, newReel: Omit<CreatorReel, 'id' | 'created_at'>) => {
+    const reel: CreatorReel = {
+      ...newReel,
+      id: `reel_${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    setCreators((prev) =>
+      prev.map((c) => {
+        if (c.user_id === creatorId) {
+          const currentReels = c.reels || [];
+          return {
+            ...c,
+            reels: [reel, ...currentReels],
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  const deleteCreatorReel = (creatorId: string, reelId: string) => {
+    setCreators((prev) =>
+      prev.map((c) => {
+        if (c.user_id === creatorId) {
+          return {
+            ...c,
+            reels: (c.reels || []).filter((r) => r.id !== reelId),
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  const toggleFeaturedReel = (creatorId: string, reelId: string) => {
+    setCreators((prev) =>
+      prev.map((c) => {
+        if (c.user_id === creatorId) {
+          return {
+            ...c,
+            reels: (c.reels || []).map((r) =>
+              r.id === reelId ? { ...r, is_featured: !r.is_featured } : r
+            ),
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  const toggleReelVisibility = (creatorId: string, reelId: string) => {
+    setCreators((prev) =>
+      prev.map((c) => {
+        if (c.user_id === creatorId) {
+          return {
+            ...c,
+            reels: (c.reels || []).map((r) =>
+              r.id === reelId ? { ...r, is_visible: !r.is_visible } : r
+            ),
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  const adminModerateReel = (
+    creatorId: string,
+    reelId: string,
+    action: 'remove' | 'feature' | 'unfeature' | 'toggle_visibility'
+  ) => {
+    setCreators((prev) =>
+      prev.map((c) => {
+        if (c.user_id === creatorId) {
+          if (action === 'remove') {
+            return {
+              ...c,
+              reels: (c.reels || []).filter((r) => r.id !== reelId),
+            };
+          }
+          return {
+            ...c,
+            reels: (c.reels || []).map((r) => {
+              if (r.id === reelId) {
+                if (action === 'feature') return { ...r, is_featured: true };
+                if (action === 'unfeature') return { ...r, is_featured: false };
+                if (action === 'toggle_visibility') return { ...r, is_visible: !r.is_visible };
+              }
+              return r;
+            }),
+          };
+        }
+        return c;
+      })
+    );
+  };
+
   return (
     <MarketplaceContext.Provider
       value={{
@@ -683,6 +789,11 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         adminReleasePayout,
         adminRefundOrder,
         adminToggleCreatorStatus,
+        addCreatorReel,
+        deleteCreatorReel,
+        toggleFeaturedReel,
+        toggleReelVisibility,
+        adminModerateReel,
         onboardCreator,
         onboardBusiness,
       }}
