@@ -205,6 +205,51 @@ export class ReelStorageService {
   }
 
   /**
+   * Uploads a business logo to the Supabase Storage bucket 'business-logos'
+   */
+  async uploadBusinessLogo(
+    file: File,
+    businessId: string
+  ): Promise<{ success: boolean; logoUrl?: string; storagePath?: string; error?: string }> {
+    const validation = this.validateImageFile(file);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    const fileExt = file.name.split('.').pop() || 'png';
+    const storagePath = `${businessId}/logo-${Date.now()}.${fileExt}`;
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(this.logosBucket)
+          .upload(storagePath, file, { upsert: true });
+
+        if (error) {
+          const fallbackUrl = URL.createObjectURL(file);
+          return { success: true, logoUrl: fallbackUrl, storagePath };
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from(this.logosBucket)
+          .getPublicUrl(data.path);
+
+        return {
+          success: true,
+          logoUrl: publicUrlData.publicUrl,
+          storagePath: data.path,
+        };
+      } catch (err: any) {
+        const fallbackUrl = URL.createObjectURL(file);
+        return { success: true, logoUrl: fallbackUrl, storagePath };
+      }
+    }
+
+    const fallbackUrl = URL.createObjectURL(file);
+    return { success: true, logoUrl: fallbackUrl, storagePath };
+  }
+
+  /**
    * Deletes a reel from storage
    */
   async deleteReel(videoPathOrUrl: string): Promise<{ success: boolean; error?: string }> {

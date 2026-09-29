@@ -101,9 +101,9 @@ export interface CreatorPackage {
   price: number;
   currency?: string;
   description: string;
-  deliverables?: string;
+  deliverables?: string | string[];
   delivery_days: number;
-  revision_count: number;
+  revision_count?: number;
   revisions?: number;
   active: boolean;
   is_active?: boolean;
@@ -147,6 +147,7 @@ export interface BusinessProfile {
   industry: string;
   city: string;
   logo_path?: string;
+  logo_url?: string;
   website?: string;
   app_url?: string;
   description: string;
