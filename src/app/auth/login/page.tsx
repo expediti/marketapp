@@ -36,7 +36,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const errorParam = searchParams.get('error');
 
-  const { switchUser } = useMarketplace();
+  const { switchUser, refreshData } = useMarketplace();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -85,18 +85,7 @@ function LoginForm() {
 
     try {
       if (!isSupabaseConfigured) {
-        // Fallback for demo when Supabase is not connected
-        if (email.includes('creator') || email.includes('influencer')) {
-          switchUser('creator');
-          router.push('/dashboard/creator');
-        } else if (email.includes('admin')) {
-          switchUser('admin');
-          router.push('/admin');
-        } else {
-          switchUser('business');
-          router.push('/dashboard/business');
-        }
-        return;
+        throw new Error('Supabase authentication is not configured. Please check environment variables.');
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -119,6 +108,7 @@ function LoginForm() {
           return;
         }
 
+        await refreshData();
         const role = profile.role.toLowerCase();
         if (role === 'creator' || role === 'influencer') {
           switchUser('creator');

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   CreatorProfile,
   BusinessProfile,
@@ -13,14 +13,8 @@ import {
   Profile,
   UserRole,
   CreatorReel,
+  Campaign,
 } from '@/types/marketplace';
-import {
-  INITIAL_CREATORS,
-  INITIAL_BUSINESSES,
-  INITIAL_ORDERS,
-  INITIAL_MESSAGES,
-  INITIAL_ADMIN_ACTIONS,
-} from '@/lib/supabase/mockData';
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
 import { paymentService } from '@/lib/services/paymentService';
@@ -29,11 +23,13 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 interface MarketplaceContextType {
   currentUser: Profile | null;
   activeRole: UserRole;
+  isLoading: boolean;
   switchUser: (role: UserRole) => void;
   signOut: () => Promise<void>;
   creators: CreatorProfile[];
   businesses: BusinessProfile[];
   orders: Order[];
+  campaigns: Campaign[];
   messages: Record<string, ChatMessage[]>;
   adminActions: AdminAction[];
   
@@ -64,6 +60,15 @@ interface MarketplaceContextType {
     evidenceUrl?: string;
   }) => void;
   
+  // Campaign Actions
+  createCampaign: (campaign: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>) => Promise<Campaign>;
+  updateCampaign: (id: string, updates: Partial<Campaign>) => Promise<void>;
+  deleteCampaign: (id: string) => Promise<void>;
+  
+  // Profile update actions
+  updateBusinessProfile: (data: Partial<BusinessProfile>) => Promise<void>;
+  updateCreatorProfile: (data: Partial<CreatorProfile>) => Promise<void>;
+  
   // Chat Actions
   sendMessage: (orderId: string, body: string) => { warning?: string };
   
@@ -83,73 +88,244 @@ interface MarketplaceContextType {
   // Onboarding
   onboardCreator: (profile: Partial<CreatorProfile>) => void;
   onboardBusiness: (profile: Partial<BusinessProfile>) => void;
+  
+  // Refresh
+  refreshData: () => Promise<void>;
 }
 
 const MarketplaceContext = createContext<MarketplaceContextType | undefined>(undefined);
 
 export function MarketplaceProvider({ children }: { children: React.ReactNode }) {
   const [activeRole, setActiveRole] = useState<UserRole>('business');
-  const [currentUser, setCurrentUser] = useState<Profile | null>(INITIAL_BUSINESSES[0].profile!);
-  const [creators, setCreators] = useState<CreatorProfile[]>(INITIAL_CREATORS);
-  const [businesses, setBusinesses] = useState<BusinessProfile[]>(INITIAL_BUSINESSES);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(INITIAL_MESSAGES);
-  const [adminActions, setAdminActions] = useState<AdminAction[]>(INITIAL_ADMIN_ACTIONS);
+  const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [creators, setCreators] = useState<CreatorProfile[]>([]);
+  const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [adminActions, setAdminActions] = useState<AdminAction[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Sync current user when active role changes
+  // Switch role without using fake demo profiles
   const switchUser = (role: UserRole) => {
     setActiveRole(role);
-    if (role === 'business') {
-      setCurrentUser(INITIAL_BUSINESSES[0].profile!);
-    } else if (role === 'creator') {
-      setCurrentUser(INITIAL_CREATORS[0].profile!);
-    } else if (role === 'admin') {
-      setCurrentUser({
-        id: 'a0000000-0000-0000-0000-000000000001',
-        role: 'admin',
-        display_name: 'Marketur Lead Admin',
-        email: 'ops@marketur.com',
-        avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&auto=format&fit=crop&q=80',
-        city: 'Bengaluru',
-        created_at: '2026-09-01T10:00:00Z',
-      });
-    } else {
-      setCurrentUser(null);
-    }
   };
 
-  // Sync authenticated user from Supabase session
+  // Fetch all public creator profiles from Supabase
+  const fetchCreators = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      const [creatorsRes, profilesRes, packagesRes, reelsRes] = await Promise.all([
+        supabase.from('creator_profiles').select('*'),
+        supabase.from('profiles').select('*'),
+        supabase.from('creator_packages').select('*'),
+        supabase.from('creator_reels').select('*').eq('is_visible', true),
+      ]);
+
+      if (creatorsRes.error) {
+        console.error('Error fetching creator profiles:', creatorsRes.error);
+        return;
+      }
+
+      const creatorRows = creatorsRes.data || [];
+      const profileRows = profilesRes.data || [];
+      const packageRows = packagesRes.data || [];
+      const reelRows = reelsRes.data || [];
+
+      const mappedCreators: CreatorProfile[] = creatorRows.map((cp) => {
+        const prof = profileRows.find((p) => p.id === cp.user_id);
+        const pkgs = packageRows.filter((pkg) => pkg.creator_id === cp.user_id);
+        const rls = reelRows.filter((r) => r.creator_id === cp.user_id);
+
+        return {
+          id: cp.id || cp.user_id,
+          user_id: cp.user_id,
+          profile: prof
+            ? {
+                id: prof.id,
+                role: (prof.role as UserRole) || 'creator',
+                display_name: cp.display_name || prof.display_name || 'Creator',
+                email: prof.email || '',
+                avatar_url: cp.profile_image_path || prof.avatar_url,
+                city: cp.city || prof.city || 'India',
+                created_at: prof.created_at,
+                updated_at: prof.updated_at,
+              }
+            : undefined,
+          display_name: cp.display_name || prof?.display_name || 'Creator',
+          bio: cp.bio || '',
+          profile_image_path: cp.profile_image_path || undefined,
+          country: cp.country || 'India',
+          state: cp.state || '',
+          city: cp.city || prof?.city || 'India',
+          languages: cp.languages || ['Hindi', 'English'],
+          categories: cp.categories || [cp.niche],
+          niche: cp.niche || 'Technology',
+          audience_age: (cp.audience_age as { '18-24': number; '25-34': number; '35+': number }) || { '18-24': 50, '25-34': 35, '35+': 15 },
+          audience_gender: (cp.audience_gender as { female: number; male: number }) || { female: 45, male: 55 },
+          audience_locations: Array.isArray(cp.audience_locations) ? (cp.audience_locations as any[]) : [],
+          follower_count: cp.follower_count || 0,
+          average_reach: cp.average_reach || 0,
+          engagement_rate: Number(cp.engagement_rate) || 0,
+          instagram_connected: cp.instagram_connected || false,
+          instagram_verified: cp.instagram_verified || false,
+          verification_status: (cp.verification_status as any) || 'unverified',
+          packages: pkgs.map((p) => ({
+            id: p.id,
+            creator_id: p.creator_id,
+            name: p.name,
+            platform: (p.platform as any) || 'Instagram',
+            content_type: (p.content_type as any) || 'Reel',
+            price: Number(p.price) || 0,
+            currency: p.currency || 'INR',
+            description: p.description || '',
+            deliverables: p.deliverables || [],
+            delivery_days: p.delivery_days || 5,
+            revision_count: p.revision_count ?? 1,
+            active: p.active !== false,
+          })),
+          reels: rls.map((r) => ({
+            id: r.id,
+            creator_id: r.creator_id,
+            title: r.title,
+            description: r.description || undefined,
+            video_url: r.video_url,
+            thumbnail_url: r.thumbnail_url || undefined,
+            type: (r.type as 'client_work' | 'demo') || 'demo',
+            sort_order: r.sort_order || 0,
+            is_featured: r.is_featured || false,
+            is_visible: r.is_visible !== false,
+            created_at: r.created_at,
+          })),
+        };
+      });
+
+      setCreators(mappedCreators);
+    } catch (err) {
+      console.error('Failed to load creators from Supabase:', err);
+    }
+  }, []);
+
+  // Fetch real data for current authenticated user
+  const fetchUserData = useCallback(async (userId: string, role: UserRole | null) => {
+    if (!isSupabaseConfigured) return;
+    try {
+      const normalizedRole = role ? role.toLowerCase() : null;
+
+      if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
+        const [bizRes, campaignsRes, ordersRes] = await Promise.all([
+          supabase.from('business_profiles').select('*').eq('user_id', userId).maybeSingle(),
+          supabase.from('campaigns').select('*').eq('business_id', userId).order('created_at', { ascending: false }),
+          supabase.from('orders').select('*, brief:order_briefs(*)').eq('business_id', userId).order('created_at', { ascending: false }),
+        ]);
+
+        if (bizRes.data) {
+          const bp = bizRes.data;
+          setBusinesses([{
+            user_id: bp.user_id,
+            business_name: bp.business_name,
+            industry: bp.industry || 'Technology & SaaS',
+            city: bp.city || 'India',
+            state: bp.state || undefined,
+            country: bp.country || 'India',
+            logo_path: bp.logo_path || undefined,
+            website: bp.website || undefined,
+            app_url: bp.app_url || undefined,
+            description: bp.description || '',
+            business_type: bp.business_type as any,
+            category: bp.category || undefined,
+            target_audience: bp.target_audience || undefined,
+            target_locations: bp.target_locations || undefined,
+            budget_range: bp.budget_range || undefined,
+            verification_status: bp.verification_status as any,
+          }]);
+        } else {
+          setBusinesses([]);
+        }
+
+        if (campaignsRes.data) {
+          setCampaigns(campaignsRes.data as Campaign[]);
+        } else {
+          setCampaigns([]);
+        }
+
+        if (ordersRes.data) {
+          setOrders(ordersRes.data as unknown as Order[]);
+        } else {
+          setOrders([]);
+        }
+      } else if (normalizedRole === 'creator' || normalizedRole === 'influencer') {
+        const [creatorRes, ordersRes] = await Promise.all([
+          supabase.from('creator_profiles').select('*').eq('user_id', userId).maybeSingle(),
+          supabase.from('orders').select('*, brief:order_briefs(*)').eq('creator_id', userId).order('created_at', { ascending: false }),
+        ]);
+
+        if (creatorRes.data) {
+          // creator profile handled in creator tab
+        }
+
+        if (ordersRes.data) {
+          setOrders(ordersRes.data as unknown as Order[]);
+        } else {
+          setOrders([]);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching user data from Supabase:', err);
+    }
+  }, []);
+
+  // Main initial loader
+  const refreshData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await fetchCreators();
+
+      if (isSupabaseConfigured) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profile) {
+            const r = (profile.role as UserRole) || 'business';
+            setActiveRole(r);
+            setCurrentUser({
+              id: profile.id,
+              role: (profile.role as UserRole) || null,
+              display_name: profile.display_name || user.user_metadata?.full_name || 'User',
+              email: profile.email || user.email || '',
+              avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
+              city: profile.city || 'India',
+              created_at: profile.created_at,
+              updated_at: profile.updated_at,
+            });
+
+            await fetchUserData(profile.id, r);
+          } else {
+            setCurrentUser(null);
+          }
+        } else {
+          setCurrentUser(null);
+          setBusinesses([]);
+          setCampaigns([]);
+          setOrders([]);
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchCreators, fetchUserData]);
+
+  // Sync authenticated user on mount and subscribe to auth changes
   useEffect(() => {
+    refreshData();
+
     if (!isSupabaseConfigured) return;
 
-    // 1. Initial user session check
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle()
-          .then(({ data: profile }) => {
-            if (profile) {
-              const r = (profile.role || 'business') as UserRole;
-              setActiveRole(r);
-              setCurrentUser({
-                id: profile.id,
-                role: (profile.role as UserRole) || null,
-                display_name: profile.display_name,
-                email: profile.email,
-                avatar_url: profile.avatar_url || undefined,
-                city: profile.city || 'India',
-                created_at: profile.created_at,
-                updated_at: profile.updated_at,
-              });
-            }
-          });
-      }
-    });
-
-    // 2. Auth state change listener
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -161,38 +337,259 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           .maybeSingle();
 
         if (profile) {
-          const r = (profile.role || 'business') as UserRole;
+          const r = (profile.role as UserRole) || 'business';
           setActiveRole(r);
           setCurrentUser({
             id: profile.id,
             role: (profile.role as UserRole) || null,
-            display_name: profile.display_name,
-            email: profile.email,
-            avatar_url: profile.avatar_url || undefined,
+            display_name: profile.display_name || session.user.user_metadata?.full_name || 'User',
+            email: profile.email || session.user.email || '',
+            avatar_url: profile.avatar_url || session.user.user_metadata?.avatar_url || null,
             city: profile.city || 'India',
             created_at: profile.created_at,
             updated_at: profile.updated_at,
           });
+
+          await fetchUserData(profile.id, r);
         }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
+        setBusinesses([]);
+        setCampaigns([]);
+        setOrders([]);
+        setMessages({});
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [refreshData, fetchUserData]);
 
   const signOut = async () => {
     if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Error signing out of Supabase:', err);
+      }
     }
     setCurrentUser(null);
+    setBusinesses([]);
+    setCampaigns([]);
+    setOrders([]);
+    setMessages({});
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('marketur_user');
+        localStorage.removeItem('marketur_active_role');
+        sessionStorage.clear();
+        document.cookie = 'marketur_role_intent=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      } catch {}
+    }
   };
 
   const getOrder = (id: string) => orders.find((o) => o.id === id || o.order_number === id);
   const getCreator = (id: string) => creators.find((c) => c.user_id === id);
+
+  const createCampaign = async (
+    campaignData: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<Campaign> => {
+    if (!currentUser) throw new Error('Must be logged in to create a campaign');
+
+    const newRow = {
+      business_id: currentUser.id,
+      campaign_name: campaignData.campaign_name,
+      product_name: campaignData.product_name,
+      product_type: campaignData.product_type,
+      app_url: campaignData.app_url || null,
+      website_url: campaignData.website_url || null,
+      category: campaignData.category || null,
+      description: campaignData.description || null,
+      campaign_brief: campaignData.campaign_brief || null,
+      target_locations: campaignData.target_locations || [],
+      budget: campaignData.budget || 0,
+      status: campaignData.status || 'active',
+    };
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert(newRow)
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        throw new Error(error?.message || 'Failed to save campaign in database');
+      }
+
+      const created = data as Campaign;
+      setCampaigns((prev) => [created, ...prev]);
+      return created;
+    }
+
+    const localCampaign: Campaign = {
+      ...newRow,
+      id: `camp_${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    setCampaigns((prev) => [localCampaign, ...prev]);
+    return localCampaign;
+  };
+
+  const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
+    if (!currentUser) throw new Error('Must be logged in to update campaign');
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('business_id', currentUser.id);
+
+      if (error) throw new Error(error.message);
+    }
+
+    setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+  };
+
+  const deleteCampaign = async (id: string) => {
+    if (!currentUser) throw new Error('Must be logged in to delete campaign');
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('campaigns')
+        .delete()
+        .eq('id', id)
+        .eq('business_id', currentUser.id);
+
+      if (error) throw new Error(error.message);
+    }
+
+    setCampaigns((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const updateBusinessProfile = async (data: Partial<BusinessProfile>) => {
+    if (!currentUser) throw new Error('Must be logged in to update profile');
+
+    const updates: Record<string, any> = {};
+    if (data.business_name !== undefined) updates.business_name = data.business_name;
+    if (data.industry !== undefined) updates.industry = data.industry;
+    if (data.city !== undefined) updates.city = data.city;
+    if (data.state !== undefined) updates.state = data.state;
+    if (data.country !== undefined) updates.country = data.country;
+    if (data.website !== undefined) updates.website = data.website;
+    if (data.app_url !== undefined) updates.app_url = data.app_url;
+    if (data.description !== undefined) updates.description = data.description;
+    if (data.logo_path !== undefined) updates.logo_path = data.logo_path;
+    if (data.business_type !== undefined) updates.business_type = data.business_type;
+    if (data.category !== undefined) updates.category = data.category;
+    if (data.target_audience !== undefined) updates.target_audience = data.target_audience;
+    if (data.target_locations !== undefined) updates.target_locations = data.target_locations;
+    if (data.budget_range !== undefined) updates.budget_range = data.budget_range;
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('business_profiles')
+        .upsert(
+          {
+            user_id: currentUser.id,
+            business_name: data.business_name || 'My Business',
+            ...updates,
+          },
+          { onConflict: 'user_id' }
+        );
+
+      if (error) throw new Error(`Failed to update business profile: ${error.message}`);
+
+      if (data.business_name || data.city) {
+        await supabase
+          .from('profiles')
+          .update({
+            display_name: data.business_name || currentUser.display_name,
+            city: data.city || currentUser.city,
+          })
+          .eq('id', currentUser.id);
+      }
+    }
+
+    setBusinesses((prev) => {
+      const existing = prev.find((b) => b.user_id === currentUser.id);
+      if (existing) {
+        return prev.map((b) => (b.user_id === currentUser.id ? { ...b, ...data } : b));
+      }
+      return [
+        {
+          user_id: currentUser.id,
+          business_name: data.business_name || currentUser.display_name || 'My Business',
+          industry: data.industry || 'Technology & SaaS',
+          city: data.city || currentUser.city || 'India',
+          description: data.description || '',
+          verification_status: 'unverified',
+          ...data,
+        },
+        ...prev,
+      ];
+    });
+
+    if (data.business_name || data.city) {
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              display_name: data.business_name || prev.display_name,
+              city: data.city || prev.city,
+            }
+          : prev
+      );
+    }
+  };
+
+  const updateCreatorProfile = async (data: Partial<CreatorProfile>) => {
+    if (!currentUser) throw new Error('Must be logged in to update creator profile');
+
+    const updates: Record<string, any> = {};
+    if (data.display_name !== undefined) updates.display_name = data.display_name;
+    if (data.bio !== undefined) updates.bio = data.bio;
+    if (data.niche !== undefined) updates.niche = data.niche;
+    if (data.city !== undefined) updates.city = data.city;
+    if (data.state !== undefined) updates.state = data.state;
+    if (data.country !== undefined) updates.country = data.country;
+    if (data.follower_count !== undefined) updates.follower_count = data.follower_count;
+    if (data.average_reach !== undefined) updates.average_reach = data.average_reach;
+    if (data.engagement_rate !== undefined) updates.engagement_rate = data.engagement_rate;
+    if (data.profile_image_path !== undefined) updates.profile_image_path = data.profile_image_path;
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('creator_profiles')
+        .upsert(
+          {
+            user_id: currentUser.id,
+            niche: data.niche || 'Technology',
+            ...updates,
+          },
+          { onConflict: 'user_id' }
+        );
+
+      if (error) throw new Error(`Failed to update creator profile: ${error.message}`);
+
+      if (data.display_name || data.city) {
+        await supabase
+          .from('profiles')
+          .update({
+            display_name: data.display_name || currentUser.display_name,
+            city: data.city || currentUser.city,
+          })
+          .eq('id', currentUser.id);
+      }
+    }
+
+    setCreators((prev) =>
+      prev.map((c) => (c.user_id === currentUser.id ? { ...c, ...data } : c))
+    );
+  };
 
   const createOrder = async (params: {
     creatorId: string;
@@ -206,21 +603,31 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       additionalNotes?: string;
     };
   }): Promise<Order> => {
+    if (!currentUser) throw new Error('Must be logged in to place an order');
+
     const creator = creators.find((c) => c.user_id === params.creatorId);
     if (!creator) throw new Error('Creator not found');
     const pkg = creator.packages?.find((p) => p.id === params.packageId);
     if (!pkg) throw new Error('Package not found');
 
-    const business = businesses[0];
+    const business = businesses.find((b) => b.user_id === currentUser.id) || {
+      user_id: currentUser.id,
+      business_name: currentUser.display_name,
+      industry: 'Technology & SaaS',
+      city: currentUser.city || 'India',
+      description: '',
+      verification_status: 'unverified' as const,
+    };
+
     const platformFee = paymentService.calculatePlatformFee(pkg.price);
     const totalAmount = pkg.price + platformFee;
-    const orderId = `o${Date.now()}`;
+    const orderId = `o_${Date.now()}`;
     const orderNum = `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
 
     const newOrder: Order = {
       id: orderId,
       order_number: orderNum,
-      business_id: business.user_id,
+      business_id: currentUser.id,
       business,
       creator_id: creator.user_id,
       creator,
@@ -252,7 +659,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           order_id: orderId,
           from_status: 'DRAFT',
           to_status: 'FUNDED',
-          actor_id: business.user_id,
+          actor_id: currentUser.id,
           reason: 'Collaboration package purchased and escrow funded',
           created_at: new Date().toISOString(),
         },
@@ -261,14 +668,13 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
     setOrders((prev) => [newOrder, ...prev]);
 
-    // Initialize conversation thread
     setMessages((prev) => ({
       ...prev,
       [orderId]: [
         {
           id: `msg_init_${orderId}`,
           conversation_id: orderId,
-          sender_id: business.user_id,
+          sender_id: currentUser.id,
           sender_name: business.business_name,
           sender_role: 'business',
           body: `Order initiated: ${pkg.name}. Looking forward to collaborating with you!`,
@@ -395,7 +801,6 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
 
-    // Trigger payout service
     await payoutService.initiatePayout({
       orderId,
       creatorId: order.creator_id,
@@ -485,7 +890,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       id: `msg_${Date.now()}`,
       conversation_id: orderId,
       sender_id: currentUser?.id || 'guest',
-      sender_name: currentUser?.display_name || 'Guest User',
+      sender_name: currentUser?.display_name || 'User',
       sender_role: activeRole,
       body,
       moderation_status: moderation.status,
@@ -500,7 +905,6 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     return { warning: moderation.warningMessage };
   };
 
-  // Admin Actions
   const resolveDispute = async (orderId: string, resolution: DisputeResolution, notes?: string) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
@@ -564,7 +968,6 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       })
     );
 
-    // Record admin action
     setAdminActions((prev) => [
       {
         id: `act_${Date.now()}`,
@@ -672,76 +1075,60 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   };
 
   const onboardCreator = (profileData: Partial<CreatorProfile>) => {
-    const newCreatorId = `c${Date.now()}`;
+    if (!currentUser) return;
     const newCreator: CreatorProfile = {
-      user_id: newCreatorId,
-      profile: {
-        id: newCreatorId,
-        role: 'creator',
-        display_name: profileData.profile?.display_name || 'Creator New',
-        email: profileData.profile?.email || 'newcreator@marketur.local',
-        city: profileData.city || profileData.profile?.city || 'Varanasi',
-        created_at: new Date().toISOString(),
-      },
+      id: currentUser.id,
+      user_id: currentUser.id,
+      profile: currentUser,
+      display_name: profileData.display_name || currentUser.display_name || 'Creator',
       country: profileData.country || 'India',
-      state: profileData.state || 'Uttar Pradesh',
-      city: profileData.city || profileData.profile?.city || 'Varanasi',
-      niche: profileData.niche || 'Lifestyle',
-      bio: profileData.bio || 'Verified content creator.',
-      instagram_connected: true,
-      instagram_verified: true,
-      follower_count: profileData.follower_count || 22000,
-      average_reach: profileData.average_reach || 45000,
-      engagement_rate: profileData.engagement_rate || 4.5,
-      starting_price: profileData.packages?.[0]?.price || 3000,
-      local_reach_percentage: 38,
-      audience_gender: profileData.audience_gender || { female: 55, male: 45 },
-      audience_age: profileData.audience_age || { '18-24': 45, '25-34': 40, '35+': 15 },
-      audience_locations: profileData.audience_locations || [{ city: 'Delhi NCR', percentage: 40 }],
-      verification_status: 'verified',
-      packages: profileData.packages || [
-        {
-          id: `pkg_${Date.now()}`,
-          creator_id: newCreatorId,
-          name: '1 Reel',
-          description: '30-45s vertical video featuring your product.',
-          price: 3000,
-          delivery_days: 5,
-          revision_count: 1,
-          active: true,
-        },
-      ],
-      samples: [],
+      state: profileData.state,
+      city: profileData.city || currentUser.city || 'India',
+      niche: profileData.niche || 'Technology',
+      categories: profileData.categories || ['Technology'],
+      languages: profileData.languages || ['Hindi', 'English'],
+      bio: profileData.bio || '',
+      follower_count: profileData.follower_count || 0,
+      average_reach: profileData.average_reach || 0,
+      engagement_rate: profileData.engagement_rate || 0,
+      instagram_connected: profileData.instagram_connected || false,
+      instagram_verified: profileData.instagram_verified || false,
+      audience_age: profileData.audience_age || { '18-24': 50, '25-34': 35, '35+': 15 },
+      audience_gender: profileData.audience_gender || { female: 45, male: 55 },
+      audience_locations: profileData.audience_locations || [],
+      verification_status: 'unverified',
+      packages: profileData.packages || [],
+      samples: profileData.samples || [],
       reels: profileData.reels || [],
     };
 
-    setCreators((prev) => [newCreator, ...prev]);
-    setCurrentUser(newCreator.profile!);
+    setCreators((prev) => {
+      const filtered = prev.filter((c) => c.user_id !== currentUser.id);
+      return [newCreator, ...filtered];
+    });
     setActiveRole('creator');
   };
 
   const onboardBusiness = (businessData: Partial<BusinessProfile>) => {
-    const newBusId = `b${Date.now()}`;
+    if (!currentUser) return;
     const newBus: BusinessProfile = {
-      user_id: newBusId,
-      profile: {
-        id: newBusId,
-        role: 'business',
-        display_name: businessData.business_name || 'Brand Partner',
-        email: businessData.profile?.email || 'brand@marketur.local',
-        city: businessData.city || 'Mumbai',
-        created_at: new Date().toISOString(),
-      },
-      business_name: businessData.business_name || 'Brand Partner',
-      industry: businessData.industry || 'Direct-to-Consumer',
-      city: businessData.city || 'Mumbai',
-      website: businessData.website || 'https://brand.local',
-      description: businessData.description || 'Modern consumer brand.',
-      verification_status: 'verified',
+      user_id: currentUser.id,
+      profile: currentUser,
+      business_name: businessData.business_name || currentUser.display_name || 'Brand Partner',
+      industry: businessData.industry || 'Technology & SaaS',
+      city: businessData.city || currentUser.city || 'India',
+      state: businessData.state,
+      country: businessData.country || 'India',
+      website: businessData.website || '',
+      app_url: businessData.app_url,
+      description: businessData.description || '',
+      verification_status: 'unverified',
     };
 
-    setBusinesses((prev) => [newBus, ...prev]);
-    setCurrentUser(newBus.profile!);
+    setBusinesses((prev) => {
+      const filtered = prev.filter((b) => b.user_id !== currentUser.id);
+      return [newBus, ...filtered];
+    });
     setActiveRole('business');
   };
 
@@ -847,11 +1234,13 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       value={{
         currentUser,
         activeRole,
+        isLoading,
         switchUser,
         signOut,
         creators,
         businesses,
         orders,
+        campaigns,
         messages,
         adminActions,
         getOrder,
@@ -863,6 +1252,11 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         submitDelivery,
         approveDelivery,
         disputeDelivery,
+        createCampaign,
+        updateCampaign,
+        deleteCampaign,
+        updateBusinessProfile,
+        updateCreatorProfile,
         sendMessage,
         resolveDispute,
         adminReleasePayout,
@@ -875,6 +1269,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         adminModerateReel,
         onboardCreator,
         onboardBusiness,
+        refreshData,
       }}
     >
       {children}

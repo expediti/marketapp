@@ -1,12 +1,35 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+function getOrigin(request: Request): string {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  const host = request.headers.get('host');
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+    return `https://${host}`;
+  }
+
+  return requestUrl.origin;
+}
+
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const origin = getOrigin(request);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
-  const requestedRole = searchParams.get('role'); // optional: creator | business
+
+  // Check role from query param or fallback cookie intent
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookieRoleMatch = cookieHeader.match(/marketur_role_intent=(creator|business)/);
+  const cookieRole = cookieRoleMatch ? cookieRoleMatch[1] : null;
+  const requestedRole = searchParams.get('role') || cookieRole;
 
   // 1. Handle OAuth provider errors or cancellations
   if (error) {

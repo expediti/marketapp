@@ -33,25 +33,15 @@ export default function PackagePurchasePage() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Form Fields
-  const [productName, setProductName] = useState('Specialty Monsoon Coffee Roasts');
-  const [objective, setObjective] = useState(
-    'Highlight artisanal bean quality, slow-pour aroma, and fresh morning ritual.'
-  );
-  const [requirements, setRequirements] = useState(
-    'Natural morning light sequence at a heritage aesthetic cafe, showing coffee grounds and brewing pour.'
-  );
-  const [dos, setDos] = useState(
-    'Mention Araku Valley origin notes. Tag brand handle in first frame. Speak clearly about taste profile.'
-  );
-  const [donts, setDonts] = useState(
-    'Do not use artificial robotic filters. Avoid negative comparisons with instant coffee.'
-  );
+  const [productName, setProductName] = useState('');
+  const [objective, setObjective] = useState('');
+  const [requirements, setRequirements] = useState('');
+  const [dos, setDos] = useState('');
+  const [donts, setDonts] = useState('');
   const [deadline, setDeadline] = useState(
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   );
-  const [additionalNotes, setAdditionalNotes] = useState(
-    'Product sample package dispatched via Express Courier.'
-  );
+  const [additionalNotes, setAdditionalNotes] = useState('');
 
   if (!creator || !selectedPkg) {
     return (
@@ -216,6 +206,7 @@ export default function PackagePurchasePage() {
               <input
                 type="text"
                 required
+                placeholder="e.g. FocusTimer Mobile App"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
@@ -229,6 +220,7 @@ export default function PackagePurchasePage() {
               <input
                 type="text"
                 required
+                placeholder="e.g. Drive app installs from tech-savvy Indian professionals"
                 value={objective}
                 onChange={(e) => setObjective(e.target.value)}
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
@@ -242,6 +234,7 @@ export default function PackagePurchasePage() {
               <textarea
                 rows={3}
                 required
+                placeholder="e.g. 30-45s vertical reel demonstrating core features, smooth UI, and quick download steps"
                 value={requirements}
                 onChange={(e) => setRequirements(e.target.value)}
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
@@ -255,6 +248,7 @@ export default function PackagePurchasePage() {
                 </label>
                 <textarea
                   rows={2}
+                  placeholder="e.g. Tag official handle, show live app screen, speak clearly"
                   value={dos}
                   onChange={(e) => setDos(e.target.value)}
                   className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#BBF7D0] rounded-md focus:outline-none focus:border-[#15803D]"
@@ -267,6 +261,7 @@ export default function PackagePurchasePage() {
                 </label>
                 <textarea
                   rows={2}
+                  placeholder="e.g. Don't use robotic voiceovers, don't mention competitors"
                   value={donts}
                   onChange={(e) => setDonts(e.target.value)}
                   className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#FECACA] rounded-md focus:outline-none focus:border-[#B91C1C]"

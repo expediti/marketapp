@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
@@ -49,6 +50,8 @@ interface DbCreatorState {
   display_name?: string | null;
   profile_image_path?: string | null;
   city?: string | null;
+  state?: string | null;
+  country?: string | null;
   created_at?: string | null;
   niche?: string | null;
   bio?: string | null;
@@ -63,105 +66,114 @@ function generatePackageId(): string {
 }
 
 export default function CreatorDashboardPage() {
+  const router = useRouter();
   const {
     orders,
     acceptOrder,
     declineOrder,
     currentUser,
-    creators,
-    addCreatorReel,
-    deleteCreatorReel,
-    toggleFeaturedReel,
-    toggleReelVisibility,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [dbCreator, setDbCreator] = useState<DbCreatorState | null>(null);
-  const [createdPackages, setCreatedPackages] = useState<CreatorPackage[]>([]);
+  const [packages, setPackages] = useState<CreatorPackage[]>([]);
+  const [reels, setReels] = useState<CreatorReel[]>([]);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+  // Reels management
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [newReelTitle, setNewReelTitle] = useState('');
+  const [newReelType, setNewReelType] = useState<ReelType>('client_work');
+
+  // Package creation modal/state
+  const [isAddingPkg, setIsAddingPkg] = useState(false);
+  const [newPkgName, setNewPkgName] = useState('');
+  const [newPkgPrice, setNewPkgPrice] = useState(3000);
+  const [newPkgDelivery, setNewPkgDelivery] = useState(4);
+  const [newPkgDesc, setNewPkgDesc] = useState('');
+  const [isSavingPkg, setIsSavingPkg] = useState(false);
 
   useEffect(() => {
     async function loadDbCreator() {
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured) {
+        setIsLoadingAuth(false);
+        return;
+      }
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user) return;
 
-        const { data: cp } = await supabase
-          .from('creator_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        if (!user) {
+          router.push('/auth/login');
+          return;
+        }
 
-        if (cp) {
-          const { data: pkgs } = await supabase
-            .from('creator_packages')
-            .select('*')
-            .eq('creator_id', user.id);
+        const [cpRes, pkgsRes, reelsRes] = await Promise.all([
+          supabase.from('creator_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('creator_packages').select('*').eq('creator_id', user.id),
+          supabase.from('creator_reels').select('*').eq('creator_id', user.id).order('sort_order', { ascending: true }),
+        ]);
 
+        if (cpRes.data) {
           setDbCreator({
-            ...cp,
-            creator_packages: (pkgs as unknown as CreatorPackage[]) || [],
+            ...cpRes.data,
+            creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
           });
+          setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
+        }
+
+        if (reelsRes.data) {
+          setReels(reelsRes.data as unknown as CreatorReel[]);
         }
       } catch (err) {
         console.error('Error loading creator profile:', err);
+      } finally {
+        setIsLoadingAuth(false);
       }
     }
     loadDbCreator();
-  }, []);
+  }, [router]);
 
-  const fallbackCreator = creators.find((c) => c.user_id === currentUser?.id) || creators[0] || {
-    id: 'c1',
-    user_id: 'creator_01',
-    profile: {
-      id: 'p1',
-      role: 'influencer',
-      display_name: 'Rahul Sharma',
-      city: 'Delhi NCR',
-      created_at: new Date().toISOString(),
-    },
-    niche: 'Technology',
-    bio: 'Tech, AI and SaaS app reviewer. Creating high-converting vertical demo reels for mobile apps.',
-    follower_count: 125000,
-    average_reach: 48000,
-    engagement_rate: 4.8,
-    packages: [],
-    reels: [],
-  };
+  if (isLoadingAuth) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p>Loading your influencer studio...</p>
+      </div>
+    );
+  }
 
-  const creatorProfile = dbCreator
-    ? {
-        ...fallbackCreator,
-        user_id: dbCreator.user_id,
-        profile: {
-          id: dbCreator.user_id,
-          role: 'creator',
-          display_name: dbCreator.display_name || fallbackCreator.profile?.display_name || 'Creator',
-          email: currentUser?.email || 'creator@marketmyapp.in',
-          avatar_url: dbCreator.profile_image_path || fallbackCreator.profile?.avatar_url,
-          city: dbCreator.city || fallbackCreator.profile?.city || 'India',
-          created_at: dbCreator.created_at || new Date().toISOString(),
-        },
-        niche: dbCreator.niche || fallbackCreator.niche,
-        bio: dbCreator.bio || fallbackCreator.bio,
-        follower_count: dbCreator.follower_count ?? fallbackCreator.follower_count,
-        average_reach: dbCreator.average_reach ?? fallbackCreator.average_reach,
-        engagement_rate: Number(dbCreator.engagement_rate) || fallbackCreator.engagement_rate,
-        packages: [
-          ...(dbCreator.creator_packages?.length ? dbCreator.creator_packages : fallbackCreator.packages || []),
-          ...createdPackages,
-        ],
-      }
-    : {
-        ...fallbackCreator,
-        packages: [...(fallbackCreator.packages || []), ...createdPackages],
-      };
+  // If creator profile doesn't exist in Supabase, show onboarding CTA
+  if (!dbCreator) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-16 h-16 rounded-2xl bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] flex items-center justify-center mx-auto border border-[#FFD2C1] dark:border-[#4D1F0E]">
+          <Camera className="w-8 h-8" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
+            Complete Your Influencer Profile
+          </h2>
+          <p className="text-sm text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
+            You haven't set up your creator profile yet. Complete onboarding to showcase your packages, upload portfolio reels, and start earning from app campaigns.
+          </p>
+        </div>
+        <Link href="/auth/onboarding/creator">
+          <Button variant="primary" size="lg">
+            Complete Influencer Onboarding
+          </Button>
+        </Link>
+      </div>
+    );
+  }
 
-  const creatorId = creatorProfile.user_id;
+  const creatorId = dbCreator.user_id;
 
-  // Orders for this creator
+  // Real orders for this creator
   const creatorOrders = orders.filter(
     (o) => o.creator_id === creatorId || o.creator?.user_id === creatorId
   );
@@ -177,24 +189,14 @@ export default function CreatorDashboardPage() {
     (o) => o.order_status === 'COMPLETED' || o.order_status === 'APPROVED'
   );
 
-  const totalEarnings = 14800;
-  const pendingEarnings = 3500;
+  // Real financial calculations from actual orders
+  const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
+  const pendingEarnings = activeOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
 
-  // Reels management
-  const reels = creatorProfile.reels || [];
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [newReelTitle, setNewReelTitle] = useState('');
-  const [newReelType, setNewReelType] = useState<ReelType>('client_work');
-
-  // Package creation modal/state
-  const [isAddingPkg, setIsAddingPkg] = useState(false);
-  const [newPkgName, setNewPkgName] = useState('');
-  const [newPkgPrice, setNewPkgPrice] = useState(3000);
-  const [newPkgDelivery, setNewPkgDelivery] = useState(4);
-  const [newPkgDesc, setNewPkgDesc] = useState('');
+  const creatorDisplayName = dbCreator.display_name || currentUser?.display_name || 'Creator';
+  const creatorNiche = dbCreator.niche || 'Technology';
+  const creatorCity = dbCreator.city || currentUser?.city || 'India';
+  const followerCount = dbCreator.follower_count || 0;
 
   const handleUploadReel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -222,7 +224,7 @@ export default function CreatorDashboardPage() {
       return;
     }
 
-    addCreatorReel(creatorId, {
+    const reelPayload = {
       creator_id: creatorId,
       title: newReelTitle.trim() || file.name.replace(/\.[^/.]+$/, ''),
       video_url: res.videoUrl,
@@ -233,7 +235,37 @@ export default function CreatorDashboardPage() {
       sort_order: reels.length + 1,
       is_featured: reels.length === 0,
       is_visible: true,
-    });
+    };
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('creator_reels')
+        .insert(reelPayload)
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        setReels((prev) => [data as unknown as CreatorReel, ...prev]);
+      } else {
+        setReels((prev) => [
+          {
+            ...reelPayload,
+            id: `reel_${Date.now()}`,
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+      }
+    } else {
+      setReels((prev) => [
+        {
+          ...reelPayload,
+          id: `reel_${Date.now()}`,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    }
 
     setNewReelTitle('');
     setIsUploading(false);
@@ -241,28 +273,99 @@ export default function CreatorDashboardPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleCreatePackage = (e: React.FormEvent) => {
+  const handleDeleteReel = async (reelId: string) => {
+    if (isSupabaseConfigured) {
+      await supabase.from('creator_reels').delete().eq('id', reelId).eq('creator_id', creatorId);
+    }
+    setReels((prev) => prev.filter((r) => r.id !== reelId));
+  };
+
+  const handleToggleFeatured = async (reelId: string) => {
+    const current = reels.find((r) => r.id === reelId);
+    if (!current) return;
+    const nextFeatured = !current.is_featured;
+
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('creator_reels')
+        .update({ is_featured: nextFeatured })
+        .eq('id', reelId)
+        .eq('creator_id', creatorId);
+    }
+    setReels((prev) =>
+      prev.map((r) => (r.id === reelId ? { ...r, is_featured: nextFeatured } : r))
+    );
+  };
+
+  const handleToggleVisibility = async (reelId: string) => {
+    const current = reels.find((r) => r.id === reelId);
+    if (!current) return;
+    const nextVisible = !current.is_visible;
+
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('creator_reels')
+        .update({ is_visible: nextVisible })
+        .eq('id', reelId)
+        .eq('creator_id', creatorId);
+    }
+    setReels((prev) =>
+      prev.map((r) => (r.id === reelId ? { ...r, is_visible: nextVisible } : r))
+    );
+  };
+
+  const handleCreatePackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPkgName.trim()) return;
 
-    const newPkg: CreatorPackage = {
-      id: generatePackageId(),
+    setIsSavingPkg(true);
+    const newPkgPayload = {
       creator_id: creatorId,
-      name: newPkgName,
+      name: newPkgName.trim(),
       platform: 'Instagram',
       content_type: 'Reel',
       price: newPkgPrice,
       delivery_days: newPkgDelivery,
-      revisions: 1,
-      description: newPkgDesc || 'Promotional app video package.',
+      revision_count: 1,
+      description: newPkgDesc.trim() || 'Promotional app video package.',
       deliverables: ['1 Vertical Reel', 'Link in bio'],
       active: true,
     };
 
-    setCreatedPackages((prev) => [...prev, newPkg]);
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('creator_packages')
+        .insert(newPkgPayload)
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        setPackages((prev) => [...prev, data as unknown as CreatorPackage]);
+      } else {
+        setPackages((prev) => [
+          ...prev,
+          {
+            ...newPkgPayload,
+            id: generatePackageId(),
+            revisions: 1,
+          } as CreatorPackage,
+        ]);
+      }
+    } else {
+      setPackages((prev) => [
+        ...prev,
+        {
+          ...newPkgPayload,
+          id: generatePackageId(),
+          revisions: 1,
+        } as CreatorPackage,
+      ]);
+    }
+
     setIsAddingPkg(false);
     setNewPkgName('');
     setNewPkgDesc('');
+    setIsSavingPkg(false);
   };
 
   return (
@@ -277,16 +380,16 @@ export default function CreatorDashboardPage() {
             </span>
           </div>
           <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white mt-1">
-            {creatorProfile.profile?.display_name || 'Creator Studio'}
+            {creatorDisplayName}
           </h1>
           <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-            {creatorProfile.niche} • {creatorProfile.profile?.city || 'India'} •{' '}
-            {(creatorProfile.follower_count / 1000).toFixed(1)}K Followers
+            {creatorNiche} • {creatorCity} •{' '}
+            {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount} Followers
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href={`/creators/${creatorProfile.user_id}`}>
+          <Link href={`/creators/${creatorId}`}>
             <Button variant="outline" size="sm">
               <span>View Public Profile</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
@@ -327,17 +430,17 @@ export default function CreatorDashboardPage() {
           { key: 'overview', label: 'Overview' },
           { key: 'profile', label: 'Profile' },
           { key: 'reels', label: `My Reels (${reels.length})` },
-          { key: 'packages', label: `Packages (${creatorProfile.packages?.length || 0})` },
+          { key: 'packages', label: `Packages (${packages.length})` },
           { key: 'requests', label: `Collaboration Requests (${pendingRequests.length})` },
           { key: 'active', label: `Active Orders (${activeOrders.length})` },
           { key: 'completed', label: `Completed Orders (${completedOrders.length})` },
-          { key: 'messages', label: 'Messages' },
+          { key: 'messages', label: `Messages (${creatorOrders.length})` },
           { key: 'settings', label: 'Settings' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as TabKey)}
-            className={`px-3 py-1.5 rounded transition-colors shrink-0 ${
+            className={`px-3 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
               activeTab === tab.key
                 ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
                 : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
@@ -379,17 +482,17 @@ export default function CreatorDashboardPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <span className="editorial-label text-[#FF5416]">
-                          {req.business?.business_name}
+                          {req.business?.business_name || 'Brand'}
                         </span>
                         <h4 className="font-mono text-lg font-bold text-[#121214] dark:text-white mt-0.5">
                           {req.package?.name}
                         </h4>
                         <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                          Timeline: {req.package?.delivery_days || 4} days • {req.business?.city}
+                          Timeline: {req.package?.delivery_days || 4} days
                         </p>
                       </div>
                       <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                        ₹{req.subtotal.toLocaleString('en-IN')}
+                        ₹{Number(req.subtotal || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
@@ -440,7 +543,7 @@ export default function CreatorDashboardPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('active')}
-                className="text-xs font-mono text-[#FF5416] hover:underline"
+                className="text-xs font-mono text-[#FF5416] hover:underline cursor-pointer"
               >
                 View all ({activeOrders.length})
               </button>
@@ -467,10 +570,12 @@ export default function CreatorDashboardPage() {
                     {activeOrders.map((ord) => (
                       <tr key={ord.id} className="hover:bg-[#FBFBFA] dark:hover:bg-zinc-900/60">
                         <td className="py-3 px-3 font-bold text-[#121214] dark:text-white">{ord.order_number}</td>
-                        <td className="py-3 px-3 text-[#52525B] dark:text-zinc-300">{ord.business?.business_name}</td>
+                        <td className="py-3 px-3 text-[#52525B] dark:text-zinc-300">
+                          {ord.business?.business_name || 'Brand'}
+                        </td>
                         <td className="py-3 px-3 text-[#121214] dark:text-white">{ord.package?.name}</td>
                         <td className="py-3 px-3 font-bold text-[#121214] dark:text-white">
-                          ₹{ord.subtotal.toLocaleString('en-IN')}
+                          ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="py-3 px-3">
                           <StatusBadge status={ord.order_status} size="sm" />
@@ -509,41 +614,41 @@ export default function CreatorDashboardPage() {
             <div>
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Display Name</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorProfile.profile?.display_name}
+                {creatorDisplayName}
               </p>
             </div>
 
             <div>
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Primary City</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorProfile.profile?.city}
+                {creatorCity}
               </p>
             </div>
 
             <div>
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Primary Niche</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorProfile.niche}
+                {creatorNiche}
               </p>
             </div>
 
             <div>
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Audience Reach</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {(creatorProfile.follower_count / 1000).toFixed(1)}K Followers • {(creatorProfile.average_reach / 1000).toFixed(1)}K Reach
+                {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount} Followers
               </p>
             </div>
 
             <div className="sm:col-span-2">
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Bio</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#52525B] dark:text-zinc-300 leading-relaxed">
-                {creatorProfile.bio}
+                {dbCreator.bio || 'Content creator helping brands reach target audiences.'}
               </p>
             </div>
           </div>
 
           <div className="pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
-            <Link href={`/creators/${creatorProfile.user_id}`}>
+            <Link href={`/creators/${creatorId}`}>
               <Button variant="primary" size="sm">
                 <span>View Public Profile</span>
                 <ArrowRight className="w-3.5 h-3.5 ml-1" />
@@ -555,198 +660,155 @@ export default function CreatorDashboardPage() {
 
       {/* TAB 3: MY REELS (19MB REEL UPLOAD) */}
       {activeTab === 'reels' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-              <div>
-                <span className="editorial-label text-[#FF5416]">Reels & Showcase</span>
-                <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                  Content Samples & Promos
-                </h2>
-                <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                  Upload short reels to let app founders see your storytelling style. Max file size: 19 MB.
-                </p>
-              </div>
-
-              <div className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                {reels.length} reel{reels.length === 1 ? '' : 's'} in portfolio
-              </div>
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Video Portfolio</span>
+              <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+                Promotional Showcase Reels
+              </h3>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Upload short vertical reels (max 19 MB) demonstrating your app review style and video quality.
+              </p>
             </div>
 
-            {/* Upload Reel Box */}
-            <div className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-dashed border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
-              <span className="editorial-label text-[#FF5416]">Add Reel to Profile (Max 19 MB)</span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Reel Title</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Fintech App UI Walkthrough"
-                    value={newReelTitle}
-                    onChange={(e) => setNewReelTitle(e.target.value)}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Content Type</label>
-                  <select
-                    value={newReelType}
-                    onChange={(e) => setNewReelType(e.target.value as ReelType)}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-xs text-[#121214] dark:text-white"
-                  >
-                    <option value="client_work">Promotional Campaign</option>
-                    <option value="demo">Demo / Sample Reel</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  onChange={handleUploadReel}
-                  className="hidden"
-                  id="dashboard-reel-upload"
-                />
-
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <label
-                    htmlFor="dashboard-reel-upload"
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{isUploading ? `Uploading (${uploadProgress}%)...` : 'Upload Video (MP4 / WebM)'}</span>
-                  </label>
-
-                  <span className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                    9:16 vertical • Validated under 19 MB
-                  </span>
-                </div>
-
-                {isUploading && (
-                  <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-[#FF5416] h-full transition-all duration-200"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                )}
-
-                {uploadError && (
-                  <p className="text-xs text-red-600 dark:text-red-400 font-mono flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{uploadError}</span>
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Reels Grid */}
-            <div className="space-y-4">
-              <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Current Portfolio Reels</h3>
-
-              {reels.length === 0 ? (
-                <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                  No reels uploaded yet. Add a reel above to showcase your work to advertisers.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {reels.map((reel) => (
-                    <div
-                      key={reel.id}
-                      className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4 bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col justify-between space-y-3"
-                    >
-                      <div className="flex gap-3">
-                        <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
-                          <ReelVideo
-                            src={reel.video_url}
-                            poster={reel.thumbnail_url}
-                            autoPlay={true}
-                            loop={true}
-                            muted={true}
-                            playsInline={true}
-                            className="w-full h-full"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5 flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {reel.is_featured && (
-                              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FFF2EC] dark:bg-[#FF5416]/10 border border-[#FFD2C1] dark:border-[#FF5416]/30 text-[#FF5416] font-bold flex items-center gap-1">
-                                <Star className="w-2.5 h-2.5 fill-[#FF5416]" />
-                                Featured
-                              </span>
-                            )}
-                            {!reel.is_visible && (
-                              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                                Hidden
-                              </span>
-                            )}
-                          </div>
-
-                          <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white truncate">
-                            {reel.title}
-                          </h4>
-
-                          <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                            {reel.file_size_bytes ? `${(reel.file_size_bytes / (1024 * 1024)).toFixed(1)} MB` : '19MB limit compliant'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Controls */}
-                      <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleFeaturedReel(creatorId, reel.id)}
-                            className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 transition-colors ${
-                              reel.is_featured
-                                ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
-                                : 'border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300'
-                            }`}
-                          >
-                            <Star className="w-3 h-3" />
-                            <span>{reel.is_featured ? 'Featured' : 'Make Featured'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => toggleReelVisibility(creatorId, reel.id)}
-                            className="px-2 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] text-[#71717A] dark:text-zinc-300 flex items-center gap-1 transition-colors"
-                          >
-                            {reel.is_visible ? (
-                              <>
-                                <Eye className="w-3 h-3" />
-                                <span>Visible</span>
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff className="w-3 h-3" />
-                                <span>Hidden</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteCreatorReel(creatorId, reel.id)}
-                          className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors"
-                          aria-label="Delete reel"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                className="hidden"
+                onChange={handleUploadReel}
+                disabled={isUploading}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+              >
+                <Upload className="w-3.5 h-3.5 mr-1" />
+                <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload New Reel'}</span>
+              </Button>
             </div>
           </div>
+
+          {uploadError && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300 rounded-lg text-xs font-mono flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+
+          {reels.length === 0 ? (
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
+              <Film className="w-10 h-10 text-[#A1A1AA] mx-auto" />
+              <p className="font-bold text-sm text-[#121214] dark:text-white">No reels uploaded yet</p>
+              <p>Upload a short vertical demo or client work reel to showcase your style to app founders.</p>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+              >
+                Upload Reel (Max 19 MB)
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reels.map((reel) => (
+                <div
+                  key={reel.id}
+                  className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4 bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col justify-between space-y-3"
+                >
+                  <div className="flex gap-3">
+                    <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
+                      <ReelVideo
+                        src={reel.video_url}
+                        poster={reel.thumbnail_url}
+                        autoPlay={true}
+                        loop={true}
+                        muted={true}
+                        playsInline={true}
+                        className="w-full h-full"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {reel.is_featured && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FFF2EC] dark:bg-[#FF5416]/10 border border-[#FFD2C1] dark:border-[#FF5416]/30 text-[#FF5416] font-bold flex items-center gap-1">
+                            <Star className="w-2.5 h-2.5 fill-[#FF5416]" />
+                            Featured
+                          </span>
+                        )}
+                        {!reel.is_visible && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                            Hidden
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white truncate">
+                        {reel.title}
+                      </h4>
+
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
+                        {reel.file_size_bytes
+                          ? `${(reel.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`
+                          : '19MB limit compliant'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFeatured(reel.id)}
+                        className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 transition-colors cursor-pointer ${
+                          reel.is_featured
+                            ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
+                            : 'border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300'
+                        }`}
+                      >
+                        <Star className="w-3 h-3" />
+                        <span>{reel.is_featured ? 'Featured' : 'Make Featured'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleVisibility(reel.id)}
+                        className="px-2 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] text-[#71717A] dark:text-zinc-300 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        {reel.is_visible ? (
+                          <>
+                            <Eye className="w-3 h-3" />
+                            <span>Visible</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3 h-3" />
+                            <span>Hidden</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteReel(reel.id)}
+                      className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors cursor-pointer"
+                      aria-label="Delete reel"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -821,31 +883,38 @@ export default function CreatorDashboardPage() {
                   className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs text-[#121214] dark:text-white"
                 />
               </div>
-              <Button type="submit" variant="primary" size="sm">
-                Save Package
+              <Button type="submit" variant="primary" size="sm" disabled={isSavingPkg}>
+                {isSavingPkg ? 'Saving...' : 'Save Package'}
               </Button>
             </form>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {creatorProfile.packages?.map((pkg: CreatorPackage) => (
-              <div
-                key={pkg.id}
-                className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-3"
-              >
-                <div className="flex justify-between items-start">
-                  <h4 className="font-mono font-bold text-sm text-[#121214] dark:text-white">{pkg.name}</h4>
-                  <span className="font-mono font-bold text-base text-[#FF5416]">
-                    ₹{pkg.price.toLocaleString('en-IN')}
-                  </span>
+          {packages.length === 0 ? (
+            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-2">
+              <p className="font-bold text-sm text-[#121214] dark:text-white">No packages created yet</p>
+              <p>Add at least one reel promotion package so brands can book collaborations with you.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {packages.map((pkg: CreatorPackage) => (
+                <div
+                  key={pkg.id}
+                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-3"
+                >
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-mono font-bold text-sm text-[#121214] dark:text-white">{pkg.name}</h4>
+                    <span className="font-mono font-bold text-base text-[#FF5416]">
+                      ₹{Number(pkg.price || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed">{pkg.description}</p>
+                  <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                    Delivery: {pkg.delivery_days} days • {pkg.revisions ?? pkg.revision_count ?? 1} Revisions
+                  </div>
                 </div>
-                <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed">{pkg.description}</p>
-                <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                  Delivery: {pkg.delivery_days} days • {pkg.revisions ?? 1} Revisions
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -874,13 +943,13 @@ export default function CreatorDashboardPage() {
                   className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-1">
-                    <span className="editorial-label text-[#FF5416]">{req.business?.business_name}</span>
+                    <span className="editorial-label text-[#FF5416]">{req.business?.business_name || 'Brand'}</span>
                     <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white">{req.package?.name}</h4>
                     <p className="text-xs text-[#71717A] dark:text-zinc-400">{req.brief?.objective}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-mono font-bold text-base text-[#121214] dark:text-white">
-                      ₹{req.subtotal.toLocaleString('en-IN')}
+                      ₹{Number(req.subtotal || 0).toLocaleString('en-IN')}
                     </span>
                     <Button variant="outline" size="sm" onClick={() => declineOrder(req.id, 'Declined by creator')}>
                       Decline
@@ -914,13 +983,13 @@ export default function CreatorDashboardPage() {
                       <StatusBadge status={ord.order_status} size="sm" />
                     </div>
                     <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                      Advertiser: {ord.business?.business_name} • Package: {ord.package?.name}
+                      Advertiser: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                      ₹{ord.subtotal.toLocaleString('en-IN')}
+                      ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')}
                     </span>
                     <Link href={`/orders/${ord.id}`}>
                       <Button variant="outline" size="sm">
@@ -953,13 +1022,13 @@ export default function CreatorDashboardPage() {
                       <StatusBadge status={ord.order_status} size="sm" />
                     </div>
                     <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                      Advertiser: {ord.business?.business_name} • Package: {ord.package?.name}
+                      Advertiser: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <span className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                      ₹{ord.subtotal.toLocaleString('en-IN')} Settled
+                      ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')} Settled
                     </span>
                     <Link href={`/orders/${ord.id}`}>
                       <Button variant="outline" size="sm">
@@ -983,32 +1052,38 @@ export default function CreatorDashboardPage() {
           </p>
 
           <div className="space-y-3">
-            {creatorOrders.map((ord) => (
-              <div
-                key={ord.id}
-                className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-[#FF5416]" />
-                  </div>
-                  <div>
-                    <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                      {ord.business?.business_name}
-                    </h4>
-                    <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                      Order #{ord.order_number} • {ord.package?.name}
-                    </span>
-                  </div>
-                </div>
-
-                <Link href={`/orders/${ord.id}`}>
-                  <Button variant="outline" size="sm">
-                    Open Chat
-                  </Button>
-                </Link>
+            {creatorOrders.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                No active discussions yet.
               </div>
-            ))}
+            ) : (
+              creatorOrders.map((ord) => (
+                <div
+                  key={ord.id}
+                  className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center">
+                      <MessageSquare className="w-4 h-4 text-[#FF5416]" />
+                    </div>
+                    <div>
+                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                        {ord.business?.business_name || 'Brand'}
+                      </h4>
+                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                        Order #{ord.order_number} • {ord.package?.name}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Link href={`/orders/${ord.id}`}>
+                    <Button variant="outline" size="sm">
+                      Open Chat
+                    </Button>
+                  </Link>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -1058,7 +1133,7 @@ export default function CreatorDashboardPage() {
                   <label className="font-semibold text-[#121214] dark:text-white block mb-1">UPI ID for Settlements</label>
                   <input
                     type="text"
-                    defaultValue="rahul.sharma@okhdfcbank"
+                    placeholder="yourhandle@okhdfcbank"
                     className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
                   />
                 </div>
@@ -1066,7 +1141,7 @@ export default function CreatorDashboardPage() {
                   <label className="font-semibold text-[#121214] dark:text-white block mb-1">PAN Verification</label>
                   <input
                     type="text"
-                    defaultValue="ABCDE1234F"
+                    placeholder="ABCDE1234F"
                     className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
                   />
                 </div>

@@ -25,11 +25,20 @@ import {
 export default function OrderWorkspacePage() {
   const params = useParams();
   const orderId = params.id as string;
-  const { getOrder, acceptOrder, declineOrder, activeRole } = useMarketplace();
+  const { getOrder, acceptOrder, declineOrder, activeRole, isLoading: storeLoading } = useMarketplace();
   const order = getOrder(orderId);
 
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'workspace' | 'brief' | 'chat' | 'events'>('workspace');
+
+  if (storeLoading) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p>Loading order workspace...</p>
+      </div>
+    );
+  }
 
   if (!order) {
     return (

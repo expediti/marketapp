@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { CreatorProfile } from '@/types/marketplace';
 import { PackageCard } from '@/components/marketplace/PackageCard';
 import { ReelCard } from '@/components/marketplace/ReelCard';
 import { Button } from '@/components/ui/Button';
@@ -23,12 +25,108 @@ import {
 export default function CreatorDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getCreator } = useMarketplace();
+  const { getCreator, isLoading: storeLoading } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<'work' | 'packages' | 'audience' | 'about'>('work');
+  const [dbCreator, setDbCreator] = useState<CreatorProfile | null>(null);
+  const [isFetchingDirect, setIsFetchingDirect] = useState(false);
 
   const creatorId = params.id as string;
-  const creator = getCreator(creatorId);
+  const storeCreator = getCreator(creatorId);
+
+  useEffect(() => {
+    if (!storeCreator && isSupabaseConfigured && creatorId) {
+      setIsFetchingDirect(true);
+      Promise.all([
+        supabase.from('creator_profiles').select('*').eq('user_id', creatorId).maybeSingle(),
+        supabase.from('profiles').select('*').eq('id', creatorId).maybeSingle(),
+        supabase.from('creator_packages').select('*').eq('creator_id', creatorId),
+        supabase.from('creator_reels').select('*').eq('creator_id', creatorId).eq('is_visible', true),
+      ])
+        .then(([cpRes, profRes, pkgsRes, reelsRes]) => {
+          if (cpRes.data) {
+            const cp = cpRes.data;
+            const prof = profRes.data;
+            const pkgs = pkgsRes.data || [];
+            const rls = reelsRes.data || [];
+            setDbCreator({
+              id: cp.id || cp.user_id,
+              user_id: cp.user_id,
+              profile: prof
+                ? {
+                    id: prof.id,
+                    role: (prof.role as any) || 'creator',
+                    display_name: cp.display_name || prof.display_name || 'Creator',
+                    email: prof.email || '',
+                    avatar_url: cp.profile_image_path || prof.avatar_url,
+                    city: cp.city || prof.city || 'India',
+                    created_at: prof.created_at,
+                  }
+                : undefined,
+              display_name: cp.display_name || prof?.display_name || 'Creator',
+              bio: cp.bio || '',
+              profile_image_path: cp.profile_image_path || undefined,
+              country: cp.country || 'India',
+              state: cp.state || undefined,
+              city: cp.city || prof?.city || 'India',
+              languages: cp.languages || ['Hindi', 'English'],
+              categories: cp.categories || [cp.niche],
+              niche: cp.niche || 'Technology',
+              audience_age: (cp.audience_age as any) || {},
+              audience_gender: (cp.audience_gender as any) || {},
+              audience_locations: Array.isArray(cp.audience_locations) ? (cp.audience_locations as any[]) : [],
+              follower_count: cp.follower_count || 0,
+              average_reach: cp.average_reach || 0,
+              engagement_rate: Number(cp.engagement_rate) || 0,
+              instagram_connected: cp.instagram_connected || false,
+              instagram_verified: cp.instagram_verified || false,
+              verification_status: cp.verification_status as any,
+              packages: pkgs.map((p) => ({
+                id: p.id,
+                creator_id: p.creator_id,
+                name: p.name,
+                platform: p.platform as any,
+                content_type: p.content_type as any,
+                price: Number(p.price) || 0,
+                currency: p.currency || 'INR',
+                description: p.description || '',
+                deliverables: p.deliverables || [],
+                delivery_days: p.delivery_days || 5,
+                revision_count: p.revision_count ?? 1,
+                active: p.active ?? true,
+              })),
+              reels: rls.map((r) => ({
+                id: r.id,
+                creator_id: r.creator_id,
+                title: r.title,
+                description: r.description || undefined,
+                video_url: r.video_url,
+                thumbnail_url: r.thumbnail_url || undefined,
+                type: r.type as any,
+                sort_order: r.sort_order || 0,
+                is_featured: r.is_featured || false,
+                is_visible: r.is_visible !== false,
+                created_at: r.created_at,
+              })),
+            });
+          }
+        })
+        .finally(() => {
+          setIsFetchingDirect(false);
+        });
+    }
+  }, [storeCreator, creatorId]);
+
+  const creator = storeCreator || dbCreator;
+
+  if (storeLoading || isFetchingDirect) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p>Loading influencer profile...</p>
+      </div>
+    );
+  }
 
   if (!creator) {
     return (
@@ -55,7 +153,7 @@ export default function CreatorDetailPage() {
     creator.starting_price ||
     (creator.packages && creator.packages.length > 0
       ? Math.min(...creator.packages.map((p) => p.price))
-      : 2999);
+      : 0);
 
   const reels = creator.reels || [];
 

@@ -1,7 +1,19 @@
-import { type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
 export async function proxy(request: NextRequest) {
+  const url = request.nextUrl;
+  const code = url.searchParams.get('code');
+
+  // If an OAuth authorization code arrives at root or another page, route to /auth/callback
+  if (code && url.pathname !== '/auth/callback') {
+    const callbackUrl = new URL('/auth/callback', request.url);
+    url.searchParams.forEach((value, key) => {
+      callbackUrl.searchParams.set(key, value);
+    });
+    return NextResponse.redirect(callbackUrl);
+  }
+
   return await updateSession(request);
 }
 

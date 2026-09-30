@@ -15,7 +15,7 @@ function DiscoverContent() {
   const initialCity = searchParams.get('city') || '';
   const initialState = searchParams.get('state') || '';
 
-  const { creators } = useMarketplace();
+  const { creators, isLoading } = useMarketplace();
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedNiche, setSelectedNiche] = useState(initialNiche);
@@ -209,7 +209,22 @@ function DiscoverContent() {
       </div>
 
       {/* Influencers Grid */}
-      {filteredInfluencers.length === 0 ? (
+      {isLoading ? (
+        <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-16 text-center space-y-3">
+          <div className="w-6 h-6 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">Loading creators from database...</p>
+        </div>
+      ) : creators.length === 0 ? (
+        <div className="bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-16 text-center space-y-3">
+          <Users className="w-10 h-10 text-[#A1A1AA] mx-auto" />
+          <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+            No creators yet
+          </h3>
+          <p className="text-sm text-[#71717A] dark:text-[#A1A1AA] max-w-md mx-auto">
+            Creators will appear here once they complete their profiles.
+          </p>
+        </div>
+      ) : filteredInfluencers.length === 0 ? (
         <div className="bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-12 text-center space-y-3">
           <Users className="w-8 h-8 text-[#A1A1AA] mx-auto" />
           <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
@@ -220,7 +235,7 @@ function DiscoverContent() {
           </p>
           <button
             onClick={handleReset}
-            className="text-xs font-mono font-semibold text-[#FF5416] hover:underline"
+            className="text-xs font-mono font-semibold text-[#FF5416] hover:underline cursor-pointer"
           >
             Reset all filters
           </button>

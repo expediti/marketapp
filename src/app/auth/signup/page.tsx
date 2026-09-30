@@ -47,9 +47,16 @@ function SignupContent() {
         );
       }
 
-      const redirectUrl = preselectedRole
-        ? `${window.location.origin}/auth/callback?role=${preselectedRole}`
-        : `${window.location.origin}/auth/callback`;
+      if (preselectedRole && typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('marketur_role_intent', preselectedRole);
+          document.cookie = `marketur_role_intent=${encodeURIComponent(preselectedRole)}; path=/; max-age=600; SameSite=Lax`;
+        } catch {
+          // Ignore storage errors
+        }
+      }
+
+      const redirectUrl = `${window.location.origin}/auth/callback`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

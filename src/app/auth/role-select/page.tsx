@@ -16,7 +16,7 @@ import {
 
 export default function RoleSelectPage() {
   const router = useRouter();
-  const { switchUser } = useMarketplace();
+  const { switchUser, refreshData } = useMarketplace();
 
   const [loadingUser, setLoadingUser] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -70,6 +70,11 @@ export default function RoleSelectPage() {
             router.replace('/admin');
             return;
           }
+        }
+
+        const storedRole = typeof window !== 'undefined' ? sessionStorage.getItem('marketur_role_intent') : null;
+        if (storedRole === 'creator' || storedRole === 'business') {
+          setSelectedRole(storedRole);
         }
       } catch (err: unknown) {
         console.error('Error checking user state:', err);
@@ -136,6 +141,7 @@ export default function RoleSelectPage() {
         }
 
         switchUser('creator');
+        await refreshData();
         router.push('/auth/onboarding/creator');
       } else {
         const { error: bizError } = await supabase
@@ -157,6 +163,7 @@ export default function RoleSelectPage() {
         }
 
         switchUser('business');
+        await refreshData();
         router.push('/auth/onboarding/business');
       }
     } catch (err: unknown) {

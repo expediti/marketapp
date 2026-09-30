@@ -112,25 +112,27 @@ export interface CreatorPackage {
 }
 
 export interface CreatorProfile {
+  id?: string;
   user_id: string;
   profile?: Profile;
+  display_name?: string;
   niche: string;
   bio: string;
-  profile_image_path?: string;
-  country?: string;
-  state?: string;
-  city?: string;
+  profile_image_path?: string | null;
+  country?: string | null;
+  state?: string | null;
+  city?: string | null;
   languages?: string[];
   categories?: string[];
   instagram_connected: boolean;
   instagram_verified: boolean;
-  instagram_user_id?: string;
+  instagram_user_id?: string | null;
   follower_count: number;
   followers_count?: number;
   average_reach: number;
   engagement_rate: number;
   metrics_source?: 'instagram_api' | 'platform_metrics' | 'manual';
-  metrics_verified_at?: string;
+  metrics_verified_at?: string | null;
   audience_gender: { female: number; male: number };
   audience_age: { '18-24': number; '25-34': number; '35+': number };
   audience_locations: AudienceLocation[];
@@ -148,10 +150,12 @@ export interface BusinessProfile {
   business_name: string;
   industry: string;
   city: string;
-  logo_path?: string;
-  logo_url?: string;
-  website?: string;
-  app_url?: string;
+  state?: string | null;
+  country?: string | null;
+  logo_path?: string | null;
+  logo_url?: string | null;
+  website?: string | null;
+  app_url?: string | null;
   description: string;
   business_type?: 'app' | 'website' | 'product' | 'service';
   category?: string;
@@ -159,6 +163,24 @@ export interface BusinessProfile {
   target_locations?: string[];
   budget_range?: string;
   verification_status: VerificationStatus;
+}
+
+export interface Campaign {
+  id: string;
+  business_id: string;
+  campaign_name: string;
+  product_name: string;
+  product_type: 'app' | 'website' | 'saas' | 'product' | 'service';
+  app_url?: string | null;
+  website_url?: string | null;
+  category?: string | null;
+  description?: string | null;
+  campaign_brief?: string | null;
+  target_locations?: string[] | null;
+  budget: number;
+  status: 'draft' | 'active' | 'paused' | 'completed';
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface OrderBrief {

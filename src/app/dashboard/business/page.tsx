@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
@@ -8,110 +9,160 @@ import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { CreatorCard } from '@/components/marketplace/CreatorCard';
+import { Campaign } from '@/types/marketplace';
 import {
   ArrowRight,
   Search,
   Building,
   CheckCircle2,
   MessageSquare,
-  Package,
+  Package as PackageIcon,
   Globe,
   MapPin,
   ExternalLink,
   Bookmark,
   Smartphone,
   Sparkles,
+  Plus,
+  Edit2,
+  Save,
+  Trash2,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 
-type TabKey = 'overview' | 'find' | 'saved' | 'orders' | 'messages' | 'profile';
+type TabKey = 'overview' | 'campaigns' | 'find' | 'saved' | 'orders' | 'messages' | 'profile';
 
-interface DbBusinessState {
+interface DbBusinessProfile {
   user_id: string;
-  company_name?: string | null;
-  business_name?: string | null;
+  business_name: string;
   business_type?: string | null;
-  app_name?: string | null;
-  app_url?: string | null;
-  website?: string | null;
-  website_url?: string | null;
   industry?: string | null;
   city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  website?: string | null;
+  app_url?: string | null;
   budget_range?: string | null;
   description?: string | null;
   logo_path?: string | null;
+  verification_status?: string | null;
   created_at?: string | null;
 }
 
 export default function BusinessDashboardPage() {
-  const { orders, businesses, creators, currentUser } = useMarketplace();
-  const [dbBusiness, setDbBusiness] = useState<DbBusinessState | null>(null);
+  const router = useRouter();
+  const {
+    currentUser,
+    orders,
+    creators,
+    campaigns,
+    createCampaign,
+    deleteCampaign,
+    updateBusinessProfile,
+  } = useMarketplace();
 
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [dbBusiness, setDbBusiness] = useState<DbBusinessProfile | null>(null);
+  const [savedCreatorIds, setSavedCreatorIds] = useState<string[]>([]);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+  // Campaign creation modal state
+  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [campaignName, setCampaignName] = useState('');
+  const [productName, setProductName] = useState('');
+  const [productType, setProductType] = useState<'app' | 'website' | 'saas' | 'product' | 'service'>('app');
+  const [appUrl, setAppUrl] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [category, setCategory] = useState('Technology');
+  const [budget, setBudget] = useState('25000');
+  const [description, setDescription] = useState('');
+  const [campaignBrief, setCampaignBrief] = useState('');
+  const [isSubmittingCampaign, setIsSubmittingCampaign] = useState(false);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
+
+  // Profile edit form state
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editIndustry, setEditIndustry] = useState('');
+  const [editWebsite, setEditWebsite] = useState('');
+  const [editAppUrl, setEditAppUrl] = useState('');
+  const [editCountry, setEditCountry] = useState('India');
+  const [editState, setEditState] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editBudgetRange, setEditBudgetRange] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
+  const [profileErrorMsg, setProfileErrorMsg] = useState<string | null>(null);
+
+  // Authenticate user & load real business data
   useEffect(() => {
-    async function loadDbBusiness() {
-      if (!isSupabaseConfigured) return;
+    async function initUser() {
+      if (!isSupabaseConfigured) {
+        setIsLoadingAuth(false);
+        return;
+      }
+
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user) return;
 
-        const { data: bp } = await supabase
+        if (!user) {
+          router.push('/auth/login');
+          return;
+        }
+
+        const { data: bp, error } = await supabase
           .from('business_profiles')
           .select('*')
           .eq('user_id', user.id)
           .maybeSingle();
 
+        if (error) {
+          console.error('Error fetching business profile:', error);
+        }
+
         if (bp) {
           setDbBusiness(bp);
+          setEditName(bp.business_name || '');
+          setEditIndustry(bp.industry || 'Technology & SaaS');
+          setEditWebsite(bp.website || '');
+          setEditAppUrl(bp.app_url || '');
+          setEditCountry(bp.country || 'India');
+          setEditState(bp.state || '');
+          setEditCity(bp.city || 'India');
+          setEditDescription(bp.description || '');
+          setEditBudgetRange(bp.budget_range || '');
+        } else {
+          // If no business profile exists yet, prefill from user metadata
+          const meta = user.user_metadata || {};
+          const fallbackName = meta.full_name || meta.name || 'My Business';
+          setEditName(fallbackName);
         }
       } catch (err) {
-        console.error('Error loading business profile:', err);
+        console.error('Error initializing business dashboard:', err);
+      } finally {
+        setIsLoadingAuth(false);
       }
     }
-    loadDbBusiness();
-  }, []);
 
-  const fallbackBusiness = businesses.find((b) => b.user_id === currentUser?.id) || businesses[0] || {
-    id: 'b1',
-    user_id: 'biz_01',
-    business_name: 'DevPulse Mobile',
-    business_type: 'app',
-    industry: 'Technology & SaaS',
-    city: 'Bengaluru',
-    website: 'https://devpulse.app',
-    app_url: 'https://play.google.com/store/apps/details?id=app.devpulse',
-    budget_range: '₹25,000 - ₹50,000',
-    description: 'DevPulse is a developer productivity app that tracks coding focus metrics and GitHub PR reviews.',
-  };
+    initUser();
+  }, [router]);
 
-  const currentBusiness = dbBusiness
-    ? {
-        ...fallbackBusiness,
-        user_id: dbBusiness.user_id,
-        business_name: dbBusiness.business_name || fallbackBusiness.business_name,
-        business_type: dbBusiness.business_type || fallbackBusiness.business_type,
-        industry: dbBusiness.industry || fallbackBusiness.industry,
-        city: dbBusiness.city || fallbackBusiness.city,
-        website: dbBusiness.website || fallbackBusiness.website,
-        app_url: dbBusiness.app_url || fallbackBusiness.app_url,
-        budget_range: dbBusiness.budget_range || fallbackBusiness.budget_range,
-        description: dbBusiness.description || fallbackBusiness.description,
-        logo_url: dbBusiness.logo_path || fallbackBusiness.logo_url,
-      }
-    : fallbackBusiness;
-
-  const [activeTab, setActiveTab] = useState<'overview' | 'find' | 'saved' | 'orders' | 'messages' | 'profile'>('overview');
-  const [savedCreatorIds, setSavedCreatorIds] = useState<string[]>([creators[0]?.user_id || 'c1']);
-
+  // Real orders belonging to this authenticated business user
   const businessOrders = orders.filter(
-    (o) => o.business_id === currentBusiness.user_id || o.business?.user_id === currentBusiness.user_id
+    (o) => o.business_id === currentUser?.id || o.business?.user_id === currentUser?.id
   );
 
   const activeOrders = businessOrders.filter(
     (o) => o.order_status !== 'COMPLETED' && o.order_status !== 'CANCELLED'
   );
 
-  const totalCommitted = businessOrders.reduce((sum, o) => sum + o.total_amount, 0);
+  const pendingDeliveries = businessOrders.filter((o) => o.order_status === 'DELIVERED');
+  const completedOrders = businessOrders.filter((o) => o.order_status === 'COMPLETED');
+  const totalCommitted = businessOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
 
   const toggleSaveCreator = (id: string) => {
     if (savedCreatorIds.includes(id)) {
@@ -121,6 +172,109 @@ export default function BusinessDashboardPage() {
     }
   };
 
+  const handleCreateCampaignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!campaignName.trim() || !productName.trim()) {
+      setCampaignError('Campaign name and product name are required.');
+      return;
+    }
+
+    setIsSubmittingCampaign(true);
+    setCampaignError(null);
+
+    try {
+      await createCampaign({
+        business_id: currentUser?.id || '',
+        campaign_name: campaignName.trim(),
+        product_name: productName.trim(),
+        product_type: productType,
+        app_url: appUrl.trim() || null,
+        website_url: websiteUrl.trim() || null,
+        category: category.trim() || null,
+        description: description.trim() || null,
+        campaign_brief: campaignBrief.trim() || null,
+        budget: Number(budget) || 0,
+        status: 'active',
+      });
+
+      setIsCampaignModalOpen(false);
+      setCampaignName('');
+      setProductName('');
+      setAppUrl('');
+      setWebsiteUrl('');
+      setDescription('');
+      setCampaignBrief('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create campaign';
+      setCampaignError(msg);
+    } finally {
+      setIsSubmittingCampaign(false);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim()) {
+      setProfileErrorMsg('Business name cannot be empty.');
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setProfileErrorMsg(null);
+    setProfileSuccessMsg(null);
+
+    try {
+      await updateBusinessProfile({
+        business_name: editName.trim(),
+        industry: editIndustry.trim(),
+        website: editWebsite.trim() || undefined,
+        app_url: editAppUrl.trim() || undefined,
+        country: editCountry.trim() || 'India',
+        state: editState.trim() || undefined,
+        city: editCity.trim() || 'India',
+        description: editDescription.trim(),
+        budget_range: editBudgetRange.trim() || undefined,
+      });
+
+      setDbBusiness((prev) => ({
+        user_id: currentUser?.id || '',
+        business_name: editName.trim(),
+        industry: editIndustry.trim(),
+        website: editWebsite.trim() || undefined,
+        app_url: editAppUrl.trim() || undefined,
+        country: editCountry.trim() || 'India',
+        state: editState.trim() || undefined,
+        city: editCity.trim() || 'India',
+        description: editDescription.trim(),
+        budget_range: editBudgetRange.trim() || undefined,
+        verification_status: prev?.verification_status || 'unverified',
+      }));
+
+      setProfileSuccessMsg('Business profile updated successfully in Supabase!');
+      setIsEditingProfile(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save business profile';
+      setProfileErrorMsg(msg);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p>Loading your authenticated business workspace...</p>
+      </div>
+    );
+  }
+
+  const businessDisplayName = dbBusiness?.business_name || currentUser?.display_name || 'My Business';
+  const businessIndustry = dbBusiness?.industry || 'Technology & SaaS';
+  const businessLocation = `${dbBusiness?.city || currentUser?.city || 'India'}${
+    dbBusiness?.state ? `, ${dbBusiness.state}` : ''
+  }`;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Top Header */}
@@ -129,18 +283,28 @@ export default function BusinessDashboardPage() {
           <div className="flex items-center gap-2">
             <span className="editorial-label text-[#FF5416]">Advertiser Workspace</span>
             <span className="text-[11px] font-mono text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800">
-              Verified Brand
+              {dbBusiness?.verification_status === 'verified' ? 'Verified Brand' : 'Active Account'}
             </span>
           </div>
           <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white mt-1">
-            {currentBusiness.business_name}
+            {businessDisplayName}
           </h1>
           <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-            {currentBusiness.industry} • {currentBusiness.city || 'India'}
+            {businessIndustry} • {businessLocation}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCampaignModalOpen(true)}
+            className="flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5 text-[#FF5416]" />
+            <span>Create Campaign</span>
+          </Button>
+
           <Link href="/discover">
             <Button variant="primary" size="sm">
               <Search className="w-3.5 h-3.5 mr-1" />
@@ -150,20 +314,43 @@ export default function BusinessDashboardPage() {
         </div>
       </div>
 
+      {/* Onboarding Notice if business profile is missing */}
+      {!dbBusiness && (
+        <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+              Complete your business profile
+            </h4>
+            <p className="text-xs text-[#52525B] dark:text-zinc-300">
+              Set up your company information, website, and target audience to unlock tailored influencer recommendations.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setActiveTab('profile')}
+            className="shrink-0"
+          >
+            Setup Profile Now
+          </Button>
+        </div>
+      )}
+
       {/* TABS NAVIGATION */}
       <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 font-mono text-xs overflow-x-auto">
         {[
           { key: 'overview', label: 'Overview' },
+          { key: 'campaigns', label: `My Campaigns (${campaigns.length})` },
           { key: 'find', label: 'Find Influencers' },
           { key: 'saved', label: `Saved Influencers (${savedCreatorIds.length})` },
           { key: 'orders', label: `My Orders (${businessOrders.length})` },
-          { key: 'messages', label: 'Messages' },
+          { key: 'messages', label: `Messages (${businessOrders.length})` },
           { key: 'profile', label: 'Business Profile' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as TabKey)}
-            className={`px-3 py-1.5 rounded transition-colors shrink-0 ${
+            className={`px-3 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
               activeTab === tab.key
                 ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
                 : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
@@ -179,24 +366,25 @@ export default function BusinessDashboardPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
-              label="Active Promotions"
+              label="Active Campaigns"
+              value={campaigns.filter((c) => c.status === 'active').length}
+              subtext="Promoting your apps & products"
+              badge="CAMPAIGNS"
+            />
+            <StatCard
+              label="Active Collaborations"
               value={activeOrders.length}
               subtext="Reels in production / review"
-              badge="ACTIVE"
+              badge="ORDERS"
             />
             <StatCard
-              label="Total Committed Budget"
+              label="Committed Budget"
               value={`₹${totalCommitted.toLocaleString('en-IN')}`}
-              subtext="Platform collaboration protection"
+              subtext="Escrow collaboration protection"
             />
             <StatCard
-              label="Pending Deliveries"
-              value={businessOrders.filter((o) => o.order_status === 'DELIVERED').length}
-              subtext="Drafts awaiting your review"
-            />
-            <StatCard
-              label="Completed Campaigns"
-              value={businessOrders.filter((o) => o.order_status === 'COMPLETED').length}
+              label="Completed Deliveries"
+              value={completedOrders.length}
               subtext="Successfully published"
             />
           </div>
@@ -205,15 +393,22 @@ export default function BusinessDashboardPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
               <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
-                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Active Influencer Campaigns</h3>
+                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                  Active Influencer Collaborations
+                </h3>
                 <Link href="/discover" className="text-xs font-mono text-[#FF5416] hover:underline">
-                  + Find more creators
+                  + Find creators
                 </Link>
               </div>
 
               {activeOrders.length === 0 ? (
-                <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                  No active orders at the moment. Browse influencers to launch your next campaign.
+                <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
+                  <p>No active collaboration orders yet.</p>
+                  <Link href="/discover">
+                    <Button variant="primary" size="sm">
+                      Browse Influencers
+                    </Button>
+                  </Link>
                 </div>
               ) : (
                 <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
@@ -221,11 +416,13 @@ export default function BusinessDashboardPage() {
                     <div key={ord.id} className="py-3 flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-[#121214] dark:text-white">{ord.order_number}</span>
+                          <span className="font-mono text-xs font-bold text-[#121214] dark:text-white">
+                            {ord.order_number}
+                          </span>
                           <StatusBadge status={ord.order_status} size="sm" />
                         </div>
                         <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                          {ord.creator?.profile?.display_name} • {ord.package?.name}
+                          {ord.creator?.profile?.display_name || 'Influencer'} • {ord.package?.name}
                         </p>
                       </div>
 
@@ -241,21 +438,183 @@ export default function BusinessDashboardPage() {
             </div>
 
             <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-              <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Quick Discovery</h3>
-              <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                Explore popular Indian niches with high app-install conversions:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {['Technology', 'Gaming', 'AI & Tools', 'Finance', 'Education', 'Productivity'].map((cat) => (
-                  <Link key={cat} href={`/discover?niche=${encodeURIComponent(cat)}`}>
-                    <span className="text-xs font-mono px-2.5 py-1 rounded bg-[#F4F4F0] dark:bg-zinc-800 text-[#121214] dark:text-zinc-200 hover:bg-[#FF5416] hover:text-white transition-colors cursor-pointer inline-block">
-                      {cat}
-                    </span>
-                  </Link>
-                ))}
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                  Recent Campaigns
+                </h3>
+                <button
+                  onClick={() => setActiveTab('campaigns')}
+                  className="text-xs font-mono text-[#FF5416] hover:underline cursor-pointer"
+                >
+                  View All
+                </button>
               </div>
+
+              {campaigns.length === 0 ? (
+                <div className="p-6 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
+                  <p>No campaigns created yet.</p>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setIsCampaignModalOpen(true)}
+                  >
+                    Create First Campaign
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {campaigns.slice(0, 3).map((camp) => (
+                    <div
+                      key={camp.id}
+                      className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded-lg space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-[#121214] dark:text-white">
+                          {camp.campaign_name}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded uppercase bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400">
+                          {camp.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                        {camp.product_name} • {camp.category || camp.product_type}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB: MY CAMPAIGNS (Multiple apps/products support) */}
+      {activeTab === 'campaigns' && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Promotional Campaigns</span>
+              <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                My Campaigns
+              </h2>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Create separate campaigns for each mobile app, SaaS platform, website, or product you promote.
+              </p>
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCampaignModalOpen(true)}
+              className="flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Campaign</span>
+            </Button>
+          </div>
+
+          {campaigns.length === 0 ? (
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-2xl space-y-4">
+              <PackageIcon className="w-10 h-10 text-[#A1A1AA] mx-auto" />
+              <div className="space-y-1">
+                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                  No campaigns yet
+                </h3>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
+                  Create a campaign to start working with influencers. You can promote apps, websites, SaaS, or physical products.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsCampaignModalOpen(true)}
+              >
+                Create Campaign
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {campaigns.map((camp) => (
+                <div
+                  key={camp.id}
+                  className="bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-4 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                          {camp.campaign_name}
+                        </h4>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded uppercase font-semibold bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400">
+                          {camp.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                        Product: <strong>{camp.product_name}</strong> ({camp.product_type})
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => deleteCampaign(camp.id)}
+                      className="text-[#71717A] hover:text-red-500 transition-colors p-1"
+                      title="Delete Campaign"
+                      aria-label="Delete Campaign"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {camp.description && (
+                    <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed">
+                      {camp.description}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[#71717A] dark:text-zinc-400 border-t border-[#ECECE6] dark:border-zinc-800 pt-3">
+                    {camp.budget > 0 && (
+                      <span>
+                        Budget: <strong>₹{Number(camp.budget).toLocaleString('en-IN')}</strong>
+                      </span>
+                    )}
+                    {camp.category && (
+                      <>
+                        <span>•</span>
+                        <span>{camp.category}</span>
+                      </>
+                    )}
+                    {camp.app_url && (
+                      <>
+                        <span>•</span>
+                        <a
+                          href={camp.app_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#FF5416] hover:underline flex items-center gap-1"
+                        >
+                          <Smartphone className="w-3 h-3" />
+                          <span>App Link</span>
+                        </a>
+                      </>
+                    )}
+                    {camp.website_url && (
+                      <>
+                        <span>•</span>
+                        <a
+                          href={camp.website_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#FF5416] hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="w-3 h-3" />
+                          <span>Website</span>
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -282,11 +641,18 @@ export default function BusinessDashboardPage() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {creators.map((creator) => (
-                <CreatorCard key={creator.user_id} creator={creator} />
-              ))}
-            </div>
+            {creators.length === 0 ? (
+              <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-2">
+                <p className="font-bold text-sm text-[#121214] dark:text-white">No creators yet</p>
+                <p>Creators will appear here once they complete their profiles.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {creators.map((creator) => (
+                  <CreatorCard key={creator.user_id} creator={creator} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -337,8 +703,13 @@ export default function BusinessDashboardPage() {
           </div>
 
           {businessOrders.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No collaboration orders yet. Start by finding an influencer.
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
+              <p>No collaboration orders yet. Start by finding an influencer.</p>
+              <Link href="/discover">
+                <Button variant="primary" size="sm">
+                  Find Influencers
+                </Button>
+              </Link>
             </div>
           ) : (
             <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
@@ -355,7 +726,9 @@ export default function BusinessDashboardPage() {
                       <StatusBadge status={ord.order_status} size="sm" />
                     </div>
                     <div className="text-xs text-[#52525B] dark:text-zinc-400 font-mono">
-                      <span>Influencer: <strong>{ord.creator?.profile?.display_name}</strong></span>
+                      <span>
+                        Influencer: <strong>{ord.creator?.profile?.display_name || 'Influencer'}</strong>
+                      </span>
                       <span className="mx-2">•</span>
                       <span>Package: {ord.package?.name}</span>
                     </div>
@@ -364,7 +737,7 @@ export default function BusinessDashboardPage() {
                   <div className="flex items-center gap-4">
                     <div className="text-right font-mono">
                       <span className="text-sm font-bold text-[#121214] dark:text-white block">
-                        ₹{ord.total_amount.toLocaleString('en-IN')}
+                        ₹{Number(ord.total_amount || 0).toLocaleString('en-IN')}
                       </span>
                       <span className="text-[10px] text-[#047857]">Protected</span>
                     </div>
@@ -392,7 +765,7 @@ export default function BusinessDashboardPage() {
               Order Discussions
             </h3>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              Messages are organized around active campaign orders so revision notes and app briefs are never lost.
+              Messages are organized around active campaign orders so revision notes and briefs are never lost.
             </p>
           </div>
 
@@ -413,7 +786,7 @@ export default function BusinessDashboardPage() {
                     </div>
                     <div>
                       <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                        {ord.creator?.profile?.display_name}
+                        {ord.creator?.profile?.display_name || 'Influencer'}
                       </h4>
                       <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
                         Order #{ord.order_number} • {ord.package?.name}
@@ -434,10 +807,10 @@ export default function BusinessDashboardPage() {
         </div>
       )}
 
-      {/* TAB: BUSINESS PROFILE */}
+      {/* TAB: BUSINESS PROFILE (Editable with Supabase persistence) */}
       {activeTab === 'profile' && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4 flex items-center justify-between">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <span className="editorial-label text-[#FF5416]">App / Business Identity</span>
               <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Profile Details</h3>
@@ -446,58 +819,421 @@ export default function BusinessDashboardPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs font-mono text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-3 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800">
-              <CheckCircle2 className="w-4 h-4 text-[#047857]" />
-              <span>Verified Advertiser</span>
+            <div className="flex items-center gap-3">
+              {!isEditingProfile ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingProfile(true)}
+                  className="flex items-center gap-1.5"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Profile</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditingProfile(false);
+                    setProfileErrorMsg(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-5 pt-2">
-            <div className="w-16 h-16 rounded-xl bg-[#121214] dark:bg-zinc-800 text-white flex items-center justify-center font-mono font-bold text-xl border border-[#E5E5DE] dark:border-zinc-700">
-              {currentBusiness.business_name.charAt(0)}
+          {profileSuccessMsg && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 rounded-lg text-xs font-mono flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>{profileSuccessMsg}</span>
             </div>
+          )}
 
-            <div>
-              <h4 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                {currentBusiness.business_name}
-              </h4>
-              <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#71717A] dark:text-zinc-400 mt-0.5">
-                <span>{currentBusiness.industry}</span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-[#FF5416]" />
-                  {currentBusiness.city}
-                </span>
-                {currentBusiness.website && (
-                  <>
+          {profileErrorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300 rounded-lg text-xs font-mono flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <span>{profileErrorMsg}</span>
+            </div>
+          )}
+
+          {isEditingProfile ? (
+            <form onSubmit={handleSaveProfile} className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Company / Brand Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Industry / Category
+                  </label>
+                  <input
+                    type="text"
+                    value={editIndustry}
+                    onChange={(e) => setEditIndustry(e.target.value)}
+                    placeholder="e.g. Technology & SaaS, D2C, Gaming"
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Website URL
+                  </label>
+                  <input
+                    type="url"
+                    value={editWebsite}
+                    onChange={(e) => setEditWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    App Store / Play Store URL
+                  </label>
+                  <input
+                    type="url"
+                    value={editAppUrl}
+                    onChange={(e) => setEditAppUrl(e.target.value)}
+                    placeholder="https://play.google.com/store/apps/details?id=..."
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    value={editCity}
+                    onChange={(e) => setEditCity(e.target.value)}
+                    placeholder="e.g. Bengaluru"
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    State
+                  </label>
+                  <input
+                    type="text"
+                    value={editState}
+                    onChange={(e) => setEditState(e.target.value)}
+                    placeholder="e.g. Karnataka"
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Country
+                  </label>
+                  <input
+                    type="text"
+                    value={editCountry}
+                    onChange={(e) => setEditCountry(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                  Description & Campaign Goals
+                </label>
+                <textarea
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Describe your brand, application, and target audience goals..."
+                  className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                  Estimated Monthly Budget
+                </label>
+                <input
+                  type="text"
+                  value={editBudgetRange}
+                  onChange={(e) => setEditBudgetRange(e.target.value)}
+                  placeholder="e.g. ₹50,000 - ₹1,00,000"
+                  className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center gap-3">
+                <Button variant="primary" size="sm" type="submit" disabled={isSavingProfile}>
+                  <Save className="w-3.5 h-3.5 mr-1" />
+                  <span>{isSavingProfile ? 'Saving...' : 'Save to Supabase'}</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsEditingProfile(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-6 pt-2">
+              <div className="flex items-center gap-5">
+                <div className="w-16 h-16 rounded-xl bg-[#121214] dark:bg-zinc-800 text-white flex items-center justify-center font-mono font-bold text-xl border border-[#E5E5DE] dark:border-zinc-700">
+                  {businessDisplayName.charAt(0).toUpperCase()}
+                </div>
+
+                <div>
+                  <h4 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                    {businessDisplayName}
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#71717A] dark:text-zinc-400 mt-0.5">
+                    <span>{businessIndustry}</span>
                     <span>•</span>
-                    <a
-                      href={currentBusiness.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#FF5416] hover:underline flex items-center gap-1"
-                    >
-                      <Globe className="w-3 h-3" />
-                      <span>{currentBusiness.website.replace(/^https?:\/\//, '')}</span>
-                    </a>
-                  </>
-                )}
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-[#FF5416]" />
+                      {businessLocation}
+                    </span>
+                    {dbBusiness?.website && (
+                      <>
+                        <span>•</span>
+                        <a
+                          href={dbBusiness.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#FF5416] hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="w-3 h-3" />
+                          <span>{dbBusiness.website.replace(/^https?:\/\//, '')}</span>
+                        </a>
+                      </>
+                    )}
+                    {dbBusiness?.app_url && (
+                      <>
+                        <span>•</span>
+                        <a
+                          href={dbBusiness.app_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#FF5416] hover:underline flex items-center gap-1"
+                        >
+                          <Smartphone className="w-3 h-3" />
+                          <span>App Store</span>
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-[#121214] dark:text-white block font-mono">
+                  Description & Campaign Goals
+                </span>
+                <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4">
+                  {dbBusiness?.description || 'No description provided yet. Click "Edit Profile" to add details about your product.'}
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+                <span className="text-xs font-semibold text-[#121214] dark:text-white block mb-1 font-mono">
+                  Campaign Budget
+                </span>
+                <div className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                  {dbBusiness?.budget_range || 'Not specified'}
+                </div>
               </div>
             </div>
-          </div>
+          )}
+        </div>
+      )}
 
-          <div className="space-y-2 pt-2">
-            <span className="text-xs font-semibold text-[#121214] dark:text-white block">Description & Campaign Goals</span>
-            <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4">
-              {currentBusiness.description || 'App developer seeking tech, gaming, and lifestyle creators to drive downloads across India.'}
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
-            <span className="text-xs font-semibold text-[#121214] dark:text-white block mb-2">Campaign Budget</span>
-            <div className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              {currentBusiness.budget_range || '₹25,000 - ₹50,000 per month'}
+      {/* CREATE CAMPAIGN MODAL */}
+      {isCampaignModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div>
+                <span className="editorial-label text-[#FF5416]">New Promotion</span>
+                <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+                  Create Campaign
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsCampaignModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                aria-label="Close Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
+
+            {campaignError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300 rounded-lg text-xs font-mono flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                <span>{campaignError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateCampaignSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                  Campaign Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Q4 Growth Launch"
+                  value={campaignName}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Product / App Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. FocusTimer App"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Product Type
+                  </label>
+                  <select
+                    value={productType}
+                    onChange={(e) => setProductType(e.target.value as any)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  >
+                    <option value="app">Mobile App</option>
+                    <option value="website">Website</option>
+                    <option value="saas">SaaS / Web App</option>
+                    <option value="product">Physical Product</option>
+                    <option value="service">Service</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    App URL (optional)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://play.google.com/..."
+                    value={appUrl}
+                    onChange={(e) => setAppUrl(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Website URL (optional)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://myproduct.com"
+                    value={websiteUrl}
+                    onChange={(e) => setWebsiteUrl(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Target Niche / Category
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Productivity, Tech, Gaming"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                    Budget (₹ INR)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="25000"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#121214] dark:text-white mb-1">
+                  Campaign Description
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Overview of the product and what creators should highlight..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full text-xs font-mono px-3 py-2 border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white rounded-lg focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsCampaignModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="submit"
+                  disabled={isSubmittingCampaign}
+                >
+                  {isSubmittingCampaign ? 'Creating...' : 'Launch Campaign'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

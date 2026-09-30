@@ -45,7 +45,7 @@ const POPULAR_CATEGORIES = [
 
 export default function CreatorOnboardingPage() {
   const router = useRouter();
-  const { onboardCreator } = useMarketplace();
+  const { onboardCreator, refreshData } = useMarketplace();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -341,35 +341,21 @@ export default function CreatorOnboardingPage() {
           created_at: new Date().toISOString(),
         },
         country: country || 'India',
-        state: stateName || 'Uttar Pradesh',
+        state: stateName || '',
         city: finalCity,
         niche: selectedCategories[0] || 'Technology',
         categories: selectedCategories,
         languages: languages,
-        bio: bio || 'Indian content creator helping apps reach targeted users.',
+        bio: bio || '',
         profile_image_path: profileImage,
         follower_count: followerCount,
         average_reach: averageReach,
         engagement_rate: engagementRate,
         packages,
-        reels:
-          reels.length > 0
-            ? reels
-            : [
-                {
-                  id: 'default_reel_sample',
-                  creator_id: uid,
-                  title: 'Sample App Walkthrough',
-                  video_url: '/reels/demo-reel-01.mp4',
-                  type: 'client_work',
-                  sort_order: 1,
-                  is_featured: true,
-                  is_visible: true,
-                  created_at: new Date().toISOString(),
-                },
-              ],
+        reels: reels || [],
       });
 
+      await refreshData();
       router.push('/dashboard/creator');
     } catch (err: unknown) {
       console.error('Creator onboarding failed:', err);

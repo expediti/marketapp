@@ -69,7 +69,7 @@ const BUDGET_RANGES = [
 
 export default function BusinessOnboardingPage() {
   const router = useRouter();
-  const { onboardBusiness, switchUser } = useMarketplace();
+  const { onboardBusiness, switchUser, refreshData } = useMarketplace();
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -204,16 +204,17 @@ export default function BusinessOnboardingPage() {
         business_type: promotionType,
         industry,
         category: industry,
-        website: website || 'https://example.com',
+        website: website || '',
         app_url: appUrl,
         target_audience: targetAudience,
-        target_locations: targetLocations.split(',').map((s) => s.trim()),
+        target_locations: targetLocations ? targetLocations.split(',').map((s) => s.trim()) : [],
         budget_range: budgetRange,
-        description: description || 'Promoting our product via targeted Indian influencers.',
+        description: description || '',
         logo_url: logoUrl,
       });
 
       switchUser('business');
+      await refreshData();
       router.push('/dashboard/business');
     } catch (err: unknown) {
       console.error('Business onboarding error:', err);
