@@ -47,11 +47,11 @@ export type DisputeResolution =
 
 export interface Profile {
   id: string;
-  role: UserRole;
+  role: UserRole | null;
   display_name: string;
   email: string;
-  avatar_url?: string;
-  city: string;
+  avatar_url?: string | null;
+  city?: string | null;
   created_at: string;
   updated_at?: string;
 }

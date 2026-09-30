@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
@@ -13,9 +14,8 @@ import {
   Globe,
   Package,
   Briefcase,
-  Upload,
-  CheckCircle2,
-  Sparkles,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 const PROMOTION_TYPES = [
@@ -69,8 +69,12 @@ const BUDGET_RANGES = [
 
 export default function BusinessOnboardingPage() {
   const router = useRouter();
-  const { onboardBusiness } = useMarketplace();
+  const { onboardBusiness, switchUser } = useMarketplace();
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [promotionType, setPromotionType] = useState<'app' | 'website' | 'product' | 'service'>('app');
   const [businessName, setBusinessName] = useState('');
@@ -84,34 +88,139 @@ export default function BusinessOnboardingPage() {
   const [logoUrl, setLogoUrl] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
+  // Prefill Google authenticated user data
+  useEffect(() => {
+    async function loadAuth() {
+      if (!isSupabaseConfigured) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          setCurrentUser(user);
+          const meta = user.user_metadata || {};
+          const fallbackName = meta.full_name || meta.name || '';
+
+          // Check if profile exists
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('display_name, avatar_url')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profile?.display_name && profile.display_name !== 'User') {
+            setBusinessName(profile.display_name);
+          } else if (fallbackName) {
+            setBusinessName(`${fallbackName}'s Brand`);
+          }
+
+          if (profile?.avatar_url) {
+            setLogoUrl(profile.avatar_url);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching user for business onboarding:', err);
+      }
+    }
+    loadAuth();
+  }, []);
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploadingLogo(true);
-    const res = await reelStorageService.uploadBusinessLogo(file, 'biz_temp');
+    const res = await reelStorageService.uploadBusinessLogo(file, currentUser?.id || 'biz_temp');
     if (res.success && res.logoUrl) {
       setLogoUrl(res.logoUrl);
     }
     setIsUploadingLogo(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onboardBusiness({
-      business_name: businessName || 'My Application',
-      business_type: promotionType,
-      industry,
-      category: industry,
-      website: website || 'https://example.com',
-      app_url: appUrl,
-      target_audience: targetAudience,
-      target_locations: targetLocations.split(',').map((s) => s.trim()),
-      budget_range: budgetRange,
-      description: description || 'Promoting our product via targeted Indian influencers.',
-      logo_url: logoUrl,
-    });
-    router.push('/discover');
+    setIsSaving(true);
+    setErrorMessage(null);
+
+    const finalBizName = businessName.trim() || 'My Application';
+    let uid = currentUser?.id || 'biz_new';
+
+    try {
+      if (isSupabaseConfigured && currentUser) {
+        uid = currentUser.id;
+
+        // 1. Update profiles table
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: uid,
+              display_name: finalBizName,
+              avatar_url: logoUrl || null,
+              role: 'business',
+            },
+            { onConflict: 'id' }
+          );
+
+        if (profileError) {
+          console.warn('Profile update note:', profileError.message);
+        }
+
+        // 2. Upsert business_profiles table
+        const parsedLocations = targetLocations
+          ? targetLocations.split(',').map((s) => s.trim()).filter(Boolean)
+          : [];
+
+        const { error: bizError } = await supabase
+          .from('business_profiles')
+          .upsert(
+            {
+              user_id: uid,
+              business_name: finalBizName,
+              business_type: promotionType,
+              industry,
+              category: industry,
+              website: website || null,
+              app_url: appUrl || null,
+              target_audience: targetAudience,
+              target_locations: parsedLocations,
+              budget_range: budgetRange,
+              description: description || 'Promoting our product via targeted Indian influencers.',
+              logo_path: logoUrl || null,
+              city: 'India',
+              verification_status: 'unverified',
+            },
+            { onConflict: 'user_id' }
+          );
+
+        if (bizError) {
+          throw new Error(`Failed to save business profile: ${bizError.message}`);
+        }
+      }
+
+      onboardBusiness({
+        business_name: finalBizName,
+        business_type: promotionType,
+        industry,
+        category: industry,
+        website: website || 'https://example.com',
+        app_url: appUrl,
+        target_audience: targetAudience,
+        target_locations: targetLocations.split(',').map((s) => s.trim()),
+        budget_range: budgetRange,
+        description: description || 'Promoting our product via targeted Indian influencers.',
+        logo_url: logoUrl,
+      });
+
+      switchUser('business');
+      router.push('/dashboard/business');
+    } catch (err: unknown) {
+      console.error('Business onboarding error:', err);
+      const message = err instanceof Error ? err.message : 'Failed to save business profile. Please try again.';
+      setErrorMessage(message);
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -142,7 +251,7 @@ export default function BusinessOnboardingPage() {
                   <button
                     key={type.id}
                     type="button"
-                    onClick={() => setPromotionType(type.id as any)}
+                    onClick={() => setPromotionType(type.id as 'app' | 'website' | 'product' | 'service')}
                     className={`p-3.5 rounded-lg border text-left transition-all flex items-start gap-3 ${
                       isSelected
                         ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
@@ -314,13 +423,29 @@ export default function BusinessOnboardingPage() {
             />
           </div>
 
+          {errorMessage && (
+            <div className="p-3.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           <div className="pt-4 border-t border-[#ECECE6] dark:border-[#27272A] flex flex-col sm:flex-row items-center justify-between gap-3">
             <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
               Matches you with vetted Indian influencers in your category
             </span>
-            <Button type="submit" variant="primary" size="md" className="w-full sm:w-auto">
-              <span>Find Matching Influencers</span>
-              <ArrowRight className="w-4 h-4 ml-1.5" />
+            <Button type="submit" variant="primary" size="md" className="w-full sm:w-auto" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <span>Saving Business Profile...</span>
+                </>
+              ) : (
+                <>
+                  <span>Save & Enter Business Dashboard</span>
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                </>
+              )}
             </Button>
           </div>
         </form>

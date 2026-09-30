@@ -44,7 +44,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('advertiser', 'influencer', 'creator', 'business', 'promoter', 'admin')),
+    role TEXT CHECK (role IS NULL OR role IN ('advertiser', 'influencer', 'creator', 'business', 'promoter', 'admin')),
     display_name TEXT NOT NULL,
     email TEXT NOT NULL,
     avatar_url TEXT,
@@ -59,18 +59,43 @@ CREATE TRIGGER on_profiles_updated
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
--- Auto-create profile on auth.user created (handles email & Google OAuth)
+-- Auto-create profile on auth.user created (handles Google OAuth & email signups)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    user_name TEXT;
+    avatar TEXT;
+    assigned_role TEXT;
 BEGIN
-    INSERT INTO public.profiles (id, email, display_name, role)
+    user_name := COALESCE(
+        NEW.raw_user_meta_data->>'full_name',
+        NEW.raw_user_meta_data->>'name',
+        NEW.raw_user_meta_data->>'display_name',
+        split_part(NEW.email, '@', 1)
+    );
+    
+    avatar := COALESCE(
+        NEW.raw_user_meta_data->>'avatar_url',
+        NEW.raw_user_meta_data->>'picture',
+        NULL
+    );
+
+    assigned_role := NEW.raw_user_meta_data->>'role';
+
+    INSERT INTO public.profiles (id, email, display_name, avatar_url, role)
     VALUES (
         NEW.id,
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1)),
-        COALESCE(NEW.raw_user_meta_data->>'role', 'influencer')
+        user_name,
+        avatar,
+        assigned_role
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        display_name = COALESCE(public.profiles.display_name, EXCLUDED.display_name),
+        avatar_url = COALESCE(public.profiles.avatar_url, EXCLUDED.avatar_url),
+        updated_at = timezone('utc'::text, now());
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -479,6 +504,12 @@ CREATE POLICY "Public profiles are viewable by authenticated users"
     ON public.profiles FOR SELECT
     TO authenticated
     USING (true);
+
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+CREATE POLICY "Users can insert their own profile"
+    ON public.profiles FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile"

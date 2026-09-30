@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -22,9 +23,55 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+type TabKey = 'overview' | 'find' | 'saved' | 'orders' | 'messages' | 'profile';
+
+interface DbBusinessState {
+  user_id: string;
+  company_name?: string | null;
+  business_name?: string | null;
+  business_type?: string | null;
+  app_name?: string | null;
+  app_url?: string | null;
+  website?: string | null;
+  website_url?: string | null;
+  industry?: string | null;
+  city?: string | null;
+  budget_range?: string | null;
+  description?: string | null;
+  logo_path?: string | null;
+  created_at?: string | null;
+}
+
 export default function BusinessDashboardPage() {
-  const { orders, businesses, creators } = useMarketplace();
-  const currentBusiness = businesses[0] || {
+  const { orders, businesses, creators, currentUser } = useMarketplace();
+  const [dbBusiness, setDbBusiness] = useState<DbBusinessState | null>(null);
+
+  useEffect(() => {
+    async function loadDbBusiness() {
+      if (!isSupabaseConfigured) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: bp } = await supabase
+          .from('business_profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (bp) {
+          setDbBusiness(bp);
+        }
+      } catch (err) {
+        console.error('Error loading business profile:', err);
+      }
+    }
+    loadDbBusiness();
+  }, []);
+
+  const fallbackBusiness = businesses.find((b) => b.user_id === currentUser?.id) || businesses[0] || {
     id: 'b1',
     user_id: 'biz_01',
     business_name: 'DevPulse Mobile',
@@ -36,6 +83,22 @@ export default function BusinessDashboardPage() {
     budget_range: '₹25,000 - ₹50,000',
     description: 'DevPulse is a developer productivity app that tracks coding focus metrics and GitHub PR reviews.',
   };
+
+  const currentBusiness = dbBusiness
+    ? {
+        ...fallbackBusiness,
+        user_id: dbBusiness.user_id,
+        business_name: dbBusiness.business_name || fallbackBusiness.business_name,
+        business_type: dbBusiness.business_type || fallbackBusiness.business_type,
+        industry: dbBusiness.industry || fallbackBusiness.industry,
+        city: dbBusiness.city || fallbackBusiness.city,
+        website: dbBusiness.website || fallbackBusiness.website,
+        app_url: dbBusiness.app_url || fallbackBusiness.app_url,
+        budget_range: dbBusiness.budget_range || fallbackBusiness.budget_range,
+        description: dbBusiness.description || fallbackBusiness.description,
+        logo_url: dbBusiness.logo_path || fallbackBusiness.logo_url,
+      }
+    : fallbackBusiness;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'find' | 'saved' | 'orders' | 'messages' | 'profile'>('overview');
   const [savedCreatorIds, setSavedCreatorIds] = useState<string[]>([creators[0]?.user_id || 'c1']);
@@ -99,7 +162,7 @@ export default function BusinessDashboardPage() {
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => setActiveTab(tab.key as TabKey)}
             className={`px-3 py-1.5 rounded transition-colors shrink-0 ${
               activeTab === tab.key
                 ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'

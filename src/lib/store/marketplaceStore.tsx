@@ -24,11 +24,13 @@ import {
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
 import { paymentService } from '@/lib/services/paymentService';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface MarketplaceContextType {
   currentUser: Profile | null;
   activeRole: UserRole;
   switchUser: (role: UserRole) => void;
+  signOut: () => Promise<void>;
   creators: CreatorProfile[];
   businesses: BusinessProfile[];
   orders: Order[];
@@ -114,6 +116,79 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     } else {
       setCurrentUser(null);
     }
+  };
+
+  // Sync authenticated user from Supabase session
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // 1. Initial user session check
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle()
+          .then(({ data: profile }) => {
+            if (profile) {
+              const r = (profile.role || 'business') as UserRole;
+              setActiveRole(r);
+              setCurrentUser({
+                id: profile.id,
+                role: (profile.role as UserRole) || null,
+                display_name: profile.display_name,
+                email: profile.email,
+                avatar_url: profile.avatar_url || undefined,
+                city: profile.city || 'India',
+                created_at: profile.created_at,
+                updated_at: profile.updated_at,
+              });
+            }
+          });
+      }
+    });
+
+    // 2. Auth state change listener
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile) {
+          const r = (profile.role || 'business') as UserRole;
+          setActiveRole(r);
+          setCurrentUser({
+            id: profile.id,
+            role: (profile.role as UserRole) || null,
+            display_name: profile.display_name,
+            email: profile.email,
+            avatar_url: profile.avatar_url || undefined,
+            city: profile.city || 'India',
+            created_at: profile.created_at,
+            updated_at: profile.updated_at,
+          });
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const signOut = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
+    setCurrentUser(null);
   };
 
   const getOrder = (id: string) => orders.find((o) => o.id === id || o.order_number === id);
@@ -773,6 +848,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         currentUser,
         activeRole,
         switchUser,
+        signOut,
         creators,
         businesses,
         orders,

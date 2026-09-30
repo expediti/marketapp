@@ -2,14 +2,17 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { SearchModal } from '@/components/layout/SearchModal';
-import { Menu, X, Search, ArrowRight } from 'lucide-react';
+import { Menu, X, Search, User, LogOut } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { currentUser, activeRole, signOut } = useMarketplace();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -19,6 +22,18 @@ export function Navbar() {
     { label: 'For Advertisers', href: '/for-businesses' },
     { label: 'For Influencers', href: '/for-creators' },
   ];
+
+  const dashboardHref =
+    activeRole === 'creator' || activeRole === 'influencer'
+      ? '/dashboard/creator'
+      : activeRole === 'admin'
+      ? '/admin'
+      : '/dashboard/business';
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/auth/login');
+  };
 
   return (
     <>
@@ -75,17 +90,47 @@ export function Navbar() {
 
             {/* Desktop Auth CTAs */}
             <div className="hidden sm:flex items-center gap-2 pl-1">
-              <Link href="/auth/login">
-                <Button variant="ghost" size="sm" className="text-xs text-[#52525B] dark:text-[#A1A1AA] hover:text-[#121214] dark:hover:text-white">
-                  <span>Login</span>
-                </Button>
-              </Link>
+              {currentUser ? (
+                <div className="flex items-center gap-2">
+                  <Link href={dashboardHref}>
+                    <Button variant="outline" size="sm" className="text-xs flex items-center gap-1.5 border-[#FF5416]/40 hover:border-[#FF5416]">
+                      {currentUser.avatar_url ? (
+                        <img
+                          src={currentUser.avatar_url}
+                          alt={currentUser.display_name}
+                          className="w-4 h-4 rounded-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-3.5 h-3.5 text-[#FF5416]" />
+                      )}
+                      <span>Dashboard</span>
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSignOut}
+                    className="text-xs text-[#71717A] hover:text-red-600 px-2"
+                    title="Log Out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <Link href="/auth/login">
+                    <Button variant="ghost" size="sm" className="text-xs text-[#52525B] dark:text-[#A1A1AA] hover:text-[#121214] dark:hover:text-white">
+                      <span>Login</span>
+                    </Button>
+                  </Link>
 
-              <Link href="/auth/signup">
-                <Button variant="primary" size="sm" className="text-xs px-3.5">
-                  <span>Sign Up</span>
-                </Button>
-              </Link>
+                  <Link href="/auth/signup">
+                    <Button variant="primary" size="sm" className="text-xs px-3.5">
+                      <span>Sign Up</span>
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Mobile Drawer Trigger */}
@@ -116,16 +161,39 @@ export function Navbar() {
             </div>
 
             <div className="pt-3 border-t border-[#E5E5DE] dark:border-[#27272A] flex flex-col gap-2">
-              <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="outline" size="sm" className="w-full">
-                  Login
-                </Button>
-              </Link>
-              <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="primary" size="sm" className="w-full">
-                  Sign Up
-                </Button>
-              </Link>
+              {currentUser ? (
+                <>
+                  <Link href={dashboardHref} onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="primary" size="sm" className="w-full">
+                      Go to Dashboard ({activeRole})
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleSignOut();
+                    }}
+                    className="w-full text-red-600"
+                  >
+                    Log Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" size="sm" className="w-full">
+                      Login
+                    </Button>
+                  </Link>
+                  <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="primary" size="sm" className="w-full">
+                      Sign Up
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}

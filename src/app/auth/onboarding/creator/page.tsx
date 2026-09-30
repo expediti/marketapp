@@ -1,31 +1,28 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorPackage, CreatorReel, ReelType } from '@/types/marketplace';
 import {
-  INDIAN_STATES_AND_CITIES,
   getAllIndianStates,
   getCitiesForIndianState,
 } from '@/lib/data/locationsData';
 import {
   CheckCircle2,
   ArrowRight,
-  ArrowLeft,
   Upload,
   Plus,
   Trash2,
-  Film,
-  Sparkles,
   Camera,
   AlertCircle,
-  Video,
   MapPin,
+  Loader2,
 } from 'lucide-react';
 
 const POPULAR_CATEGORIES = [
@@ -52,6 +49,10 @@ export default function CreatorOnboardingPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
 
   // Step 1: Basic Information & Dedicated Location Section
@@ -64,6 +65,43 @@ export default function CreatorOnboardingPage() {
   const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState<string>('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  // Prefill Google authenticated user data
+  useEffect(() => {
+    async function loadAuth() {
+      if (!isSupabaseConfigured) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          setCurrentUser(user);
+          const meta = user.user_metadata || {};
+          const name = meta.full_name || meta.name || meta.display_name || user.email?.split('@')[0] || '';
+          const avatar = meta.avatar_url || meta.picture || '';
+
+          // Check if profile exists
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('display_name, avatar_url, city')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          setDisplayName(profile?.display_name || name);
+          if (profile?.avatar_url || avatar) {
+            setProfileImage(profile?.avatar_url || avatar);
+          }
+          if (profile?.city) {
+            setCity(profile.city);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching user for onboarding:', err);
+      }
+    }
+    loadAuth();
+  }, []);
 
   // Step 2: Categories (Multiple)
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['Technology']);
@@ -212,41 +250,133 @@ export default function CreatorOnboardingPage() {
     setPackages([...packages, newPkg]);
   };
 
-  const handleFinishOnboarding = () => {
+  const handleFinishOnboarding = async () => {
+    setIsSaving(true);
+    setOnboardingError(null);
     const finalCity = customCity.trim() || city || 'Varanasi';
-    onboardCreator({
-      profile: {
-        id: 'new_influencer',
-        role: 'influencer',
-        display_name: displayName || 'Creator',
-        email: `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyapp.in`,
-        city: finalCity,
-        created_at: new Date().toISOString(),
-      },
-      country: country || 'India',
-      state: stateName || 'Uttar Pradesh',
-      city: finalCity,
-      niche: selectedCategories[0] || 'Technology',
-      bio: bio || 'Indian content creator helping apps reach targeted users.',
-      follower_count: followerCount,
-      average_reach: averageReach,
-      engagement_rate: engagementRate,
-      packages,
-      reels: reels.length > 0 ? reels : [
-        {
-          id: 'default_reel_sample',
-          creator_id: 'temp',
-          title: 'Sample App Walkthrough',
-          video_url: '/reels/demo-reel-01.mp4',
-          type: 'client_work',
-          sort_order: 1,
-          is_featured: true,
-          is_visible: true,
-          created_at: new Date().toISOString(),
+
+    try {
+      let uid = currentUser?.id || 'new_influencer';
+      let userEmail =
+        currentUser?.email ||
+        `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyapp.in`;
+
+      if (isSupabaseConfigured && currentUser) {
+        uid = currentUser.id;
+        userEmail = currentUser.email || userEmail;
+
+        // 1. Update profiles table
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: uid,
+              display_name: displayName || 'Creator',
+              avatar_url: profileImage || null,
+              city: finalCity,
+              role: 'creator',
+            },
+            { onConflict: 'id' }
+          );
+
+        if (profileError) {
+          console.warn('Profile update note:', profileError.message);
         }
-      ],
-    });
-    router.push('/dashboard/creator');
+
+        // 2. Upsert creator_profiles
+        const { error: creatorError } = await supabase
+          .from('creator_profiles')
+          .upsert(
+            {
+              user_id: uid,
+              display_name: displayName || 'Creator',
+              bio: bio || 'Indian content creator helping apps reach targeted users.',
+              profile_image_path: profileImage || null,
+              country: country || 'India',
+              state: stateName || 'Uttar Pradesh',
+              city: finalCity,
+              niche: selectedCategories[0] || 'Technology',
+              categories: selectedCategories,
+              languages: languages,
+              follower_count: followerCount,
+              average_reach: averageReach,
+              engagement_rate: engagementRate,
+              verification_status: 'unverified',
+              metrics_source: 'platform_manual',
+            },
+            { onConflict: 'user_id' }
+          );
+
+        if (creatorError) {
+          throw new Error(`Failed to save creator profile: ${creatorError.message}`);
+        }
+
+        // 3. Upsert packages
+        if (packages.length > 0) {
+          const pkgRows = packages.map((pkg) => ({
+            creator_id: uid,
+            name: pkg.name,
+            platform: pkg.platform || 'Instagram',
+            content_type: pkg.content_type || 'Reel',
+            description: pkg.description,
+            price: pkg.price,
+            currency: 'INR',
+            delivery_days: pkg.delivery_days,
+            revision_count: pkg.revisions || 1,
+            deliverables: Array.isArray(pkg.deliverables) ? pkg.deliverables : [pkg.deliverables || ''],
+            active: true,
+          }));
+          await supabase.from('creator_packages').insert(pkgRows);
+        }
+      }
+
+      onboardCreator({
+        profile: {
+          id: uid,
+          role: 'creator',
+          display_name: displayName || 'Creator',
+          email: userEmail,
+          avatar_url: profileImage,
+          city: finalCity,
+          created_at: new Date().toISOString(),
+        },
+        country: country || 'India',
+        state: stateName || 'Uttar Pradesh',
+        city: finalCity,
+        niche: selectedCategories[0] || 'Technology',
+        categories: selectedCategories,
+        languages: languages,
+        bio: bio || 'Indian content creator helping apps reach targeted users.',
+        profile_image_path: profileImage,
+        follower_count: followerCount,
+        average_reach: averageReach,
+        engagement_rate: engagementRate,
+        packages,
+        reels:
+          reels.length > 0
+            ? reels
+            : [
+                {
+                  id: 'default_reel_sample',
+                  creator_id: uid,
+                  title: 'Sample App Walkthrough',
+                  video_url: '/reels/demo-reel-01.mp4',
+                  type: 'client_work',
+                  sort_order: 1,
+                  is_featured: true,
+                  is_visible: true,
+                  created_at: new Date().toISOString(),
+                },
+              ],
+      });
+
+      router.push('/dashboard/creator');
+    } catch (err: unknown) {
+      console.error('Creator onboarding failed:', err);
+      const message = err instanceof Error ? err.message : 'Failed to save onboarding details. Please try again.';
+      setOnboardingError(message);
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -919,20 +1049,36 @@ export default function CreatorOnboardingPage() {
                   <span>{uploadError}</span>
                 </p>
               )}
+              {onboardingError && (
+                <div className="p-3.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{onboardingError}</span>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
-            <Button variant="outline" size="sm" onClick={() => setStep(5)}>
+            <Button variant="outline" size="sm" onClick={() => setStep(5)} disabled={isSaving}>
               Back
             </Button>
             <Button
               variant="primary"
               size="lg"
               onClick={handleFinishOnboarding}
+              disabled={isSaving}
             >
-              <span>Publish Profile & Enter Dashboard</span>
-              <ArrowRight className="w-4 h-4 ml-1.5" />
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <span>Saving Creator Profile...</span>
+                </>
+              ) : (
+                <>
+                  <span>Publish Profile & Enter Dashboard</span>
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                </>
+              )}
             </Button>
           </div>
         </div>

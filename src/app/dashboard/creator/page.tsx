@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -43,6 +44,24 @@ type TabKey =
   | 'messages'
   | 'settings';
 
+interface DbCreatorState {
+  user_id: string;
+  display_name?: string | null;
+  profile_image_path?: string | null;
+  city?: string | null;
+  created_at?: string | null;
+  niche?: string | null;
+  bio?: string | null;
+  follower_count?: number | null;
+  average_reach?: number | null;
+  engagement_rate?: number | null;
+  creator_packages?: CreatorPackage[];
+}
+
+function generatePackageId(): string {
+  return `pkg_${Date.now()}`;
+}
+
 export default function CreatorDashboardPage() {
   const {
     orders,
@@ -57,8 +76,43 @@ export default function CreatorDashboardPage() {
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [dbCreator, setDbCreator] = useState<DbCreatorState | null>(null);
+  const [createdPackages, setCreatedPackages] = useState<CreatorPackage[]>([]);
 
-  const creatorProfile = creators[0] || {
+  useEffect(() => {
+    async function loadDbCreator() {
+      if (!isSupabaseConfigured) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: cp } = await supabase
+          .from('creator_profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (cp) {
+          const { data: pkgs } = await supabase
+            .from('creator_packages')
+            .select('*')
+            .eq('creator_id', user.id);
+
+          setDbCreator({
+            ...cp,
+            creator_packages: (pkgs as unknown as CreatorPackage[]) || [],
+          });
+        }
+      } catch (err) {
+        console.error('Error loading creator profile:', err);
+      }
+    }
+    loadDbCreator();
+  }, []);
+
+  const fallbackCreator = creators.find((c) => c.user_id === currentUser?.id) || creators[0] || {
     id: 'c1',
     user_id: 'creator_01',
     profile: {
@@ -76,6 +130,34 @@ export default function CreatorDashboardPage() {
     packages: [],
     reels: [],
   };
+
+  const creatorProfile = dbCreator
+    ? {
+        ...fallbackCreator,
+        user_id: dbCreator.user_id,
+        profile: {
+          id: dbCreator.user_id,
+          role: 'creator',
+          display_name: dbCreator.display_name || fallbackCreator.profile?.display_name || 'Creator',
+          email: currentUser?.email || 'creator@marketmyapp.in',
+          avatar_url: dbCreator.profile_image_path || fallbackCreator.profile?.avatar_url,
+          city: dbCreator.city || fallbackCreator.profile?.city || 'India',
+          created_at: dbCreator.created_at || new Date().toISOString(),
+        },
+        niche: dbCreator.niche || fallbackCreator.niche,
+        bio: dbCreator.bio || fallbackCreator.bio,
+        follower_count: dbCreator.follower_count ?? fallbackCreator.follower_count,
+        average_reach: dbCreator.average_reach ?? fallbackCreator.average_reach,
+        engagement_rate: Number(dbCreator.engagement_rate) || fallbackCreator.engagement_rate,
+        packages: [
+          ...(dbCreator.creator_packages?.length ? dbCreator.creator_packages : fallbackCreator.packages || []),
+          ...createdPackages,
+        ],
+      }
+    : {
+        ...fallbackCreator,
+        packages: [...(fallbackCreator.packages || []), ...createdPackages],
+      };
 
   const creatorId = creatorProfile.user_id;
 
@@ -164,7 +246,7 @@ export default function CreatorDashboardPage() {
     if (!newPkgName.trim()) return;
 
     const newPkg: CreatorPackage = {
-      id: `pkg_${Date.now()}`,
+      id: generatePackageId(),
       creator_id: creatorId,
       name: newPkgName,
       platform: 'Instagram',
@@ -177,7 +259,7 @@ export default function CreatorDashboardPage() {
       active: true,
     };
 
-    creatorProfile.packages = [...(creatorProfile.packages || []), newPkg];
+    setCreatedPackages((prev) => [...prev, newPkg]);
     setIsAddingPkg(false);
     setNewPkgName('');
     setNewPkgDesc('');
@@ -746,7 +828,7 @@ export default function CreatorDashboardPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {creatorProfile.packages?.map((pkg) => (
+            {creatorProfile.packages?.map((pkg: CreatorPackage) => (
               <div
                 key={pkg.id}
                 className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-3"
