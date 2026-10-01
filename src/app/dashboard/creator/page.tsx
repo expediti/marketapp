@@ -103,6 +103,7 @@ export default function CreatorDashboardPage() {
   const [newPkgDelivery, setNewPkgDelivery] = useState(4);
   const [newPkgDesc, setNewPkgDesc] = useState('');
   const [isSavingPkg, setIsSavingPkg] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
 
   const loadDbCreator = async () => {
     setIsLoadingAuth(true);
@@ -127,7 +128,7 @@ export default function CreatorDashboardPage() {
       // 1. Verify profile and role
       const { data: profile, error: profError } = await supabase
         .from('profiles')
-        .select('id, role, display_name')
+        .select('id, role, display_name, city, avatar_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -164,11 +165,51 @@ export default function CreatorDashboardPage() {
         });
         setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
       } else {
-        setDbCreator(null);
+        // Safe recovery if creator profile does not exist yet (matches business dashboard pattern)
+        const meta = user.user_metadata || {};
+        const fallbackName = meta.full_name || meta.name || profile.display_name || 'Creator';
+        const fallbackAvatar = meta.avatar_url || meta.picture || profile.avatar_url || null;
+        const { data: newCp, error: newCpErr } = await supabase
+          .from('creator_profiles')
+          .upsert(
+            {
+              user_id: user.id,
+              display_name: fallbackName,
+              bio: 'Content creator helping apps reach targeted users.',
+              profile_image_path: fallbackAvatar,
+              country: 'India',
+              city: profile.city || 'India',
+              niche: 'Technology',
+              categories: ['Technology'],
+              languages: ['Hindi', 'English'],
+              follower_count: 0,
+              average_reach: 0,
+              engagement_rate: 0,
+              verification_status: 'unverified',
+              metrics_source: 'platform_manual',
+            },
+            { onConflict: 'user_id' }
+          )
+          .select('*')
+          .maybeSingle();
+
+        if (newCp) {
+          setDbCreator({
+            ...newCp,
+            creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
+          });
+          setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
+        } else {
+          console.error('Failed to auto-recover creator profile:', newCpErr);
+          router.replace('/auth/onboarding/creator');
+          return;
+        }
       }
 
       if (reelsRes.data) {
         setReels(reelsRes.data as unknown as CreatorReel[]);
+      } else {
+        setReels([]);
       }
     } catch (err) {
       console.error('Error loading creator dashboard:', err);
@@ -181,6 +222,66 @@ export default function CreatorDashboardPage() {
   useEffect(() => {
     loadDbCreator();
   }, [router]);
+
+  const creatorId = dbCreator?.user_id || currentUser?.id || '';
+
+  const handleAcceptCollabRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    try {
+      await acceptCollaborationRequest(requestId);
+      setActiveTab('messages');
+    } catch (err) {
+      console.error('Failed to accept collaboration request:', err);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleDeclineCollabRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    try {
+      await declineCollaborationRequest(requestId, 'Declined by creator');
+    } catch (err) {
+      console.error('Failed to decline collaboration request:', err);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  // Real orders for this creator (query by creator_id OR creator_user_id)
+  const creatorOrders = (orders || []).filter(
+    (o) =>
+      o.creator_id === creatorId ||
+      o.creator_user_id === creatorId ||
+      o.creator?.user_id === creatorId
+  );
+
+  // Incoming collaboration requests where creator_user_id = auth.uid()
+  const incomingRequests = (collaborationRequests || []).filter(
+    (r) => r.creator_user_id === creatorId
+  );
+  const pendingRequests = incomingRequests.filter((r) => r.status === 'PENDING');
+  const userConversations = (conversations || []).filter(
+    (c) => c.creator_user_id === creatorId || c.business_user_id === creatorId
+  );
+
+  const activeOrders = creatorOrders.filter(
+    (o) =>
+      o.order_status !== 'COMPLETED' &&
+      o.order_status !== 'CANCELLED'
+  );
+  const completedOrders = creatorOrders.filter(
+    (o) => o.order_status === 'COMPLETED' || o.order_status === 'APPROVED'
+  );
+
+  // Real financial calculations from actual orders
+  const totalEarnings = completedOrders.reduce((sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0), 0);
+  const pendingEarnings = activeOrders.reduce((sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0), 0);
+
+  const creatorDisplayName = dbCreator?.display_name || currentUser?.display_name || 'Creator';
+  const creatorNiche = dbCreator?.niche || 'Technology';
+  const creatorCity = dbCreator?.city || currentUser?.city || 'India';
+  const followerCount = Number(dbCreator?.follower_count) || 0;
 
   if (isLoadingAuth) {
     return (
@@ -225,7 +326,7 @@ export default function CreatorDashboardPage() {
             Complete Your Influencer Profile
           </h2>
           <p className="text-sm text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
-            You haven't set up your creator profile yet. Complete onboarding to showcase your packages, upload portfolio reels, and start earning from app campaigns.
+            You haven&apos;t set up your creator profile yet. Complete onboarding to showcase your packages, upload portfolio reels, and start earning from app campaigns.
           </p>
         </div>
         <Link href="/auth/onboarding/creator">
@@ -236,68 +337,6 @@ export default function CreatorDashboardPage() {
       </div>
     );
   }
-
-  const creatorId = dbCreator.user_id;
-
-  // Real orders for this creator (query by creator_id OR creator_user_id)
-  const creatorOrders = orders.filter(
-    (o) =>
-      o.creator_id === creatorId ||
-      o.creator_user_id === creatorId ||
-      o.creator?.user_id === creatorId
-  );
-
-  // Incoming collaboration requests where creator_user_id = auth.uid()
-  const incomingRequests = collaborationRequests.filter(
-    (r) => r.creator_user_id === creatorId
-  );
-  const pendingRequests = incomingRequests.filter((r) => r.status === 'PENDING');
-  const userConversations = conversations.filter(
-    (c) => c.creator_user_id === creatorId || c.business_user_id === creatorId
-  );
-
-  const activeOrders = creatorOrders.filter(
-    (o) =>
-      o.order_status !== 'COMPLETED' &&
-      o.order_status !== 'CANCELLED'
-  );
-  const completedOrders = creatorOrders.filter(
-    (o) => o.order_status === 'COMPLETED' || o.order_status === 'APPROVED'
-  );
-
-  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
-
-  const handleAcceptCollabRequest = async (requestId: string) => {
-    setProcessingRequestId(requestId);
-    try {
-      await acceptCollaborationRequest(requestId);
-      setActiveTab('messages');
-    } catch (err) {
-      console.error('Failed to accept collaboration request:', err);
-    } finally {
-      setProcessingRequestId(null);
-    }
-  };
-
-  const handleDeclineCollabRequest = async (requestId: string) => {
-    setProcessingRequestId(requestId);
-    try {
-      await declineCollaborationRequest(requestId, 'Declined by creator');
-    } catch (err) {
-      console.error('Failed to decline collaboration request:', err);
-    } finally {
-      setProcessingRequestId(null);
-    }
-  };
-
-  // Real financial calculations from actual orders
-  const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
-  const pendingEarnings = activeOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
-
-  const creatorDisplayName = dbCreator.display_name || currentUser?.display_name || 'Creator';
-  const creatorNiche = dbCreator.niche || 'Technology';
-  const creatorCity = dbCreator.city || currentUser?.city || 'India';
-  const followerCount = dbCreator.follower_count || 0;
 
   const handleUploadReel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -601,7 +640,7 @@ export default function CreatorDashboardPage() {
                             {req.campaign?.campaign_name || req.campaign?.product_name || 'App Collaboration'}
                           </h4>
                           <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                            Package: {req.package?.name || 'Custom Package'} • {new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                            Package: {req.package?.name || 'Custom Package'} • {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Recent'}
                           </p>
                         </div>
                       </div>
@@ -1090,7 +1129,7 @@ export default function CreatorDashboardPage() {
                           {req.campaign?.campaign_name || req.campaign?.product_name || 'App Promotion'}
                         </h4>
                         <p className="text-xs text-[#71717A] dark:text-zinc-400 font-mono">
-                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
                         </p>
                       </div>
                     </div>
@@ -1189,7 +1228,7 @@ export default function CreatorDashboardPage() {
                         Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Campaign: {ord.campaign?.campaign_name || ord.brief?.objective || 'App Promotion'}
                       </p>
                       <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                        Package: {ord.package?.name || 'Custom Package'} • Created {new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        Package: {ord.package?.name || 'Custom Package'} • Created {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
                       </p>
                     </div>
 
@@ -1238,7 +1277,7 @@ export default function CreatorDashboardPage() {
                       Brand: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
                     </p>
                     <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                      Completed {new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      Completed {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
                     </p>
                   </div>
 
