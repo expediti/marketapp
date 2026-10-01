@@ -64,7 +64,7 @@ export default function PackagePurchasePage() {
     setIsProcessing(true);
     try {
       // Create payment order via payment abstraction
-      await paymentService.createEscrowPaymentOrder({
+      await paymentService.createPaymentOrder({
         orderId: `temp_${Date.now()}`,
         subtotal: basePrice,
         currency: 'INR',
@@ -116,7 +116,7 @@ export default function PackagePurchasePage() {
             {[
               { num: 1, label: 'Summary' },
               { num: 2, label: 'Campaign Brief' },
-              { num: 3, label: 'Escrow Payment' },
+              { num: 3, label: 'Platform Payment' },
             ].map((s) => (
               <button
                 key={s.num}
@@ -173,7 +173,7 @@ export default function PackagePurchasePage() {
               </div>
               <div>
                 <span className="block text-[10px] uppercase">Security</span>
-                <strong className="text-[#047857]">Escrow Protected</strong>
+                <strong className="text-[#047857]">Payment Protected</strong>
               </div>
             </div>
           </div>
@@ -310,14 +310,14 @@ export default function PackagePurchasePage() {
         </div>
       )}
 
-      {/* STEP 3: PAYMENT & ESCROW SUMMARY */}
+      {/* STEP 3: PAYMENT & ORDER SUMMARY */}
       {currentStep === 3 && (
         <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
           <div className="border-b border-[#ECECE6] pb-4">
             <span className="editorial-label text-[#71717A]">Step 03 of 03</span>
-            <h3 className="font-mono text-xl font-bold text-[#121214] mt-1">Escrow Funding & Review</h3>
+            <h3 className="font-mono text-xl font-bold text-[#121214] mt-1">Platform Payment Review</h3>
             <p className="text-xs text-[#71717A] mt-1">
-              Funds are safely stored in escrow and released only after you review and approve the content.
+              Platform records protect your order and funds are released only after you review and approve the content.
             </p>
           </div>
 
@@ -328,22 +328,22 @@ export default function PackagePurchasePage() {
               <span>₹{basePrice.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-xs text-[#52525B]">
-              <span>Marketur Platform Fee (5%):</span>
+              <span>Market My App Platform Fee (5%):</span>
               <span>₹{platformFee.toLocaleString('en-IN')}</span>
             </div>
             <div className="pt-3 border-t border-[#ECECE6] flex justify-between text-base font-bold text-[#121214]">
-              <span>Total Escrow Deposit:</span>
+              <span>Total Amount:</span>
               <span className="text-[#FF5416]">₹{totalAmount.toLocaleString('en-IN')}</span>
             </div>
           </div>
 
-          {/* Escrow Guarantee Notice */}
+          {/* Platform Guarantee Notice */}
           <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg p-4 flex items-start gap-3 text-xs text-[#065F46]">
             <ShieldCheck className="w-5 h-5 text-[#047857] shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <span className="font-bold block">100% Escrow Protection Guarantee</span>
+              <span className="font-bold block">Platform Protection Guarantee</span>
               <p>
-                The creator will NOT receive this payout until you approve the delivered Reel or story proof. If the creator fails to deliver or misses your brief, our mediation team issues a full refund.
+                The creator will receive this payout only after you review and approve the delivered Reel or story proof. If agreed requirements are missing, included revisions or System Review are available.
               </p>
             </div>
           </div>

@@ -342,9 +342,14 @@ CREATE TABLE IF NOT EXISTS public.orders (
             'CREATOR_PENDING',
             'ACCEPTED',
             'IN_PROGRESS',
+            'WAITING_FOR_BUSINESS',
+            'OVERDUE',
             'DELIVERED',
+            'REVISION_REQUESTED',
             'APPROVED',
+            'AUTO_APPROVED',
             'DISPUTED',
+            'SYSTEM_REVIEW',
             'ADMIN_REVIEW',
             'REFUND_PENDING',
             'REFUNDED',
@@ -355,7 +360,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
         )
     ),
     payment_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (
-        payment_status IN ('PENDING', 'FUNDED', 'REFUNDED', 'FAILED')
+        payment_status IN ('NOT_REQUIRED', 'PENDING', 'PROCESSING', 'PAID', 'FAILED', 'REFUND_PENDING', 'REFUNDED', 'FUNDED')
     ),
     payout_status TEXT NOT NULL DEFAULT 'UNRELEASED' CHECK (
         payout_status IN ('UNRELEASED', 'PAYOUT_PENDING', 'PAID', 'HELD', 'CANCELLED')
@@ -364,6 +369,17 @@ CREATE TABLE IF NOT EXISTS public.orders (
     platform_fee NUMERIC(10, 2) NOT NULL CHECK (platform_fee >= 0),
     total_amount NUMERIC(10, 2) NOT NULL CHECK (total_amount >= 0),
     deadline TIMESTAMPTZ NOT NULL,
+    included_revisions INTEGER NOT NULL DEFAULT 1,
+    revisions_used INTEGER NOT NULL DEFAULT 0,
+    delivered_at TIMESTAMPTZ,
+    auto_approve_deadline TIMESTAMPTZ,
+    waiting_reason TEXT,
+    extension_requested_deadline TIMESTAMPTZ,
+    extension_reason TEXT,
+    extension_status TEXT DEFAULT 'NONE' CHECK (extension_status IN ('NONE', 'REQUESTED', 'ACCEPTED', 'DECLINED')),
+    system_review_reason TEXT,
+    system_review_description TEXT,
+    system_review_evidence_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -509,9 +525,11 @@ CREATE TRIGGER on_conversations_updated
 CREATE TABLE IF NOT EXISTS public.messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
-    sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE SET NULL,
+    order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+    sender_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     sender_user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    body TEXT NOT NULL,
+    sender_role TEXT CHECK (sender_role IS NULL OR sender_role IN ('business', 'creator', 'advertiser', 'influencer', 'admin')),
+    body TEXT,
     message TEXT,
     moderation_status TEXT NOT NULL DEFAULT 'clean' CHECK (moderation_status IN ('clean', 'flagged', 'blocked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
@@ -1099,5 +1117,335 @@ CREATE POLICY "Authenticated user delete for media buckets"
         )
     );
 
+-- ============================================================================
+-- 19. NOTIFICATIONS TABLE & RLS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (
+        type IN (
+            'NEW_MESSAGE',
+            'COLLABORATION_REQUEST',
+            'REQUEST_ACCEPTED',
+            'REQUEST_DECLINED',
+            'ORDER_CREATED',
+            'ORDER_DELIVERED',
+            'ORDER_APPROVED',
+            'PAYMENT_STATUS_CHANGED',
+            'SYSTEM'
+        )
+    ),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    related_conversation_id UUID REFERENCES public.conversations(id) ON DELETE CASCADE,
+    related_order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON public.notifications(read_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
+CREATE POLICY "Users can view own notifications"
+    ON public.notifications FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+CREATE POLICY "Users can update own notifications"
+    ON public.notifications FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
+
+-- Automated trigger: Notify recipient on new message
+CREATE OR REPLACE FUNCTION public.handle_message_notification()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_business_id UUID;
+    v_creator_id UUID;
+    v_recipient_id UUID;
+    v_sender_name TEXT;
+BEGIN
+    SELECT business_user_id, creator_user_id
+    INTO v_business_id, v_creator_id
+    FROM public.conversations
+    WHERE id = NEW.conversation_id;
+
+    IF NEW.sender_user_id = v_business_id OR NEW.sender_id = v_business_id THEN
+        v_recipient_id := v_creator_id;
+    ELSIF NEW.sender_user_id = v_creator_id OR NEW.sender_id = v_creator_id THEN
+        v_recipient_id := v_business_id;
+    END IF;
+
+    IF v_recipient_id IS NOT NULL THEN
+        SELECT COALESCE(display_name, 'Partner')
+        INTO v_sender_name
+        FROM public.profiles
+        WHERE id = COALESCE(NEW.sender_user_id, NEW.sender_id);
+
+        INSERT INTO public.notifications (
+            user_id,
+            type,
+            title,
+            body,
+            related_conversation_id,
+            related_order_id
+        ) VALUES (
+            v_recipient_id,
+            'NEW_MESSAGE',
+            'New message from ' || COALESCE(v_sender_name, 'Partner'),
+            COALESCE(SUBSTRING(COALESCE(NEW.body, NEW.message) FROM 1 FOR 120), 'You received a new message.'),
+            NEW.conversation_id,
+            NEW.order_id
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_message_created_notify ON public.messages;
+CREATE TRIGGER on_message_created_notify
+    AFTER INSERT ON public.messages
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_message_notification();
+
+-- Full replica identity for realtime streaming
+ALTER TABLE public.conversations REPLICA IDENTITY FULL;
+ALTER TABLE public.messages REPLICA IDENTITY FULL;
+ALTER TABLE public.collaboration_requests REPLICA IDENTITY FULL;
+ALTER TABLE public.orders REPLICA IDENTITY FULL;
+ALTER TABLE public.notifications REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.collaboration_requests;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+
+-- Maintain delivered_at, auto_approve_deadline (4 days), and revision counters
+CREATE OR REPLACE FUNCTION public.handle_order_delivery_workflow()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    IF NEW.order_status = 'DELIVERED' AND (OLD.order_status IS DISTINCT FROM 'DELIVERED') THEN
+        NEW.delivered_at := COALESCE(NEW.delivered_at, NOW());
+        NEW.auto_approve_deadline := NOW() + INTERVAL '4 days';
+    END IF;
+
+    IF NEW.order_status = 'REVISION_REQUESTED' AND (OLD.order_status IS DISTINCT FROM 'REVISION_REQUESTED') THEN
+        NEW.revisions_used := COALESCE(OLD.revisions_used, 0) + 1;
+        NEW.auto_approve_deadline := NULL;
+    END IF;
+
+    IF NEW.order_status IN ('APPROVED', 'AUTO_APPROVED', 'DISPUTED', 'SYSTEM_REVIEW', 'COMPLETED', 'CANCELLED') THEN
+        NEW.auto_approve_deadline := NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_order_delivery_workflow ON public.orders;
+CREATE TRIGGER trg_order_delivery_workflow
+    BEFORE INSERT OR UPDATE ON public.orders
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_order_delivery_workflow();
+
+-- Server-side auto-approval function (can be triggered by cron or on order query)
+CREATE OR REPLACE FUNCTION public.process_auto_approvals()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_count INTEGER := 0;
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT id, subtotal, business_user_id, creator_user_id, order_number
+        FROM public.orders
+        WHERE order_status = 'DELIVERED'
+          AND auto_approve_deadline IS NOT NULL
+          AND auto_approve_deadline <= NOW()
+    LOOP
+        UPDATE public.orders
+        SET order_status = 'AUTO_APPROVED',
+            payout_status = 'PAYOUT_PENDING',
+            auto_approve_deadline = NULL,
+            updated_at = NOW()
+        WHERE id = r.id;
+
+        INSERT INTO public.order_events (
+            order_id,
+            from_status,
+            to_status,
+            actor_id,
+            reason,
+            created_at
+        ) VALUES (
+            r.id,
+            'DELIVERED',
+            'AUTO_APPROVED',
+            NULL,
+            'Automatically approved after 4-day business review window elapsed without revision request or dispute.',
+            NOW()
+        );
+
+        IF r.creator_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (
+                user_id,
+                order_id,
+                type,
+                title,
+                content,
+                created_at
+            ) VALUES (
+                r.creator_user_id,
+                r.id,
+                'order_status',
+                'Delivery Auto-Approved',
+                'Order #' || r.order_number || ' has been automatically approved after 4 days of review. Payout is now eligible.',
+                NOW()
+            );
+        END IF;
+
+        IF r.business_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (
+                user_id,
+                order_id,
+                type,
+                title,
+                content,
+                created_at
+            ) VALUES (
+                r.business_user_id,
+                r.id,
+                'order_status',
+                'Delivery Auto-Approved',
+                'Order #' || r.order_number || ' was automatically approved following the conclusion of the 4-day review period.',
+                NOW()
+            );
+        END IF;
+
+        v_count := v_count + 1;
+    END LOOP;
+
+    RETURN v_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.process_auto_approvals() TO authenticated, anon;
+
+-- Deliveries, disputes, and order events RLS
+DROP POLICY IF EXISTS "Order parties can view deliveries" ON public.deliveries;
+CREATE POLICY "Order parties can view deliveries"
+    ON public.deliveries FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = deliveries.order_id
+            AND (o.business_id = auth.uid() OR o.business_user_id = auth.uid() OR o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Creators can submit deliveries" ON public.deliveries;
+CREATE POLICY "Creators can submit deliveries"
+    ON public.deliveries FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = deliveries.order_id
+            AND (o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Order parties and admin can view disputes" ON public.disputes;
+CREATE POLICY "Order parties and admin can view disputes"
+    ON public.disputes FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = disputes.order_id
+            AND (o.business_id = auth.uid() OR o.business_user_id = auth.uid() OR o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Order parties can open disputes" ON public.disputes;
+CREATE POLICY "Order parties can open disputes"
+    ON public.disputes FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = disputes.order_id
+            AND (o.business_id = auth.uid() OR o.business_user_id = auth.uid() OR o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Order parties can view order events" ON public.order_events;
+CREATE POLICY "Order parties can view order events"
+    ON public.order_events FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = order_events.order_id
+            AND (o.business_id = auth.uid() OR o.business_user_id = auth.uid() OR o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Order parties can insert order events" ON public.order_events;
+CREATE POLICY "Order parties can insert order events"
+    ON public.order_events FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.orders o
+            WHERE o.id = order_events.order_id
+            AND (o.business_id = auth.uid() OR o.business_user_id = auth.uid() OR o.creator_id = auth.uid() OR o.creator_user_id = auth.uid())
+        )
+    );
+
+ALTER TABLE public.deliveries REPLICA IDENTITY FULL;
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.deliveries;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
+
+

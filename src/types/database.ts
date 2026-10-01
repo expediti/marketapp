@@ -417,6 +417,17 @@ export interface Database {
           platform_fee: number;
           total_amount: number;
           deadline: string;
+          included_revisions: number;
+          revisions_used: number;
+          delivered_at: string | null;
+          auto_approve_deadline: string | null;
+          waiting_reason: string | null;
+          extension_requested_deadline: string | null;
+          extension_reason: string | null;
+          extension_status: string | null;
+          system_review_reason: string | null;
+          system_review_description: string | null;
+          system_review_evidence_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -437,6 +448,17 @@ export interface Database {
           platform_fee: number;
           total_amount: number;
           deadline: string;
+          included_revisions?: number;
+          revisions_used?: number;
+          delivered_at?: string | null;
+          auto_approve_deadline?: string | null;
+          waiting_reason?: string | null;
+          extension_requested_deadline?: string | null;
+          extension_reason?: string | null;
+          extension_status?: string | null;
+          system_review_reason?: string | null;
+          system_review_description?: string | null;
+          system_review_evidence_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -457,8 +479,127 @@ export interface Database {
           platform_fee?: number;
           total_amount?: number;
           deadline?: string;
+          included_revisions?: number;
+          revisions_used?: number;
+          delivered_at?: string | null;
+          auto_approve_deadline?: string | null;
+          waiting_reason?: string | null;
+          extension_requested_deadline?: string | null;
+          extension_reason?: string | null;
+          extension_status?: string | null;
+          system_review_reason?: string | null;
+          system_review_description?: string | null;
+          system_review_evidence_url?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      deliveries: {
+        Row: {
+          id: string;
+          order_id: string;
+          submitted_by: string | null;
+          proof_url: string;
+          notes: string | null;
+          submitted_at: string;
+          status: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          submitted_by?: string | null;
+          proof_url: string;
+          notes?: string | null;
+          submitted_at?: string;
+          status?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          submitted_by?: string | null;
+          proof_url?: string;
+          notes?: string | null;
+          submitted_at?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
+      disputes: {
+        Row: {
+          id: string;
+          order_id: string;
+          opened_by: string | null;
+          reason: string;
+          description: string;
+          evidence_url: string | null;
+          status: string;
+          resolution: string | null;
+          resolved_by: string | null;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          opened_by?: string | null;
+          reason: string;
+          description: string;
+          evidence_url?: string | null;
+          status?: string;
+          resolution?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          opened_by?: string | null;
+          reason?: string;
+          description?: string;
+          evidence_url?: string | null;
+          status?: string;
+          resolution?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          title: string;
+          body: string;
+          related_conversation_id: string | null;
+          related_order_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: string;
+          title: string;
+          body: string;
+          related_conversation_id?: string | null;
+          related_order_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          type?: string;
+          title?: string;
+          body?: string;
+          related_conversation_id?: string | null;
+          related_order_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -623,7 +764,10 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      process_auto_approvals: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
     };
     Enums: {
       [_ in never]: never;

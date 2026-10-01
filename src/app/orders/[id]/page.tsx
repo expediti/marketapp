@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   Building,
   User,
+  Info,
+  RefreshCw,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -41,19 +43,23 @@ export default function OrderWorkspacePage() {
         supabase.from('orders').select('*').eq('id', orderId).maybeSingle(),
         supabase.from('order_briefs').select('*').eq('order_id', orderId).maybeSingle(),
         supabase.from('order_events').select('*').eq('order_id', orderId).order('created_at', { ascending: true }),
+        supabase.from('deliveries').select('*').eq('order_id', orderId).order('submitted_at', { ascending: true }),
       ])
-        .then(([ordRes, briefRes, eventsRes]) => {
+        .then(([ordRes, briefRes, eventsRes, delivRes]) => {
           if (ordRes.data) {
             const o = ordRes.data;
             const b = briefRes.data;
             const evs = eventsRes.data || [];
+            const delivs = delivRes.data || [];
+            const lastDeliv = delivs.length > 0 ? delivs[delivs.length - 1] : undefined;
+
             setDbOrder({
               id: o.id,
               order_number: o.order_number,
-              business_id: o.business_id,
-              business_user_id: o.business_user_id,
-              creator_id: o.creator_id,
-              creator_user_id: o.creator_user_id,
+              business_id: o.business_id || o.business_user_id,
+              business_user_id: o.business_user_id || o.business_id,
+              creator_id: o.creator_id || o.creator_user_id,
+              creator_user_id: o.creator_user_id || o.creator_id,
               package_id: o.package_id,
               campaign_id: o.campaign_id,
               request_id: o.request_id,
@@ -63,7 +69,18 @@ export default function OrderWorkspacePage() {
               platform_fee: Number(o.platform_fee || 0),
               total_amount: Number(o.total_amount || 0),
               payout_status: (o.payout_status as any) || 'UNRELEASED',
-              deadline: b?.deadline || o.created_at,
+              deadline: b?.deadline || o.deadline || o.created_at,
+              included_revisions: o.included_revisions ?? 1,
+              revisions_used: o.revisions_used ?? 0,
+              delivered_at: o.delivered_at,
+              auto_approve_deadline: o.auto_approve_deadline,
+              waiting_reason: o.waiting_reason,
+              extension_requested_deadline: o.extension_requested_deadline,
+              extension_reason: o.extension_reason,
+              extension_status: (o.extension_status as any) || 'NONE',
+              system_review_reason: o.system_review_reason,
+              system_review_description: o.system_review_description,
+              system_review_evidence_url: o.system_review_evidence_url,
               created_at: o.created_at,
               updated_at: o.updated_at,
               brief: b
@@ -74,8 +91,19 @@ export default function OrderWorkspacePage() {
                     requirements: b.requirements || '',
                     dos: b.dos || '',
                     donts: b.donts || '',
-                    deadline: b.deadline || o.created_at,
+                    deadline: b.deadline || o.deadline || o.created_at,
                     additional_notes: b.additional_notes || undefined,
+                  }
+                : undefined,
+              delivery: lastDeliv
+                ? {
+                    id: lastDeliv.id,
+                    order_id: o.id,
+                    submitted_by: lastDeliv.submitted_by || o.creator_id,
+                    proof_url: lastDeliv.proof_url,
+                    notes: lastDeliv.notes || '',
+                    submitted_at: lastDeliv.submitted_at || o.delivered_at || o.updated_at,
+                    status: (lastDeliv.status as any) || 'pending_review',
                   }
                 : undefined,
               events: (evs as any[]).map((ev) => ({
@@ -113,8 +141,8 @@ export default function OrderWorkspacePage() {
 
   if (!order) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
-        <h2 className="font-mono text-2xl font-bold">Order not found</h2>
+      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4 font-mono">
+        <h2 className="text-2xl font-bold text-[#121214] dark:text-white">Order not found</h2>
         <Link href="/discover">
           <Button variant="primary" size="sm">
             Back to Directory
@@ -127,19 +155,19 @@ export default function OrderWorkspacePage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Top Breadcrumb & Quick Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono">
         <Link
           href={activeRole === 'creator' ? '/dashboard/creator' : '/dashboard/business'}
-          className="inline-flex items-center gap-1.5 text-xs font-mono text-[#71717A] hover:text-[#121214]"
+          className="inline-flex items-center gap-1.5 text-xs text-[#71717A] hover:text-[#121214] dark:hover:text-white transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Dashboard</span>
         </Link>
 
-        {/* Creator Accept / Decline Actions if in FUNDED state */}
-        {order.order_status === 'FUNDED' && activeRole === 'creator' && (
-          <div className="flex items-center gap-2 bg-[#FFF2EC] border border-[#FFD2C1] px-3 py-1.5 rounded-lg text-xs">
-            <span className="font-mono text-[#C2410C] font-semibold">New Collaboration Request:</span>
+        {/* Creator Accept / Decline Actions if in pending state */}
+        {order.order_status === 'PAYMENT_PENDING' && activeRole === 'creator' && (
+          <div className="flex items-center gap-2 bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] px-3 py-1.5 rounded-lg text-xs">
+            <span className="text-[#C2410C] dark:text-[#F97316] font-semibold">Deal Confirmed:</span>
             <Button
               variant="outline"
               size="sm"
@@ -159,46 +187,86 @@ export default function OrderWorkspacePage() {
       </div>
 
       {/* ORDER HEADER */}
-      <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] pb-4">
+      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-4 shadow-sm font-mono">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="editorial-label text-[#71717A]">Order Workspace</span>
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400">Order Workspace</span>
               <StatusBadge status={order.order_status} size="sm" />
             </div>
-            <h1 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white tracking-tight">
               {order.order_number}
             </h1>
           </div>
 
-          <div className="text-right">
-            <div className="font-mono text-2xl font-bold text-[#121214]">
+          <div className="text-left sm:text-right">
+            <div className="text-2xl font-bold text-[#121214] dark:text-white">
               ₹{order.total_amount.toLocaleString('en-IN')}
             </div>
-            <div className="flex items-center gap-1.5 text-xs font-mono text-[#047857] justify-end mt-0.5">
+            <div className="flex items-center gap-1.5 text-xs text-[#047857] sm:justify-end mt-0.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Payment Protected</span>
+              <span>Platform Payment Protection</span>
             </div>
           </div>
         </div>
 
-        {/* Parties involved */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 text-xs">
-          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg">
+        {/* CONTEXTUAL WORKFLOW NOTICES */}
+        {order.order_status === 'PAYMENT_PENDING' && (
+          <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3.5 rounded-lg text-xs text-[#C2410C] dark:text-[#F97316] flex items-center gap-2">
+            <Info className="w-4 h-4 shrink-0 text-[#FF5416]" />
+            <p>
+              Payment is required before the creator begins the confirmed collaboration. Platform payment will be integrated soon.
+            </p>
+          </div>
+        )}
+
+        {order.order_status === 'IN_PROGRESS' && (
+          <div className="bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800 p-3.5 rounded-lg text-xs text-[#047857] dark:text-emerald-400 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0 text-[#047857]" />
+            <p>
+              Payment has been confirmed. The creator is now actively preparing deliverables according to the brief specs.
+            </p>
+          </div>
+        )}
+
+        {order.order_status === 'DELIVERED' && (
+          <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3.5 rounded-lg text-xs text-[#C2410C] dark:text-[#F97316] flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0 text-[#FF5416]" />
+            <p>
+              Please review the delivery within 4 days. If no action is taken, it will be automatically approved.
+            </p>
+          </div>
+        )}
+
+        {/* Parties involved & terms */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 text-xs">
+          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
             <User className="w-4 h-4 text-[#FF5416]" />
             <div>
-              <span className="editorial-label text-[#71717A] block">Creator</span>
-              <span className="font-mono font-bold text-[#121214]">{order.creator?.profile?.display_name}</span>
-              <span className="text-[#71717A] ml-2">({order.creator?.profile?.city})</span>
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Creator</span>
+              <span className="font-bold text-[#121214] dark:text-white">
+                {order.creator?.display_name || order.creator?.profile?.display_name || 'Creator'}
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg">
+          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
             <Building className="w-4 h-4 text-[#FF5416]" />
             <div>
-              <span className="editorial-label text-[#71717A] block">Business / Brand</span>
-              <span className="font-mono font-bold text-[#121214]">{order.business?.business_name}</span>
-              <span className="text-[#71717A] ml-2">({order.business?.city})</span>
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Business / Brand</span>
+              <span className="font-bold text-[#121214] dark:text-white">
+                {order.business?.business_name || 'Business'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
+            <RefreshCw className="w-4 h-4 text-[#FF5416]" />
+            <div>
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Included Revisions</span>
+              <span className="font-bold text-[#121214] dark:text-white">
+                {order.included_revisions ?? 1} revision(s) ({order.revisions_used ?? 0} used)
+              </span>
             </div>
           </div>
         </div>
@@ -208,20 +276,20 @@ export default function OrderWorkspacePage() {
       <OrderTimeline currentStatus={order.order_status} />
 
       {/* WORKSPACE NAVIGATION TABS */}
-      <div className="flex items-center gap-2 border-b border-[#E5E5DE] pb-2 font-mono text-xs">
+      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 font-mono text-xs">
         {[
           { key: 'workspace', label: 'Delivery & Proofs' },
           { key: 'chat', label: 'Order Chat' },
           { key: 'brief', label: 'Campaign Brief' },
-          { key: 'events', label: 'Timeline Activity' },
+          { key: 'events', label: 'Activity Trail' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
             className={`px-3 py-1.5 rounded transition-colors ${
               activeTab === tab.key
-                ? 'bg-[#121214] text-white font-bold'
-                : 'text-[#71717A] hover:text-[#121214] hover:bg-[#F4F4F0]'
+                ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-bold'
+                : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
             }`}
           >
             {tab.label}
@@ -267,38 +335,44 @@ export default function OrderWorkspacePage() {
       )}
 
       {activeTab === 'events' && (
-        <div className="max-w-3xl mx-auto bg-white border border-[#E5E5DE] rounded-xl p-6 space-y-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-          <div className="border-b border-[#ECECE6] pb-3">
+        <div className="max-w-3xl mx-auto bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm font-mono">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
             <span className="editorial-label text-[#FF5416]">Audit Trail</span>
-            <h3 className="font-mono text-base font-bold text-[#121214] mt-0.5">
+            <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
               Collaboration Activity History
             </h3>
           </div>
 
-          <div className="space-y-3 font-mono text-xs">
-            {order.events?.map((ev) => (
-              <div
-                key={ev.id}
-                className="p-3 bg-[#FBFBFA] border border-[#ECECE6] rounded flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#71717A]">{ev.from_status || 'INIT'}</span>
-                    <span className="text-[#FF5416]">→</span>
-                    <strong className="text-[#121214]">{ev.to_status}</strong>
+          <div className="space-y-3 text-xs">
+            {(!order.events || order.events.length === 0) ? (
+              <p className="text-[#71717A] dark:text-zinc-400 text-xs py-4 text-center">
+                No activity events recorded yet.
+              </p>
+            ) : (
+              order.events.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#71717A] dark:text-zinc-400">{ev.from_status || 'INIT'}</span>
+                      <span className="text-[#FF5416]">→</span>
+                      <strong className="text-[#121214] dark:text-white">{ev.to_status}</strong>
+                    </div>
+                    <p className="text-[#52525B] dark:text-zinc-300 mt-1 text-[11px]">{ev.reason}</p>
                   </div>
-                  <p className="text-[#52525B] mt-1 text-[11px]">{ev.reason}</p>
+                  <span className="text-[10px] text-[#A1A1AA] dark:text-zinc-500 shrink-0">
+                    {new Date(ev.created_at).toLocaleString('en-IN')}
+                  </span>
                 </div>
-                <span className="text-[10px] text-[#A1A1AA] shrink-0">
-                  {new Date(ev.created_at).toLocaleString('en-IN')}
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}
 
-      {/* DISPUTE MODAL */}
+      {/* SYSTEM REVIEW MODAL */}
       <DisputeModal
         isOpen={isDisputeOpen}
         onClose={() => setIsDisputeOpen(false)}

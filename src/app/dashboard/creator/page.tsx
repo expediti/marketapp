@@ -547,9 +547,9 @@ export default function CreatorDashboardPage() {
           badge="SETTLED"
         />
         <StatCard
-          label="Protected Escrow"
+          label="Active Orders Value"
           value={`₹${pendingEarnings.toLocaleString('en-IN')}`}
-          subtext="Released upon approved delivery"
+          subtext="Payable upon approved delivery"
           badge="PROTECTED"
         />
         <StatCard

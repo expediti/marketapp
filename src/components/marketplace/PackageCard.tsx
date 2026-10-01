@@ -37,7 +37,7 @@ export function PackageCard({ pkg, creatorId, onRequest }: PackageCardProps) {
           </div>
           <div className="flex items-center gap-2 text-[#047857]">
             <CheckCircle className="w-3.5 h-3.5" />
-            <span>Escrow payment protected</span>
+            <span>Platform payment protected</span>
           </div>
         </div>
       </div>

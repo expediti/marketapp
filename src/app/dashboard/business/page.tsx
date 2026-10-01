@@ -488,7 +488,7 @@ export default function BusinessDashboardPage() {
             <StatCard
               label="Committed Budget"
               value={`₹${totalCommitted.toLocaleString('en-IN')}`}
-              subtext="Escrow collaboration protection"
+              subtext="Platform payment protection"
             />
             <StatCard
               label="Completed Deliveries"
@@ -974,7 +974,7 @@ export default function BusinessDashboardPage() {
                       <span className="text-sm font-bold text-[#121214] dark:text-white block">
                         ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
                       </span>
-                      <span className="text-[10px] text-[#047857]">Escrow Pending</span>
+                      <span className="text-[10px] text-[#047857]">Payment Protected</span>
                     </div>
 
                     <Link href={`/orders/${ord.id}`}>

@@ -58,6 +58,7 @@ interface MarketplaceContextType {
     packageId?: string;
     campaignId?: string;
     agreedAmount: number;
+    includedRevisions?: number;
     brief: {
       objective: string;
       requirements: string;
@@ -88,6 +89,18 @@ interface MarketplaceContextType {
   startOrderProgress: (orderId: string) => Promise<void>;
   submitDelivery: (orderId: string, proofUrl: string, notes: string) => Promise<void>;
   approveDelivery: (orderId: string) => Promise<void>;
+  requestRevision: (orderId: string, notes: string) => Promise<void>;
+  requestSystemReview: (params: {
+    orderId: string;
+    reason: string;
+    description: string;
+    evidenceUrl?: string;
+  }) => Promise<void>;
+  markWaitingForBusiness: (orderId: string, reason: string) => Promise<void>;
+  resumeFromWaiting: (orderId: string) => Promise<void>;
+  requestDeadlineExtension: (orderId: string, requestedDeadline: string, reason: string) => Promise<void>;
+  respondDeadlineExtension: (orderId: string, accept: boolean) => Promise<void>;
+  checkAutoApprovals: () => Promise<void>;
   disputeDelivery: (params: {
     orderId: string;
     reason: DisputeReason;
@@ -306,7 +319,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       // 3. Fetch orders (where user is business OR creator)
       const { data: orderRows, error: ordersErr } = await supabase
         .from('orders')
-        .select('*, brief:order_briefs(*), events:order_events(*)')
+        .select('*, brief:order_briefs(*), events:order_events(*), deliveries(*)')
         .or(`business_id.eq.${userId},business_user_id.eq.${userId},creator_id.eq.${userId},creator_user_id.eq.${userId}`)
         .order('created_at', { ascending: false });
 
@@ -463,13 +476,15 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       setCollaborationRequests(mappedRequests);
 
       // Map orders
-      const mappedOrders: Order[] = (orderRows || []).map((o) => {
+      const mappedOrders: Order[] = (orderRows || []).map((o: any) => {
         const bUserId = o.business_user_id || o.business_id;
         const cUserId = o.creator_user_id || o.creator_id;
         const b = resolveBusiness(bUserId);
         const c = resolveCreator(cUserId);
         const pkg = relatedPackages.find((p) => p.id === o.package_id);
         const camp = (campaignsRes.data || []).find((cp) => cp.id === o.campaign_id);
+        const deliveriesList = Array.isArray(o.deliveries) ? o.deliveries : [];
+        const lastDelivery = deliveriesList.length > 0 ? deliveriesList[deliveriesList.length - 1] : undefined;
 
         return {
           id: o.id,
@@ -500,14 +515,41 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           platform_fee: Number(o.platform_fee) || 0,
           total_amount: Number(o.total_amount) || 0,
           deadline: o.deadline,
+          included_revisions: o.included_revisions ?? 1,
+          revisions_used: o.revisions_used ?? 0,
+          delivered_at: o.delivered_at,
+          auto_approve_deadline: o.auto_approve_deadline,
+          waiting_reason: o.waiting_reason,
+          extension_requested_deadline: o.extension_requested_deadline,
+          extension_reason: o.extension_reason,
+          extension_status: o.extension_status || 'NONE',
+          system_review_reason: o.system_review_reason,
+          system_review_description: o.system_review_description,
+          system_review_evidence_url: o.system_review_evidence_url,
           created_at: o.created_at,
           updated_at: o.updated_at,
           brief: (Array.isArray(o.brief) ? o.brief[0] : o.brief) as any,
+          delivery: lastDelivery ? {
+            id: lastDelivery.id,
+            order_id: o.id,
+            submitted_by: lastDelivery.submitted_by || cUserId,
+            proof_url: lastDelivery.proof_url,
+            notes: lastDelivery.notes || '',
+            submitted_at: lastDelivery.submitted_at || o.delivered_at || o.updated_at,
+            status: lastDelivery.status || 'pending_review',
+          } : undefined,
           events: Array.isArray(o.events) ? o.events : [],
         };
       });
 
       setOrders(mappedOrders);
+
+      // Check for any orders that reached the 4-day auto-approval threshold
+      if (isSupabaseConfigured) {
+        try {
+          (supabase as any).rpc('process_auto_approvals').then(() => {}).catch(() => {});
+        } catch {}
+      }
 
       // Map conversations
       const mappedConvs: Conversation[] = (convRows || []).map((cv) => {
@@ -1290,7 +1332,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (emailRegex.test(text) || phoneRegex.test(text)) {
       return {
         allowed: false,
-        reason: 'Please keep all communications within Marketur for escrow and dispute protection.',
+        reason: 'Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable. Avoid sharing external personal contact information.',
       };
     }
     return { allowed: true };
@@ -1406,6 +1448,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     packageId?: string;
     campaignId?: string;
     agreedAmount: number;
+    includedRevisions?: number;
     brief: {
       objective: string;
       requirements: string;
@@ -1455,6 +1498,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           platform_fee: platformFee,
           total_amount: totalAmount,
           deadline: params.brief.deadline,
+          included_revisions: params.includedRevisions ?? 1,
+          revisions_used: 0,
         })
         .select('*')
         .single();
@@ -1517,6 +1562,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       platform_fee: platformFee,
       total_amount: totalAmount,
       deadline: params.brief.deadline,
+      included_revisions: params.includedRevisions ?? 1,
+      revisions_used: 0,
       created_at: createdAt,
       updated_at: createdAt,
       brief: {
@@ -1691,20 +1738,46 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     );
   };
 
+  const checkAutoApprovals = useCallback(async (): Promise<void> => {
+    if (!isSupabaseConfigured) return;
+    try {
+      await (supabase as any).rpc('process_auto_approvals');
+    } catch (e) {
+      console.warn('Auto approval check RPC:', e);
+    }
+  }, []);
+
   const submitDelivery = async (orderId: string, proofUrl: string, notes: string): Promise<void> => {
     const now = new Date().toISOString();
+    const fourDaysLater = new Date(Date.now() + 4 * 86400000).toISOString();
+    const currentOrder = orders.find((o) => o.id === orderId);
+
     if (isSupabaseConfigured) {
       await supabase
         .from('orders')
-        .update({ order_status: 'DELIVERED', updated_at: now })
+        .update({
+          order_status: 'DELIVERED',
+          delivered_at: now,
+          auto_approve_deadline: fourDaysLater,
+          updated_at: now,
+        })
         .eq('id', orderId);
+
+      await supabase.from('deliveries').insert({
+        order_id: orderId,
+        submitted_by: currentUser?.id,
+        proof_url: proofUrl,
+        notes,
+        submitted_at: now,
+        status: 'pending_review',
+      });
 
       await supabase.from('order_events').insert({
         order_id: orderId,
-        from_status: 'IN_PROGRESS',
+        from_status: currentOrder?.order_status || 'IN_PROGRESS',
         to_status: 'DELIVERED',
         actor_id: currentUser?.id,
-        reason: 'Creator submitted deliverables for review',
+        reason: 'Creator submitted deliverables for 4-day business review',
       });
     }
 
@@ -1714,16 +1787,30 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           ? {
               ...o,
               order_status: 'DELIVERED',
+              delivered_at: now,
+              auto_approve_deadline: fourDaysLater,
               delivery: {
                 id: `del_${Date.now()}`,
                 order_id: orderId,
-                submitted_by: o.creator_id,
+                submitted_by: currentUser?.id || o.creator_id,
                 proof_url: proofUrl,
                 notes,
                 submitted_at: now,
                 status: 'pending_review',
               },
               updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: orderId,
+                  from_status: o.order_status,
+                  to_status: 'DELIVERED',
+                  actor_id: currentUser?.id,
+                  reason: 'Creator submitted deliverables for 4-day business review',
+                  created_at: now,
+                },
+              ],
             }
           : o
       )
@@ -1735,7 +1822,12 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (isSupabaseConfigured) {
       await supabase
         .from('orders')
-        .update({ order_status: 'APPROVED', updated_at: now })
+        .update({
+          order_status: 'APPROVED',
+          payout_status: 'PAYOUT_PENDING',
+          auto_approve_deadline: null,
+          updated_at: now,
+        })
         .eq('id', orderId);
 
       await supabase.from('order_events').insert({
@@ -1743,7 +1835,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         from_status: 'DELIVERED',
         to_status: 'APPROVED',
         actor_id: currentUser?.id,
-        reason: 'Business approved deliverables',
+        reason: 'Business approved deliverables; creator payout eligible',
       });
     }
 
@@ -1753,6 +1845,311 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           ? {
               ...o,
               order_status: 'APPROVED',
+              payout_status: 'PAYOUT_PENDING',
+              auto_approve_deadline: null,
+              updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: orderId,
+                  from_status: o.order_status,
+                  to_status: 'APPROVED',
+                  actor_id: currentUser?.id,
+                  reason: 'Business approved deliverables',
+                  created_at: now,
+                },
+              ],
+            }
+          : o
+      )
+    );
+  };
+
+  const requestRevision = async (orderId: string, notes: string): Promise<void> => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    const included = order.included_revisions ?? 1;
+    const used = order.revisions_used ?? 0;
+    if (used >= included) {
+      throw new Error(`All included revisions (${included}) have already been used for this order.`);
+    }
+
+    const now = new Date().toISOString();
+    const newUsed = used + 1;
+
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          order_status: 'REVISION_REQUESTED',
+          revisions_used: newUsed,
+          auto_approve_deadline: null,
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'DELIVERED',
+        to_status: 'REVISION_REQUESTED',
+        actor_id: currentUser?.id,
+        reason: `Revision requested (${newUsed}/${included}): ${notes}`,
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'REVISION_REQUESTED',
+              revisions_used: newUsed,
+              auto_approve_deadline: null,
+              updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: orderId,
+                  from_status: 'DELIVERED',
+                  to_status: 'REVISION_REQUESTED',
+                  actor_id: currentUser?.id,
+                  reason: `Revision requested (${newUsed}/${included}): ${notes}`,
+                  created_at: now,
+                },
+              ],
+            }
+          : o
+      )
+    );
+  };
+
+  const requestSystemReview = async (params: {
+    orderId: string;
+    reason: string;
+    description: string;
+    evidenceUrl?: string;
+  }): Promise<void> => {
+    const order = orders.find((o) => o.id === params.orderId);
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          order_status: 'SYSTEM_REVIEW',
+          system_review_reason: params.reason,
+          system_review_description: params.description,
+          system_review_evidence_url: params.evidenceUrl || null,
+          auto_approve_deadline: null,
+          updated_at: now,
+        })
+        .eq('id', params.orderId);
+
+      await supabase.from('disputes').insert({
+        order_id: params.orderId,
+        opened_by: currentUser?.id,
+        reason: params.reason as any,
+        description: params.description,
+        evidence_url: params.evidenceUrl || null,
+        status: 'open',
+      });
+
+      await supabase.from('order_events').insert({
+        order_id: params.orderId,
+        from_status: order?.order_status || 'DELIVERED',
+        to_status: 'SYSTEM_REVIEW',
+        actor_id: currentUser?.id,
+        reason: `System Review requested: ${params.reason}. ${params.description}`,
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === params.orderId
+          ? {
+              ...o,
+              order_status: 'SYSTEM_REVIEW',
+              system_review_reason: params.reason,
+              system_review_description: params.description,
+              system_review_evidence_url: params.evidenceUrl,
+              auto_approve_deadline: null,
+              dispute: {
+                id: `disp_${Date.now()}`,
+                order_id: params.orderId,
+                opened_by: currentUser?.id || '',
+                reason: params.reason as any,
+                description: params.description,
+                evidence_url: params.evidenceUrl,
+                status: 'open',
+                created_at: now,
+              },
+              updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: params.orderId,
+                  from_status: o.order_status,
+                  to_status: 'SYSTEM_REVIEW',
+                  actor_id: currentUser?.id,
+                  reason: `System Review requested: ${params.reason}`,
+                  created_at: now,
+                },
+              ],
+            }
+          : o
+      )
+    );
+  };
+
+  const markWaitingForBusiness = async (orderId: string, reason: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          order_status: 'WAITING_FOR_BUSINESS',
+          waiting_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'IN_PROGRESS',
+        to_status: 'WAITING_FOR_BUSINESS',
+        actor_id: currentUser?.id,
+        reason: `Creator waiting for business material: ${reason}`,
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'WAITING_FOR_BUSINESS',
+              waiting_reason: reason,
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const resumeFromWaiting = async (orderId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          order_status: 'IN_PROGRESS',
+          waiting_reason: null,
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'WAITING_FOR_BUSINESS',
+        to_status: 'IN_PROGRESS',
+        actor_id: currentUser?.id,
+        reason: 'Work resumed after receiving required business materials',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'IN_PROGRESS',
+              waiting_reason: null,
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const requestDeadlineExtension = async (
+    orderId: string,
+    requestedDeadline: string,
+    reason: string
+  ): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          extension_status: 'REQUESTED',
+          extension_requested_deadline: requestedDeadline,
+          extension_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'IN_PROGRESS',
+        to_status: 'IN_PROGRESS',
+        actor_id: currentUser?.id,
+        reason: `Creator requested deadline extension to ${new Date(requestedDeadline).toLocaleDateString()}: ${reason}`,
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              extension_status: 'REQUESTED',
+              extension_requested_deadline: requestedDeadline,
+              extension_reason: reason,
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const respondDeadlineExtension = async (orderId: string, accept: boolean): Promise<void> => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    const now = new Date().toISOString();
+    const newDeadline = accept && order.extension_requested_deadline ? order.extension_requested_deadline : order.deadline;
+    const status = accept ? 'ACCEPTED' : 'DECLINED';
+
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({
+          deadline: newDeadline,
+          extension_status: status,
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: order.order_status,
+        to_status: order.order_status,
+        actor_id: currentUser?.id,
+        reason: accept
+          ? `Business accepted deadline extension to ${new Date(newDeadline).toLocaleDateString()}`
+          : 'Business declined deadline extension request',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              deadline: newDeadline,
+              extension_status: status,
               updated_at: now,
             }
           : o
@@ -1766,33 +2163,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     description: string;
     evidenceUrl?: string;
   }): Promise<void> => {
-    const now = new Date().toISOString();
-    if (isSupabaseConfigured) {
-      await supabase
-        .from('orders')
-        .update({ order_status: 'DISPUTED', updated_at: now })
-        .eq('id', params.orderId);
-
-      await supabase.from('order_events').insert({
-        order_id: params.orderId,
-        from_status: 'DELIVERED',
-        to_status: 'DISPUTED',
-        actor_id: currentUser?.id,
-        reason: `Dispute opened: ${params.reason}`,
-      });
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === params.orderId
-          ? {
-              ...o,
-              order_status: 'DISPUTED',
-              updated_at: now,
-            }
-          : o
-      )
-    );
+    return requestSystemReview(params);
   };
 
   const resolveDispute = async (orderId: string, resolution: DisputeResolution, notes?: string) => {
@@ -1818,7 +2189,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       await paymentService.initiateRefund({
         orderId,
         amount: order.total_amount,
-        reason: notes || 'Admin dispute refund to business',
+        reason: notes || 'System Review refund to business',
       });
     } else if (resolution === 'cancelled') {
       nextOrderStatus = 'CANCELLED';
@@ -1850,7 +2221,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
               order_id: orderId,
               from_status: o.order_status,
               to_status: nextOrderStatus,
-              reason: `Admin resolved dispute: ${resolution}. ${notes || ''}`,
+              reason: `System Review resolved: ${resolution}. ${notes || ''}`,
               created_at: new Date().toISOString(),
             },
           ],
@@ -1907,7 +2278,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     await paymentService.initiateRefund({
       orderId,
       amount: order.total_amount,
-      reason: 'Admin initiated manual escrow refund',
+      reason: 'System Review initiated platform refund',
     });
 
     setOrders((prev) =>
@@ -2152,6 +2523,13 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         startOrderProgress,
         submitDelivery,
         approveDelivery,
+        requestRevision,
+        requestSystemReview,
+        markWaitingForBusiness,
+        resumeFromWaiting,
+        requestDeadlineExtension,
+        respondDeadlineExtension,
+        checkAutoApprovals,
         disputeDelivery,
         createCampaign,
         updateCampaign,

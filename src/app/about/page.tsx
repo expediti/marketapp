@@ -13,7 +13,7 @@ export default function AboutPage() {
           Collaborations shouldn&apos;t run on spreadsheets, DMs and guesswork.
         </h1>
         <p className="text-base text-[#52525B] leading-relaxed max-w-2xl">
-          Marketur is built around clear creator profiles, defined fixed packages, and protected collaboration escrow.
+          Market My App is built around clear creator profiles, defined fixed packages, and protected collaboration transactions.
         </p>
       </div>
 
@@ -32,15 +32,15 @@ export default function AboutPage() {
 
         <div className="bg-[#121214] text-white rounded-xl p-8 space-y-4">
           <span className="editorial-label text-[#FF5416]">The Solution</span>
-          <h3 className="font-mono text-xl font-bold text-white">The Marketur Architecture</h3>
+          <h3 className="font-mono text-xl font-bold text-white">The Market My App Architecture</h3>
           <p className="text-xs text-[#D4D4D8] leading-relaxed">
-            We transformed influencer marketing into a structured e-commerce transaction marketplace.
+            We transformed influencer marketing into a structured, transparent transaction marketplace.
           </p>
           <ul className="text-xs text-[#A1A1AA] space-y-2 font-mono">
             <li>• Standardized rate cards and clear deliverables.</li>
-            <li>• 100% pre-funded escrow payments held until content approval.</li>
+            <li>• Protected platform payments released upon content approval or 4-day review.</li>
             <li>• Direct API-verified audience reach and demographics.</li>
-            <li>• Structured dispute mediation for accountability.</li>
+            <li>• Objective System Review for campaign brief accountability.</li>
           </ul>
         </div>
       </div>

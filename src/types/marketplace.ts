@@ -10,14 +10,22 @@ export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'reject
 
 export type OrderStatus =
   | 'DRAFT'
+  | 'REQUESTED'
   | 'PAYMENT_PENDING'
+  | 'ACCEPTED_AWAITING_PAYMENT'
   | 'FUNDED'
+  | 'PAID_IN_ESCROW'
   | 'CREATOR_PENDING'
   | 'ACCEPTED'
   | 'IN_PROGRESS'
+  | 'WAITING_FOR_BUSINESS'
+  | 'OVERDUE'
   | 'DELIVERED'
+  | 'REVISION_REQUESTED'
   | 'APPROVED'
+  | 'AUTO_APPROVED'
   | 'DISPUTED'
+  | 'SYSTEM_REVIEW'
   | 'ADMIN_REVIEW'
   | 'REFUND_PENDING'
   | 'REFUNDED'
@@ -26,7 +34,15 @@ export type OrderStatus =
   | 'CANCELLED'
   | 'COMPLETED';
 
-export type PaymentStatus = 'PENDING' | 'FUNDED' | 'REFUNDED' | 'FAILED';
+export type PaymentStatus =
+  | 'NOT_REQUIRED'
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'PAID'
+  | 'FAILED'
+  | 'REFUND_PENDING'
+  | 'REFUNDED'
+  | 'FUNDED';
 
 export type PayoutStatus = 'UNRELEASED' | 'PAYOUT_PENDING' | 'PAID' | 'HELD' | 'CANCELLED';
 
@@ -313,6 +329,17 @@ export interface Order {
   delivery?: DeliverySubmission;
   dispute?: DisputeRecord;
   events?: OrderEvent[];
+  included_revisions?: number;
+  revisions_used?: number;
+  delivered_at?: string | null;
+  auto_approve_deadline?: string | null;
+  waiting_reason?: string | null;
+  extension_requested_deadline?: string | null;
+  extension_reason?: string | null;
+  extension_status?: 'NONE' | 'REQUESTED' | 'ACCEPTED' | 'DECLINED';
+  system_review_reason?: string | null;
+  system_review_description?: string | null;
+  system_review_evidence_url?: string | null;
 }
 
 export interface AdminAction {

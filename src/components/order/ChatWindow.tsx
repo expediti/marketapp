@@ -50,8 +50,15 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
         </div>
         <div className="flex items-center gap-1 text-[11px] font-mono text-[#71717A]">
           <Lock className="w-3 h-3 text-[#FF5416]" />
-          <span>Escrow Protected Thread</span>
+          <span>Platform Protected Thread</span>
         </div>
+      </div>
+
+      {/* Safety Notice */}
+      <div className="bg-[#FAF9F6] border-b border-[#E5E5DE] px-4 py-2 flex items-center gap-2 text-[10px] font-mono text-[#52525B]">
+        <span>
+          Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable.
+        </span>
       </div>
 
       {/* Warning Notice if Flagged */}
@@ -77,7 +84,7 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
             <Lock className="w-6 h-6 text-[#A1A1AA] mb-2" />
             <p className="font-semibold text-[#121214]">Secure Collaboration Thread</p>
             <p className="max-w-xs mt-1">
-              Communicate content feedback, logistics, and revision requests here. All agreements are recorded for escrow protection.
+              Communicate content feedback, logistics, and revision requests here. All agreements are recorded for platform protection and transaction records.
             </p>
           </div>
         ) : (

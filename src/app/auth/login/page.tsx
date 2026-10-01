@@ -112,10 +112,8 @@ function LoginForm() {
         const role = profile.role.toLowerCase();
         if (role === 'creator' || role === 'influencer') {
           router.replace('/dashboard/creator');
-        } else if (role === 'business' || role === 'advertiser') {
+        } else if (role === 'business' || role === 'advertiser' || role === 'admin') {
           router.replace('/dashboard/business');
-        } else if (role === 'admin') {
-          router.replace('/admin');
         } else {
           router.replace('/auth/role-select');
         }

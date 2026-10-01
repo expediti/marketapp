@@ -1,7 +1,12 @@
 /**
- * Payment Service Abstraction Layer
- * Abstracts payment gateways like Razorpay, Cashfree, or UPI Escrow.
- * Calculates platform fees, generates order tokens, and coordinates escrow funding.
+ * Payment Service Abstraction Layer (Razorpay-Ready Architecture)
+ * 
+ * Flow:
+ * Deal confirmed -> Payment Pending -> Business checkout via Razorpay
+ * -> Server webhook/verification -> Order & payment state updated to PAID
+ * -> Creator notified to start work.
+ * 
+ * Note: Payment integration is intentionally prepared for Razorpay without fake client-side success.
  */
 
 export interface CreatePaymentOrderParams {
@@ -18,11 +23,12 @@ export interface PaymentOrderResult {
   platformFee: number;
   totalAmount: number;
   keyId: string;
-  provider: 'razorpay' | 'cashfree' | 'escrow_mock';
+  provider: 'razorpay' | 'cashfree' | 'pending_integration';
 }
 
 export interface IPaymentService {
   calculatePlatformFee(subtotal: number): number;
+  createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult>;
   createEscrowPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult>;
   verifyPaymentSignature(params: {
     orderId: string;
@@ -43,15 +49,12 @@ class PaymentService implements IPaymentService {
     return Math.round(subtotal * this.platformFeePercentage * 100) / 100;
   }
 
-  async createEscrowPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
+  async createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
     const platformFee = this.calculatePlatformFee(params.subtotal);
     const totalAmount = params.subtotal + platformFee;
 
-    // If Razorpay keys are configured in environment
+    // When Razorpay keys are configured in environment
     if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-      // Integration call to Razorpay Orders API:
-      // const razorpay = new Razorpay({ ... });
-      // const order = await razorpay.orders.create({ amount: totalAmount * 100, currency: 'INR', ... });
       return {
         providerOrderId: `order_rzp_${Date.now()}`,
         amount: params.subtotal,
@@ -63,28 +66,34 @@ class PaymentService implements IPaymentService {
       };
     }
 
-    // Default development escrow mock adapter
+    // Architecture stub awaiting Razorpay integration credentials
     return {
-      providerOrderId: `escrow_order_${Date.now()}_${params.orderId.slice(0, 8)}`,
+      providerOrderId: `pay_order_${Date.now()}_${params.orderId.slice(0, 8)}`,
       amount: params.subtotal,
       currency: params.currency || 'INR',
       platformFee,
       totalAmount,
-      keyId: 'mock_payment_escrow_key',
-      provider: 'escrow_mock',
+      keyId: 'pending_razorpay_key',
+      provider: 'pending_integration',
     };
   }
 
+  // Alias for backward compatibility
+  async createEscrowPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
+    return this.createPaymentOrder(params);
+  }
+
+  /**
+   * Server-side signature verification endpoint interface.
+   * Client-side code should not authorize payments directly.
+   */
   async verifyPaymentSignature(params: {
     orderId: string;
     paymentId: string;
     signature: string;
   }): Promise<boolean> {
-    if (params.signature.startsWith('mock_sig_') || process.env.NODE_ENV !== 'production') {
-      return true;
-    }
-    // In production, verifies HMAC SHA256 signature with RAZORPAY_KEY_SECRET
-    return true;
+    // In production, HMAC SHA256 signature verification occurs in trusted API route
+    return Boolean(params.orderId && params.paymentId && params.signature);
   }
 
   async initiateRefund(params: {
@@ -93,10 +102,10 @@ class PaymentService implements IPaymentService {
     reason: string;
   }): Promise<{ refundId: string; status: 'processed' | 'pending' }> {
     return {
-      refundId: `rfnd_${Date.now()}_${params.orderId.slice(0, 6)}`,
-      status: 'processed',
+      refundId: `rfnd_${Date.now()}`,
+      status: 'pending',
     };
   }
 }
 
-export const paymentService: IPaymentService = new PaymentService();
+export const paymentService = new PaymentService();

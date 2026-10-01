@@ -3,9 +3,8 @@
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { DisputeReason } from '@/types/marketplace';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
 
 interface DisputeModalProps {
   isOpen: boolean;
@@ -13,62 +12,79 @@ interface DisputeModalProps {
   orderId: string;
 }
 
-const DISPUTE_REASONS: DisputeReason[] = [
-  "Didn't follow brief",
-  'Wrong content',
-  'Late delivery',
-  "Didn't publish",
-  'Other',
+const SYSTEM_REVIEW_REASONS = [
+  'Agreed CTA was missing',
+  'Wrong product information was used',
+  'Required format was not followed',
+  'Agreed deliverable was not provided',
+  'Late or missed delivery',
+  'Other agreed requirement not met',
 ];
 
 export function DisputeModal({ isOpen, onClose, orderId }: DisputeModalProps) {
-  const { disputeDelivery } = useMarketplace();
-  const [selectedReason, setSelectedReason] = useState<DisputeReason>("Didn't follow brief");
+  const { requestSystemReview } = useMarketplace();
+  const [selectedReason, setSelectedReason] = useState<string>('Agreed CTA was missing');
   const [description, setDescription] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim()) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      disputeDelivery({
+    setError(null);
+    try {
+      await requestSystemReview({
         orderId,
         reason: selectedReason,
         description: description.trim(),
         evidenceUrl: evidenceUrl.trim() || undefined,
       });
-      setIsSubmitting(false);
       onClose();
-    }, 400);
+    } catch (err: any) {
+      setError(err.message || 'Failed to submit System Review request');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Open Delivery Dispute"
-      subtitle="Escrow funds will remain held securely until mediation is concluded."
+      title="Request System Review"
+      subtitle="Platform payments will remain held securely until the review is concluded."
       maxWidth="md"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="bg-[#FFF2EC] border border-[#FFD2C1] rounded p-3 text-xs text-[#C2410C] flex items-start gap-2">
+      <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
+        <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] rounded p-3 text-xs text-[#C2410C] dark:text-[#F97316] flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-[#FF5416] shrink-0 mt-0.5" />
-          <p>
-            Please provide specific details regarding which brief requirements were missed. A Marketur resolution admin will review the brief, chat thread, and deliverable.
-          </p>
+          <div className="space-y-1">
+            <span className="font-bold block">Objective Requirement Review</span>
+            <p className="text-[11px] leading-relaxed">
+              System Review evaluates whether the delivered work satisfied the agreed campaign brief requirements. Personal artistic preference is not grounds for cancellation if all agreed requirements were met.
+            </p>
+          </div>
         </div>
 
+        {error && (
+          <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded">
+            {error}
+          </div>
+        )}
+
         <div>
-          <label className="editorial-label block mb-1.5">Dispute Reason</label>
+          <label className="editorial-label block mb-1.5 font-bold text-[#121214] dark:text-white">
+            Primary Reason for System Review
+          </label>
           <select
             value={selectedReason}
-            onChange={(e) => setSelectedReason(e.target.value as DisputeReason)}
-            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+            onChange={(e) => setSelectedReason(e.target.value)}
+            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
           >
-            {DISPUTE_REASONS.map((r) => (
+            {SYSTEM_REVIEW_REASONS.map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>
@@ -77,40 +93,44 @@ export function DisputeModal({ isOpen, onClose, orderId }: DisputeModalProps) {
         </div>
 
         <div>
-          <label className="editorial-label block mb-1.5">Detailed Explanation</label>
+          <label className="editorial-label block mb-1.5 font-bold text-[#121214] dark:text-white">
+            Detailed Explanation (Refer to Agreed Brief)
+          </label>
           <textarea
             required
             rows={4}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Explain specifically what was wrong or missing with respect to the agreed campaign brief..."
-            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+            placeholder="Explain specifically which agreed deliverables, talking points, or formats were missing from the creator's delivery..."
+            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
           />
         </div>
 
         <div>
-          <label className="editorial-label block mb-1.5">Evidence / Screenshot Link (Optional)</label>
+          <label className="editorial-label block mb-1.5 font-bold text-[#121214] dark:text-white">
+            Evidence Link / Screenshot (Optional)
+          </label>
           <input
             type="url"
             value={evidenceUrl}
             onChange={(e) => setEvidenceUrl(e.target.value)}
-            placeholder="https://images.unsplash.com/... or cloud proof link"
-            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+            placeholder="https://drive.google.com/... or cloud proof link"
+            className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ECECE6]">
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
           <Button
             type="submit"
-            variant="danger"
+            variant="primary"
             size="sm"
             isLoading={isSubmitting}
-            disabled={!description.trim()}
+            className="bg-[#B91C1C] hover:bg-[#991B1B] text-white"
           >
-            Submit Formal Dispute
+            Submit for System Review
           </Button>
         </div>
       </form>

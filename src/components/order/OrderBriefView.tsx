@@ -40,7 +40,7 @@ export function OrderBriefView({ brief, packageName, totalAmount }: OrderBriefVi
             <span>Deadline: <strong className="text-[#121214]">{formattedDeadline}</strong></span>
           </div>
           <div className="bg-[#FFF2EC] text-[#FF5416] px-2.5 py-1 rounded font-bold border border-[#FFD2C1]">
-            ₹{totalAmount.toLocaleString('en-IN')} Escrow Funded
+            ₹{totalAmount.toLocaleString('en-IN')} Order Value
           </div>
         </div>
       </div>

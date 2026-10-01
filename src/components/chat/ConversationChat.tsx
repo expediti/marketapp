@@ -62,6 +62,7 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
   const [dealDeadline, setDealDeadline] = useState<string>(
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   );
+  const [dealRevisions, setDealRevisions] = useState<number>(1);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [dealError, setDealError] = useState<string | null>(null);
 
@@ -174,6 +175,7 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
         creatorId: activeConversation.creator_user_id,
         packageId: dealPackageId || undefined,
         agreedAmount: Number(dealAmount) || 0,
+        includedRevisions: Number(dealRevisions) || 1,
         brief: {
           objective: dealObjective,
           requirements: dealRequirements,
@@ -368,6 +370,14 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
             </div>
           )}
 
+          {/* Platform Communication & Safety Notice */}
+          <div className="bg-[#FAF9F6] dark:bg-zinc-900 border-b border-[#E5E5DE] dark:border-zinc-800 px-4 py-2 flex items-center gap-2 text-[11px] font-mono text-[#52525B] dark:text-zinc-400">
+            <Info className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
+            <p className="leading-tight">
+              Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable. Avoid sharing personal phone numbers, emails, or off-platform payment details.
+            </p>
+          </div>
+
           {/* Messages Container */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#FAF9F5] dark:bg-zinc-950/40">
             {convMessages.length === 0 ? (
@@ -477,10 +487,10 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
             <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3 rounded-lg text-xs font-mono text-[#C2410C] dark:text-[#F97316] space-y-1">
               <div className="flex items-center gap-1 font-bold">
                 <Info className="w-3.5 h-3.5" />
-                <span>Escrow Payment Information</span>
+                <span>Platform Payment Information</span>
               </div>
               <p className="text-[11px]">
-                Confirming the deal creates an official order in <strong>PAYMENT_PENDING</strong> status. Payment integration will be connected later.
+                Confirming the deal creates an official order in <strong>PAYMENT_PENDING</strong> status. Payment is required before the creator begins the confirmed collaboration.
               </p>
             </div>
 
@@ -563,17 +573,33 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Target Delivery Deadline
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={dealDeadline}
-                  onChange={(e) => setDealDeadline(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Target Delivery Deadline
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={dealDeadline}
+                    onChange={(e) => setDealDeadline(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Included Revisions
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={5}
+                    value={dealRevisions}
+                    onChange={(e) => setDealRevisions(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">

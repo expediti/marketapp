@@ -27,8 +27,6 @@ export function Navbar() {
   const dashboardHref =
     userRole === 'creator' || userRole === 'influencer'
       ? '/dashboard/creator'
-      : userRole === 'admin'
-      ? '/admin'
       : userRole === 'business' || userRole === 'advertiser'
       ? '/dashboard/business'
       : currentUser

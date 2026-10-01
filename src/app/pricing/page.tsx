@@ -12,7 +12,7 @@ export default function PricingPage() {
           Simple 5% Platform Fee. Zero Retainers.
         </h1>
         <p className="text-sm text-[#71717A]">
-          No monthly subscription charges or hidden agency markups. We charge a flat fee per successful escrow collaboration.
+          No monthly subscription charges or hidden agency markups. We charge a flat fee per successful platform collaboration.
         </p>
       </div>
 

@@ -65,11 +65,8 @@ export default function RoleSelectPage() {
           if (r === 'creator' || r === 'influencer') {
             router.replace('/dashboard/creator');
             return;
-          } else if (r === 'business' || r === 'advertiser') {
+          } else if (r === 'business' || r === 'advertiser' || r === 'admin') {
             router.replace('/dashboard/business');
-            return;
-          } else if (r === 'admin') {
-            router.replace('/admin');
             return;
           }
         }
@@ -304,7 +301,7 @@ export default function RoleSelectPage() {
               </li>
               <li className="flex items-center gap-2">
                 <Check className="w-3.5 h-3.5 text-[#FF5416]" />
-                <span>Escrow-protected milestone payments</span>
+                <span>Platform-protected milestone payments</span>
               </li>
               <li className="flex items-center gap-2">
                 <Check className="w-3.5 h-3.5 text-[#FF5416]" />

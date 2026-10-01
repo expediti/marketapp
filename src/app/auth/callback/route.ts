@@ -137,7 +137,7 @@ export async function GET(request: Request) {
             ? `${origin}/dashboard/business`
             : `${origin}/auth/onboarding/business`;
         } else if (normalizedRole === 'admin') {
-          destination = `${origin}/admin`;
+          destination = `${origin}/dashboard/business`;
         }
       }
 

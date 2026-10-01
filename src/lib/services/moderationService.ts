@@ -67,7 +67,7 @@ class ModerationService implements IModerationService {
     if (hasHandle) detectedTypes.push('social handles (@)');
     if (hasUrl) detectedTypes.push('external links');
 
-    const warningMessage = `Notice: To protect escrow payments and dispute guarantees, sharing ${detectedTypes.join(
+    const warningMessage = `Notice: Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable. Sharing ${detectedTypes.join(
       ', '
     )} directly is discouraged. All collaboration and approvals must remain inside this workspace.`;
 
