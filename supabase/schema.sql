@@ -288,15 +288,53 @@ CREATE TRIGGER on_campaigns_updated
     EXECUTE FUNCTION public.handle_updated_at();
 
 -- ============================================================================
+-- 7b. COLLABORATION REQUESTS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.collaboration_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    creator_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    campaign_id UUID REFERENCES public.campaigns(id) ON DELETE SET NULL,
+    package_id UUID REFERENCES public.creator_packages(id) ON DELETE SET NULL,
+    message TEXT,
+    proposed_budget NUMERIC(10, 2) CHECK (proposed_budget IS NULL OR proposed_budget >= 0),
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED', 'EXPIRED')),
+    responded_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_collab_req_business ON public.collaboration_requests(business_user_id);
+CREATE INDEX IF NOT EXISTS idx_collab_req_creator ON public.collaboration_requests(creator_user_id);
+CREATE INDEX IF NOT EXISTS idx_collab_req_campaign ON public.collaboration_requests(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_collab_req_package ON public.collaboration_requests(package_id);
+CREATE INDEX IF NOT EXISTS idx_collab_req_status ON public.collaboration_requests(status);
+CREATE INDEX IF NOT EXISTS idx_collab_req_created_at ON public.collaboration_requests(created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_collab_req_active_unique
+    ON public.collaboration_requests(business_user_id, creator_user_id, COALESCE(package_id, '00000000-0000-0000-0000-000000000000'::uuid))
+    WHERE (status = 'PENDING');
+
+DROP TRIGGER IF EXISTS on_collab_requests_updated ON public.collaboration_requests;
+CREATE TRIGGER on_collab_requests_updated
+    BEFORE UPDATE ON public.collaboration_requests
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- ============================================================================
 -- 8. ORDERS & BRIEFS TABLE
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number TEXT UNIQUE NOT NULL,
+    campaign_id UUID REFERENCES public.campaigns(id) ON DELETE SET NULL,
+    request_id UUID REFERENCES public.collaboration_requests(id) ON DELETE SET NULL,
     business_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+    business_user_id UUID REFERENCES public.profiles(id) ON DELETE RESTRICT,
     creator_id UUID NOT NULL REFERENCES public.creator_profiles(user_id) ON DELETE RESTRICT,
+    creator_user_id UUID REFERENCES public.profiles(id) ON DELETE RESTRICT,
     package_id UUID NOT NULL REFERENCES public.creator_packages(id) ON DELETE RESTRICT,
-    order_status TEXT NOT NULL DEFAULT 'FUNDED' CHECK (
+    order_status TEXT NOT NULL DEFAULT 'PAYMENT_PENDING' CHECK (
         order_status IN (
             'DRAFT',
             'PAYMENT_PENDING',
@@ -316,7 +354,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
             'COMPLETED'
         )
     ),
-    payment_status TEXT NOT NULL DEFAULT 'FUNDED' CHECK (
+    payment_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (
         payment_status IN ('PENDING', 'FUNDED', 'REFUNDED', 'FAILED')
     ),
     payout_status TEXT NOT NULL DEFAULT 'UNRELEASED' CHECK (
@@ -330,8 +368,12 @@ CREATE TABLE IF NOT EXISTS public.orders (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+CREATE INDEX IF NOT EXISTS idx_orders_campaign_id ON public.orders(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_orders_request_id ON public.orders(request_id);
 CREATE INDEX IF NOT EXISTS idx_orders_business_id ON public.orders(business_id);
+CREATE INDEX IF NOT EXISTS idx_orders_business_user_id ON public.orders(business_user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_creator_id ON public.orders(creator_id);
+CREATE INDEX IF NOT EXISTS idx_orders_creator_user_id ON public.orders(creator_user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_status ON public.orders(order_status);
 
 DROP TRIGGER IF EXISTS on_orders_updated ON public.orders;
@@ -443,17 +485,37 @@ CREATE INDEX IF NOT EXISTS idx_disputes_order_id ON public.disputes(order_id);
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id UUID NOT NULL UNIQUE REFERENCES public.orders(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    request_id UUID REFERENCES public.collaboration_requests(id) ON DELETE SET NULL,
+    order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+    business_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    creator_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+CREATE INDEX IF NOT EXISTS idx_conversations_business_user_id ON public.conversations(business_user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_creator_user_id ON public.conversations(creator_user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_request_id ON public.conversations(request_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_order_id ON public.conversations(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_request_id_unique ON public.conversations(request_id) WHERE request_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_order_id_unique ON public.conversations(order_id) WHERE order_id IS NOT NULL;
+
+DROP TRIGGER IF EXISTS on_conversations_updated ON public.conversations;
+CREATE TRIGGER on_conversations_updated
+    BEFORE UPDATE ON public.conversations
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
 
 CREATE TABLE IF NOT EXISTS public.messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
     sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE SET NULL,
+    sender_user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     body TEXT NOT NULL,
+    message TEXT,
     moderation_status TEXT NOT NULL DEFAULT 'clean' CHECK (moderation_status IN ('clean', 'flagged', 'blocked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
     read_at TIMESTAMPTZ
 );
 
@@ -796,43 +858,131 @@ CREATE POLICY "Involved parties can open disputes"
         )
     );
 
+-- 12b. Collaboration Requests Policies
+ALTER TABLE public.collaboration_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Businesses can view sent requests" ON public.collaboration_requests;
+CREATE POLICY "Businesses can view sent requests"
+    ON public.collaboration_requests FOR SELECT
+    TO authenticated
+    USING (auth.uid() = business_user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Creators can view received requests" ON public.collaboration_requests;
+CREATE POLICY "Creators can view received requests"
+    ON public.collaboration_requests FOR SELECT
+    TO authenticated
+    USING (auth.uid() = creator_user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Businesses can create requests" ON public.collaboration_requests;
+CREATE POLICY "Businesses can create requests"
+    ON public.collaboration_requests FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = business_user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Creators can respond to requests" ON public.collaboration_requests;
+CREATE POLICY "Creators can respond to requests"
+    ON public.collaboration_requests FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = creator_user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = creator_user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Businesses can cancel pending requests" ON public.collaboration_requests;
+CREATE POLICY "Businesses can cancel pending requests"
+    ON public.collaboration_requests FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = business_user_id AND status = 'PENDING')
+    WITH CHECK (auth.uid() = business_user_id);
+
 -- 13. Conversations & Messages Policies
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Conversations viewable by involved parties" ON public.conversations;
-CREATE POLICY "Conversations viewable by involved parties"
+DROP POLICY IF EXISTS "Participants can view conversations" ON public.conversations;
+CREATE POLICY "Participants can view conversations"
     ON public.conversations FOR SELECT
     TO authenticated
     USING (
-        EXISTS (
-            SELECT 1 FROM public.orders
-            WHERE orders.id = conversations.order_id
-            AND (orders.business_id = auth.uid() OR orders.creator_id = auth.uid() OR public.is_admin())
+        auth.uid() = business_user_id
+        OR auth.uid() = creator_user_id
+        OR (
+            order_id IS NOT NULL AND EXISTS (
+                SELECT 1 FROM public.orders o
+                WHERE o.id = conversations.order_id
+                AND (o.business_id = auth.uid() OR o.creator_id = auth.uid())
+            )
         )
+        OR public.is_admin()
     );
 
+DROP POLICY IF EXISTS "Participants can create conversations" ON public.conversations;
+CREATE POLICY "Participants can create conversations"
+    ON public.conversations FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        auth.uid() = business_user_id
+        OR auth.uid() = creator_user_id
+        OR public.is_admin()
+    );
+
+DROP POLICY IF EXISTS "Participants can update conversations" ON public.conversations;
+CREATE POLICY "Participants can update conversations"
+    ON public.conversations FOR UPDATE
+    TO authenticated
+    USING (
+        auth.uid() = business_user_id
+        OR auth.uid() = creator_user_id
+        OR public.is_admin()
+    );
+
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Messages viewable by conversation participants" ON public.messages;
-CREATE POLICY "Messages viewable by conversation participants"
+DROP POLICY IF EXISTS "Order parties can view messages" ON public.messages;
+DROP POLICY IF EXISTS "Participants can view messages" ON public.messages;
+CREATE POLICY "Participants can view messages"
     ON public.messages FOR SELECT
     TO authenticated
     USING (
         EXISTS (
-            SELECT 1 FROM public.conversations
-            JOIN public.orders ON orders.id = conversations.order_id
-            WHERE conversations.id = messages.conversation_id
-            AND (orders.business_id = auth.uid() OR orders.creator_id = auth.uid() OR public.is_admin())
+            SELECT 1 FROM public.conversations c
+            WHERE c.id = messages.conversation_id
+            AND (
+                c.business_user_id = auth.uid()
+                OR c.creator_user_id = auth.uid()
+                OR (
+                    c.order_id IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM public.orders o
+                        WHERE o.id = c.order_id
+                        AND (o.business_id = auth.uid() OR o.creator_id = auth.uid())
+                    )
+                )
+                OR public.is_admin()
+            )
         )
     );
 
 DROP POLICY IF EXISTS "Participants can send messages" ON public.messages;
+DROP POLICY IF EXISTS "Order parties can send messages" ON public.messages;
 CREATE POLICY "Participants can send messages"
     ON public.messages FOR INSERT
     TO authenticated
     WITH CHECK (
-        auth.uid() = sender_id
+        (sender_id = auth.uid() OR sender_user_id = auth.uid())
         AND EXISTS (
-            SELECT 1 FROM public.conversations
-            JOIN public.orders ON orders.id = conversations.order_id
-            WHERE conversations.id = messages.conversation_id
-            AND (orders.business_id = auth.uid() OR orders.creator_id = auth.uid() OR public.is_admin())
+            SELECT 1 FROM public.conversations c
+            WHERE c.id = messages.conversation_id
+            AND (
+                c.business_user_id = auth.uid()
+                OR c.creator_user_id = auth.uid()
+                OR (
+                    c.order_id IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM public.orders o
+                        WHERE o.id = c.order_id
+                        AND (o.business_id = auth.uid() OR o.creator_id = auth.uid())
+                    )
+                )
+                OR public.is_admin()
+            )
         )
     );
 
@@ -850,71 +1000,104 @@ CREATE POLICY "Only admins can record actions"
     WITH CHECK (public.is_admin());
 
 -- ============================================================================
--- 18. STORAGE POLICIES
+-- 18. STORAGE BUCKETS & POLICIES
 -- ============================================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES
+    (
+        'creator-profiles',
+        'creator-profiles',
+        true,
+        5242880, -- 5 MB
+        ARRAY['image/jpeg', 'image/png', 'image/webp']
+    ),
+    (
+        'business-logos',
+        'business-logos',
+        true,
+        5242880, -- 5 MB
+        ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml']
+    ),
+    (
+        'creator-reels',
+        'creator-reels',
+        true,
+        19922944, -- 19 MB
+        ARRAY['video/mp4', 'video/webm', 'video/quicktime']
+    ),
+    (
+        'avatars',
+        'avatars',
+        true,
+        5242880, -- 5 MB
+        ARRAY['image/jpeg', 'image/png', 'image/webp']
+    )
+ON CONFLICT (id) DO UPDATE SET
+    public = true,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- creator-reels storage policies
+-- 1. Public Read Access: Everyone can view avatars, business logos, and creator reels
 DROP POLICY IF EXISTS "Public access to creator reels" ON storage.objects;
-CREATE POLICY "Public access to creator reels"
+DROP POLICY IF EXISTS "Public access to creator profiles" ON storage.objects;
+DROP POLICY IF EXISTS "Public access to business logos" ON storage.objects;
+DROP POLICY IF EXISTS "Public read access for media buckets" ON storage.objects;
+
+CREATE POLICY "Public read access for media buckets"
     ON storage.objects FOR SELECT
     TO public
-    USING (bucket_id = 'creator-reels');
+    USING (bucket_id IN ('creator-profiles', 'business-logos', 'creator-reels', 'avatars'));
 
+-- 2. Authenticated Upload Access (INSERT)
 DROP POLICY IF EXISTS "Authenticated creators can upload reels" ON storage.objects;
-CREATE POLICY "Authenticated creators can upload reels"
+DROP POLICY IF EXISTS "Authenticated users can upload own profile picture" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated businesses can upload logos" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated user upload for media buckets" ON storage.objects;
+
+CREATE POLICY "Authenticated user upload for media buckets"
     ON storage.objects FOR INSERT
     TO authenticated
     WITH CHECK (
-        bucket_id = 'creator-reels'
-        AND (storage.foldername(name))[1] = auth.uid()::text
+        bucket_id IN ('creator-profiles', 'business-logos', 'creator-reels', 'avatars')
+        AND (
+            auth.role() = 'authenticated'
+        )
     );
 
+-- 3. Authenticated Update Access (UPDATE for upsert)
 DROP POLICY IF EXISTS "Creators can update own reels" ON storage.objects;
-CREATE POLICY "Creators can update own reels"
+DROP POLICY IF EXISTS "Authenticated user update for media buckets" ON storage.objects;
+
+CREATE POLICY "Authenticated user update for media buckets"
     ON storage.objects FOR UPDATE
     TO authenticated
     USING (
-        bucket_id = 'creator-reels'
-        AND (storage.foldername(name))[1] = auth.uid()::text
+        bucket_id IN ('creator-profiles', 'business-logos', 'creator-reels', 'avatars')
+        AND (
+            auth.role() = 'authenticated'
+        )
+    )
+    WITH CHECK (
+        bucket_id IN ('creator-profiles', 'business-logos', 'creator-reels', 'avatars')
+        AND (
+            auth.role() = 'authenticated'
+        )
     );
 
+-- 4. Authenticated Delete Access (DELETE)
 DROP POLICY IF EXISTS "Creators can delete own reels" ON storage.objects;
-CREATE POLICY "Creators can delete own reels"
+DROP POLICY IF EXISTS "Authenticated user delete for media buckets" ON storage.objects;
+
+CREATE POLICY "Authenticated user delete for media buckets"
     ON storage.objects FOR DELETE
     TO authenticated
     USING (
-        bucket_id = 'creator-reels'
-        AND (storage.foldername(name))[1] = auth.uid()::text
+        bucket_id IN ('creator-profiles', 'business-logos', 'creator-reels', 'avatars')
+        AND (
+            (storage.foldername(name))[1] = auth.uid()::text
+            OR public.is_admin()
+        )
     );
 
--- creator-profiles storage policies
-DROP POLICY IF EXISTS "Public access to creator profiles" ON storage.objects;
-CREATE POLICY "Public access to creator profiles"
-    ON storage.objects FOR SELECT
-    TO public
-    USING (bucket_id = 'creator-profiles');
-
-DROP POLICY IF EXISTS "Authenticated users can upload own profile picture" ON storage.objects;
-CREATE POLICY "Authenticated users can upload own profile picture"
-    ON storage.objects FOR INSERT
-    TO authenticated
-    WITH CHECK (
-        bucket_id = 'creator-profiles'
-        AND (storage.foldername(name))[1] = auth.uid()::text
-    );
-
--- business-logos storage policies
-DROP POLICY IF EXISTS "Public access to business logos" ON storage.objects;
-CREATE POLICY "Public access to business logos"
-    ON storage.objects FOR SELECT
-    TO public
-    USING (bucket_id = 'business-logos');
-
-DROP POLICY IF EXISTS "Authenticated businesses can upload logos" ON storage.objects;
-CREATE POLICY "Authenticated businesses can upload logos"
-    ON storage.objects FOR INSERT
-    TO authenticated
-    WITH CHECK (
-        bucket_id = 'business-logos'
-        AND (storage.foldername(name))[1] = auth.uid()::text
-    );
+-- Reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorReel, ReelType, CreatorPackage } from '@/types/marketplace';
+import { ConversationChat } from '@/components/chat/ConversationChat';
 import {
   ArrowRight,
   CheckCircle,
@@ -72,6 +73,10 @@ export default function CreatorDashboardPage() {
     acceptOrder,
     declineOrder,
     currentUser,
+    collaborationRequests,
+    acceptCollaborationRequest,
+    declineCollaborationRequest,
+    conversations,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
@@ -173,21 +178,56 @@ export default function CreatorDashboardPage() {
 
   const creatorId = dbCreator.user_id;
 
-  // Real orders for this creator
+  // Real orders for this creator (query by creator_id OR creator_user_id)
   const creatorOrders = orders.filter(
-    (o) => o.creator_id === creatorId || o.creator?.user_id === creatorId
+    (o) =>
+      o.creator_id === creatorId ||
+      o.creator_user_id === creatorId ||
+      o.creator?.user_id === creatorId
   );
 
-  const pendingRequests = creatorOrders.filter((o) => o.order_status === 'FUNDED');
+  // Incoming collaboration requests where creator_user_id = auth.uid()
+  const incomingRequests = collaborationRequests.filter(
+    (r) => r.creator_user_id === creatorId
+  );
+  const pendingRequests = incomingRequests.filter((r) => r.status === 'PENDING');
+  const userConversations = conversations.filter(
+    (c) => c.creator_user_id === creatorId || c.business_user_id === creatorId
+  );
+
   const activeOrders = creatorOrders.filter(
     (o) =>
-      o.order_status === 'ACCEPTED' ||
-      o.order_status === 'IN_PROGRESS' ||
-      o.order_status === 'DELIVERED'
+      o.order_status !== 'COMPLETED' &&
+      o.order_status !== 'CANCELLED'
   );
   const completedOrders = creatorOrders.filter(
     (o) => o.order_status === 'COMPLETED' || o.order_status === 'APPROVED'
   );
+
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
+  const handleAcceptCollabRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    try {
+      await acceptCollaborationRequest(requestId);
+      setActiveTab('messages');
+    } catch (err) {
+      console.error('Failed to accept collaboration request:', err);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleDeclineCollabRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    try {
+      await declineCollaborationRequest(requestId, 'Declined by creator');
+    } catch (err) {
+      console.error('Failed to decline collaboration request:', err);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
 
   // Real financial calculations from actual orders
   const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
@@ -470,7 +510,7 @@ export default function CreatorDashboardPage() {
 
             {pendingRequests.length === 0 ? (
               <div className="bg-white dark:bg-[#18181B] border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-8 text-center text-xs text-[#71717A] dark:text-zinc-400 font-mono">
-                No pending requests. Advertisers will send collaboration requests based on your packages.
+                No collaboration requests yet.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -479,51 +519,66 @@ export default function CreatorDashboardPage() {
                     key={req.id}
                     className="bg-white dark:bg-[#18181B] border-2 border-[#121214] dark:border-zinc-700 rounded-xl p-5 space-y-4 shadow-sm"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="editorial-label text-[#FF5416]">
-                          {req.business?.business_name || 'Brand'}
-                        </span>
-                        <h4 className="font-mono text-lg font-bold text-[#121214] dark:text-white mt-0.5">
-                          {req.package?.name}
-                        </h4>
-                        <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                          Timeline: {req.package?.delivery_days || 4} days
-                        </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {req.business?.logo_path ? (
+                          <img
+                            src={req.business.logo_path}
+                            alt={req.business.business_name}
+                            className="w-10 h-10 rounded-xl object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-sm text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
+                            {(req.business?.business_name || 'B')[0]}
+                          </div>
+                        )}
+                        <div>
+                          <span className="editorial-label text-[#FF5416]">
+                            {req.business?.business_name || 'Brand Partner'}
+                          </span>
+                          <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                            {req.campaign?.campaign_name || req.campaign?.product_name || 'App Collaboration'}
+                          </h4>
+                          <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
+                            Package: {req.package?.name || 'Custom Package'} • {new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
                       </div>
-                      <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                        ₹{Number(req.subtotal || 0).toLocaleString('en-IN')}
-                      </span>
+
+                      <div className="text-right">
+                        <span className="font-mono text-base font-bold text-[#121214] dark:text-white block">
+                          {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price).toLocaleString('en-IN')}` : 'Budget Open')}
+                        </span>
+                        <span className="editorial-label text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded text-[9px]">
+                          {req.status}
+                        </span>
+                      </div>
                     </div>
 
-                    <p className="text-xs text-[#52525B] dark:text-zinc-300 line-clamp-2 bg-[#FBFBFA] dark:bg-zinc-900 p-2.5 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
-                      {req.brief?.objective || 'App promotion brief received.'}
-                    </p>
+                    {req.message && (
+                      <p className="text-xs text-[#52525B] dark:text-zinc-300 bg-[#FBFBFA] dark:bg-zinc-900 p-2.5 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 font-mono leading-relaxed">
+                        &quot;{req.message}&quot;
+                      </p>
+                    )}
 
-                    <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
-                      <Link href={`/orders/${req.id}`}>
-                        <Button variant="outline" size="sm">
-                          View Brief
-                        </Button>
-                      </Link>
-
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => declineOrder(req.id, 'Creator schedule conflict')}
-                          className="text-[#71717A]"
-                        >
-                          Decline
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => acceptOrder(req.id)}
-                        >
-                          Accept
-                        </Button>
-                      </div>
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={processingRequestId === req.id}
+                        onClick={() => handleDeclineCollabRequest(req.id)}
+                        className="text-[#71717A]"
+                      >
+                        Decline
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={processingRequestId === req.id}
+                        onClick={() => handleAcceptCollabRequest(req.id)}
+                      >
+                        {processingRequestId === req.id ? 'Accepting...' : 'Accept'}
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -924,39 +979,109 @@ export default function CreatorDashboardPage() {
           <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
             <span className="editorial-label text-[#FF5416]">Collaboration Requests</span>
             <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-              Pending Advertiser Requests
+              Incoming Advertiser Requests
             </h3>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              Review campaign goals, app links, and deadlines before accepting.
+              Review campaign goals, app links, and proposed budgets. Once accepted, private chat unlocks.
             </p>
           </div>
 
-          {pendingRequests.length === 0 ? (
+          {incomingRequests.length === 0 ? (
             <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No pending collaboration requests at this time.
+              No collaboration requests yet.
             </div>
           ) : (
             <div className="space-y-4">
-              {pendingRequests.map((req) => (
+              {incomingRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-4 shadow-sm"
                 >
-                  <div className="space-y-1">
-                    <span className="editorial-label text-[#FF5416]">{req.business?.business_name || 'Brand'}</span>
-                    <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white">{req.package?.name}</h4>
-                    <p className="text-xs text-[#71717A] dark:text-zinc-400">{req.brief?.objective}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {req.business?.logo_path ? (
+                        <img
+                          src={req.business.logo_path}
+                          alt={req.business.business_name}
+                          className="w-12 h-12 rounded-xl object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-base text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
+                          {(req.business?.business_name || 'B')[0]}
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="editorial-label text-[#FF5416]">
+                            {req.business?.business_name || 'Brand Partner'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold ${
+                            req.status === 'ACCEPTED'
+                              ? 'bg-[#ECFDF5] text-[#047857] dark:bg-[#064E3B]/40 dark:text-[#34D399]'
+                              : req.status === 'DECLINED'
+                              ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                          {req.campaign?.campaign_name || req.campaign?.product_name || 'App Promotion'}
+                        </h4>
+                        <p className="text-xs text-[#71717A] dark:text-zinc-400 font-mono">
+                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="sm:text-right">
+                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 block">Proposed Budget:</span>
+                      <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                        {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price).toLocaleString('en-IN')}` : 'Budget Open')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-base text-[#121214] dark:text-white">
-                      ₹{Number(req.subtotal || 0).toLocaleString('en-IN')}
-                    </span>
-                    <Button variant="outline" size="sm" onClick={() => declineOrder(req.id, 'Declined by creator')}>
-                      Decline
-                    </Button>
-                    <Button variant="primary" size="sm" onClick={() => acceptOrder(req.id)}>
-                      Accept Request
-                    </Button>
+
+                  {req.message && (
+                    <div className="p-3 bg-white dark:bg-zinc-800/80 rounded-lg border border-[#ECECE6] dark:border-zinc-800 text-xs font-mono text-[#3F3F46] dark:text-zinc-300 leading-relaxed">
+                      &quot;{req.message}&quot;
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
+                    {req.status === 'PENDING' ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={processingRequestId === req.id}
+                          onClick={() => handleDeclineCollabRequest(req.id)}
+                        >
+                          Decline
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={processingRequestId === req.id}
+                          onClick={() => handleAcceptCollabRequest(req.id)}
+                        >
+                          {processingRequestId === req.id ? 'Accepting...' : 'Accept Request'}
+                        </Button>
+                      </>
+                    ) : req.status === 'ACCEPTED' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setActiveTab('messages')}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                        <span>Open Chat</span>
+                      </Button>
+                    ) : (
+                      <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                        Request {req.status.toLowerCase()}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -968,34 +1093,58 @@ export default function CreatorDashboardPage() {
       {/* TAB 6: ACTIVE ORDERS */}
       {activeTab === 'active' && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Active Promotions</h3>
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Active Collaborations</span>
+              <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                Orders in Progress
+              </h3>
+            </div>
+            <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
+              {activeOrders.length} active
+            </span>
+          </div>
+
           {activeOrders.length === 0 ? (
             <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No active promotions right now.
+              No active orders yet.
             </div>
           ) : (
             <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
               {activeOrders.map((ord) => (
-                <div key={ord.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <strong className="font-mono text-[#121214] dark:text-white">{ord.order_number}</strong>
-                      <StatusBadge status={ord.order_status} size="sm" />
+                <div key={ord.id} className="py-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <strong className="font-mono text-sm text-[#121214] dark:text-white">
+                          #{ord.order_number}
+                        </strong>
+                        <StatusBadge status={ord.order_status} size="sm" />
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                          {ord.payment_status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
+                        Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Campaign: {ord.campaign?.campaign_name || ord.brief?.objective || 'App Promotion'}
+                      </p>
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
+                        Package: {ord.package?.name || 'Custom Package'} • Created {new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
                     </div>
-                    <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                      Advertiser: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-4">
-                    <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                      ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')}
-                    </span>
-                    <Link href={`/orders/${ord.id}`}>
-                      <Button variant="outline" size="sm">
-                        Submit Reel / Workspace
-                      </Button>
-                    </Link>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <span className="text-[10px] font-mono text-[#71717A] dark:text-zinc-500 block">Agreed Amount:</span>
+                        <span className="font-mono font-bold text-base text-[#121214] dark:text-white">
+                          ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <Link href={`/orders/${ord.id}`}>
+                        <Button variant="outline" size="sm">
+                          Workspace
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1018,17 +1167,23 @@ export default function CreatorDashboardPage() {
                 <div key={ord.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <strong className="font-mono text-[#121214] dark:text-white">{ord.order_number}</strong>
+                      <strong className="font-mono text-[#121214] dark:text-white">#{ord.order_number}</strong>
                       <StatusBadge status={ord.order_status} size="sm" />
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                        {ord.payment_status}
+                      </span>
                     </div>
                     <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                      Advertiser: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
+                      Brand: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
+                    </p>
+                    <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
+                      Completed {new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <span className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                      ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')} Settled
+                      ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
                     </span>
                     <Link href={`/orders/${ord.id}`}>
                       <Button variant="outline" size="sm">
@@ -1045,46 +1200,14 @@ export default function CreatorDashboardPage() {
 
       {/* TAB 8: MESSAGES */}
       {activeTab === 'messages' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Messages</h3>
-          <p className="text-xs text-[#71717A] dark:text-zinc-400">
-            Campaign messages are tied directly to orders for clarity.
-          </p>
-
-          <div className="space-y-3">
-            {creatorOrders.length === 0 ? (
-              <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                No active discussions yet.
-              </div>
-            ) : (
-              creatorOrders.map((ord) => (
-                <div
-                  key={ord.id}
-                  className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center">
-                      <MessageSquare className="w-4 h-4 text-[#FF5416]" />
-                    </div>
-                    <div>
-                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                        {ord.business?.business_name || 'Brand'}
-                      </h4>
-                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                        Order #{ord.order_number} • {ord.package?.name}
-                      </span>
-                    </div>
-                  </div>
-
-                  <Link href={`/orders/${ord.id}`}>
-                    <Button variant="outline" size="sm">
-                      Open Chat
-                    </Button>
-                  </Link>
-                </div>
-              ))
-            )}
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Messages & Negotiations</h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Private chat with advertisers for accepted collaboration requests.
+            </p>
           </div>
+          <ConversationChat role="creator" />
         </div>
       )}
 

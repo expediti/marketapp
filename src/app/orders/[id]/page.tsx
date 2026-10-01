@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { Order } from '@/types/marketplace';
 import { OrderTimeline } from '@/components/order/OrderTimeline';
 import { OrderBriefView } from '@/components/order/OrderBriefView';
 import { ChatWindow } from '@/components/order/ChatWindow';
@@ -26,12 +28,79 @@ export default function OrderWorkspacePage() {
   const params = useParams();
   const orderId = params.id as string;
   const { getOrder, acceptOrder, declineOrder, activeRole, isLoading: storeLoading } = useMarketplace();
-  const order = getOrder(orderId);
+  const storeOrder = getOrder(orderId);
+  const [dbOrder, setDbOrder] = useState<Order | null>(null);
+  const [isFetchingDirect, setIsFetchingDirect] = useState(false);
+
+  useEffect(() => {
+    if (!storeOrder && isSupabaseConfigured && orderId) {
+      setIsFetchingDirect(true);
+      Promise.all([
+        supabase.from('orders').select('*').eq('id', orderId).maybeSingle(),
+        supabase.from('order_briefs').select('*').eq('order_id', orderId).maybeSingle(),
+        supabase.from('order_events').select('*').eq('order_id', orderId).order('created_at', { ascending: true }),
+      ])
+        .then(([ordRes, briefRes, eventsRes]) => {
+          if (ordRes.data) {
+            const o = ordRes.data;
+            const b = briefRes.data;
+            const evs = eventsRes.data || [];
+            setDbOrder({
+              id: o.id,
+              order_number: o.order_number,
+              business_id: o.business_id,
+              business_user_id: o.business_user_id,
+              creator_id: o.creator_id,
+              creator_user_id: o.creator_user_id,
+              package_id: o.package_id,
+              campaign_id: o.campaign_id,
+              request_id: o.request_id,
+              order_status: o.order_status as any,
+              payment_status: o.payment_status as any,
+              subtotal: Number(o.subtotal || 0),
+              platform_fee: Number(o.platform_fee || 0),
+              total_amount: Number(o.total_amount || 0),
+              payout_status: (o.payout_status as any) || 'UNRELEASED',
+              deadline: b?.deadline || o.created_at,
+              created_at: o.created_at,
+              updated_at: o.updated_at,
+              brief: b
+                ? {
+                    id: b.id,
+                    order_id: b.order_id,
+                    objective: b.objective || '',
+                    requirements: b.requirements || '',
+                    dos: b.dos || '',
+                    donts: b.donts || '',
+                    deadline: b.deadline || o.created_at,
+                    additional_notes: b.additional_notes || undefined,
+                  }
+                : undefined,
+              events: (evs as any[]).map((ev) => ({
+                id: ev.id,
+                order_id: ev.order_id,
+                event_type: ev.event_type as any,
+                from_status: ev.from_status,
+                to_status: ev.to_status,
+                actor_id: ev.actor_id,
+                reason: ev.reason,
+                created_at: ev.created_at,
+              })),
+            });
+          }
+        })
+        .finally(() => {
+          setIsFetchingDirect(false);
+        });
+    }
+  }, [storeOrder, orderId]);
+
+  const order = storeOrder || dbOrder;
 
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'workspace' | 'brief' | 'chat' | 'events'>('workspace');
 
-  if (storeLoading) {
+  if (storeLoading || isFetchingDirect) {
     return (
       <div className="max-w-xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
         <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />

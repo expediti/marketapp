@@ -14,6 +14,8 @@ import {
   UserRole,
   CreatorReel,
   Campaign,
+  CollaborationRequest,
+  Conversation,
 } from '@/types/marketplace';
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
@@ -30,9 +32,41 @@ interface MarketplaceContextType {
   businesses: BusinessProfile[];
   orders: Order[];
   campaigns: Campaign[];
+  collaborationRequests: CollaborationRequest[];
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  setActiveConversationId: (id: string | null) => void;
   messages: Record<string, ChatMessage[]>;
   adminActions: AdminAction[];
   
+  // Collaboration Request Actions
+  sendCollaborationRequest: (params: {
+    creatorUserId: string;
+    packageId?: string;
+    campaignId?: string;
+    message?: string;
+    proposedBudget?: number;
+  }) => Promise<CollaborationRequest>;
+  acceptCollaborationRequest: (requestId: string) => Promise<Conversation>;
+  declineCollaborationRequest: (requestId: string, reason?: string) => Promise<void>;
+  cancelCollaborationRequest: (requestId: string) => Promise<void>;
+  fetchConversationMessages: (conversationId: string) => Promise<ChatMessage[]>;
+  createOrderFromCollaboration: (params: {
+    requestId?: string;
+    creatorId: string;
+    packageId?: string;
+    campaignId?: string;
+    agreedAmount: number;
+    brief: {
+      objective: string;
+      requirements: string;
+      dos: string;
+      donts: string;
+      deadline: string;
+      additionalNotes?: string;
+    };
+  }) => Promise<Order>;
+
   // State Machine Actions
   getOrder: (id: string) => Order | undefined;
   getCreator: (id: string) => CreatorProfile | undefined;
@@ -48,17 +82,17 @@ interface MarketplaceContextType {
       additionalNotes?: string;
     };
   }) => Promise<Order>;
-  acceptOrder: (orderId: string) => void;
-  declineOrder: (orderId: string, reason?: string) => void;
-  startOrderProgress: (orderId: string) => void;
-  submitDelivery: (orderId: string, proofUrl: string, notes: string) => void;
+  acceptOrder: (orderId: string) => Promise<void>;
+  declineOrder: (orderId: string, reason?: string) => Promise<void>;
+  startOrderProgress: (orderId: string) => Promise<void>;
+  submitDelivery: (orderId: string, proofUrl: string, notes: string) => Promise<void>;
   approveDelivery: (orderId: string) => Promise<void>;
   disputeDelivery: (params: {
     orderId: string;
     reason: DisputeReason;
     description: string;
     evidenceUrl?: string;
-  }) => void;
+  }) => Promise<void>;
   
   // Campaign Actions
   createCampaign: (campaign: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>) => Promise<Campaign>;
@@ -70,7 +104,7 @@ interface MarketplaceContextType {
   updateCreatorProfile: (data: Partial<CreatorProfile>) => Promise<void>;
   
   // Chat Actions
-  sendMessage: (orderId: string, body: string) => { warning?: string };
+  sendMessage: (conversationOrOrderId: string, body: string) => Promise<{ warning?: string; message?: ChatMessage }>;
   
   // Admin Actions
   resolveDispute: (orderId: string, resolution: DisputeResolution, notes?: string) => Promise<void>;
@@ -102,6 +136,9 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [collaborationRequests, setCollaborationRequests] = useState<CollaborationRequest[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
   const [adminActions, setAdminActions] = useState<AdminAction[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -210,64 +247,328 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const fetchUserData = useCallback(async (userId: string, role: UserRole | null) => {
     if (!isSupabaseConfigured) return;
     try {
-      const normalizedRole = role ? role.toLowerCase() : null;
+      // 1. Fetch business profile & campaigns
+      const [bizRes, campaignsRes] = await Promise.all([
+        supabase.from('business_profiles').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('campaigns').select('*').eq('business_id', userId).order('created_at', { ascending: false }),
+      ]);
 
-      if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
-        const [bizRes, campaignsRes, ordersRes] = await Promise.all([
-          supabase.from('business_profiles').select('*').eq('user_id', userId).maybeSingle(),
-          supabase.from('campaigns').select('*').eq('business_id', userId).order('created_at', { ascending: false }),
-          supabase.from('orders').select('*, brief:order_briefs(*)').eq('business_id', userId).order('created_at', { ascending: false }),
+      if (bizRes.data) {
+        const bp = bizRes.data;
+        setBusinesses([{
+          user_id: bp.user_id,
+          business_name: bp.business_name,
+          industry: bp.industry || 'Technology & SaaS',
+          city: bp.city || 'India',
+          state: bp.state || undefined,
+          country: bp.country || 'India',
+          logo_path: bp.logo_path || undefined,
+          website: bp.website || undefined,
+          app_url: bp.app_url || undefined,
+          description: bp.description || '',
+          business_type: bp.business_type as any,
+          category: bp.category || undefined,
+          target_audience: bp.target_audience || undefined,
+          target_locations: bp.target_locations || undefined,
+          budget_range: bp.budget_range || undefined,
+          verification_status: bp.verification_status as any,
+        }]);
+      }
+
+      if (campaignsRes.data) {
+        setCampaigns(campaignsRes.data as Campaign[]);
+      }
+
+      // 2. Fetch collaboration requests (both sent by user or received by user)
+      const [sentReqsRes, recvReqsRes] = await Promise.all([
+        supabase
+          .from('collaboration_requests')
+          .select('*')
+          .eq('business_user_id', userId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('collaboration_requests')
+          .select('*')
+          .eq('creator_user_id', userId)
+          .order('created_at', { ascending: false }),
+      ]);
+
+      const allReqRows = [
+        ...(sentReqsRes.data || []),
+        ...(recvReqsRes.data || []),
+      ];
+
+      // Remove duplicate rows by id
+      const uniqueReqRows = Array.from(new Map(allReqRows.map((r) => [r.id, r])).values());
+
+      // 3. Fetch orders (where user is business OR creator)
+      const { data: orderRows, error: ordersErr } = await supabase
+        .from('orders')
+        .select('*, brief:order_briefs(*), events:order_events(*)')
+        .or(`business_id.eq.${userId},business_user_id.eq.${userId},creator_id.eq.${userId},creator_user_id.eq.${userId}`)
+        .order('created_at', { ascending: false });
+
+      if (ordersErr) {
+        console.error('Error fetching orders:', ordersErr);
+      }
+
+      // 4. Fetch conversations
+      const { data: convRows, error: convErr } = await supabase
+        .from('conversations')
+        .select('*')
+        .or(`business_user_id.eq.${userId},creator_user_id.eq.${userId}`)
+        .order('updated_at', { ascending: false });
+
+      if (convErr) {
+        console.error('Error fetching conversations:', convErr);
+      }
+
+      // 5. Gather all related user IDs to fetch their profile display details
+      const userIdsToFetch = new Set<string>();
+      uniqueReqRows.forEach((r) => {
+        if (r.business_user_id) userIdsToFetch.add(r.business_user_id);
+        if (r.creator_user_id) userIdsToFetch.add(r.creator_user_id);
+      });
+      (orderRows || []).forEach((o) => {
+        if (o.business_id) userIdsToFetch.add(o.business_id);
+        if (o.business_user_id) userIdsToFetch.add(o.business_user_id);
+        if (o.creator_id) userIdsToFetch.add(o.creator_id);
+        if (o.creator_user_id) userIdsToFetch.add(o.creator_user_id);
+      });
+      (convRows || []).forEach((c) => {
+        if (c.business_user_id) userIdsToFetch.add(c.business_user_id);
+        if (c.creator_user_id) userIdsToFetch.add(c.creator_user_id);
+      });
+
+      const userIdsList = Array.from(userIdsToFetch);
+      let relatedProfiles: any[] = [];
+      let relatedBizProfiles: any[] = [];
+      let relatedPackages: any[] = [];
+
+      if (userIdsList.length > 0) {
+        const [profRes, bprofRes, pkgRes] = await Promise.all([
+          supabase.from('profiles').select('*').in('id', userIdsList),
+          supabase.from('business_profiles').select('*').in('user_id', userIdsList),
+          supabase.from('creator_packages').select('*').in('creator_id', userIdsList),
         ]);
+        relatedProfiles = profRes.data || [];
+        relatedBizProfiles = bprofRes.data || [];
+        relatedPackages = pkgRes.data || [];
+      }
 
-        if (bizRes.data) {
-          const bp = bizRes.data;
-          setBusinesses([{
-            user_id: bp.user_id,
-            business_name: bp.business_name,
-            industry: bp.industry || 'Technology & SaaS',
-            city: bp.city || 'India',
-            state: bp.state || undefined,
-            country: bp.country || 'India',
-            logo_path: bp.logo_path || undefined,
-            website: bp.website || undefined,
-            app_url: bp.app_url || undefined,
-            description: bp.description || '',
-            business_type: bp.business_type as any,
-            category: bp.category || undefined,
-            target_audience: bp.target_audience || undefined,
-            target_locations: bp.target_locations || undefined,
-            budget_range: bp.budget_range || undefined,
-            verification_status: bp.verification_status as any,
-          }]);
-        } else {
-          setBusinesses([]);
-        }
+      // Helper to build BusinessProfile
+      const resolveBusiness = (bId: string): BusinessProfile => {
+        const bp = relatedBizProfiles.find((b) => b.user_id === bId);
+        const p = relatedProfiles.find((pr) => pr.id === bId);
+        return {
+          user_id: bId,
+          business_name: bp?.business_name || p?.display_name || 'Business',
+          industry: bp?.industry || 'Technology & SaaS',
+          city: bp?.city || p?.city || 'India',
+          state: bp?.state || undefined,
+          country: bp?.country || 'India',
+          logo_path: bp?.logo_path || undefined,
+          logo_url: bp?.logo_path || undefined,
+          website: bp?.website || undefined,
+          app_url: bp?.app_url || undefined,
+          description: bp?.description || '',
+          verification_status: (bp?.verification_status as any) || 'unverified',
+        };
+      };
 
-        if (campaignsRes.data) {
-          setCampaigns(campaignsRes.data as Campaign[]);
-        } else {
-          setCampaigns([]);
-        }
+      // Helper to build CreatorProfile
+      const resolveCreator = (cId: string): CreatorProfile => {
+        const p = relatedProfiles.find((pr) => pr.id === cId);
+        const pkgs = relatedPackages.filter((pkg) => pkg.creator_id === cId);
+        return {
+          user_id: cId,
+          id: cId,
+          profile: p
+            ? {
+                id: p.id,
+                role: (p.role as any) || 'creator',
+                display_name: p.display_name || 'Creator',
+                email: p.email || '',
+                avatar_url: p.avatar_url,
+                city: p.city || 'India',
+                created_at: p.created_at,
+              }
+            : undefined,
+          display_name: p?.display_name || 'Creator',
+          bio: '',
+          profile_image_path: p?.avatar_url || undefined,
+          country: 'India',
+          city: p?.city || 'India',
+          niche: 'Technology',
+          follower_count: 0,
+          average_reach: 0,
+          engagement_rate: 0,
+          instagram_connected: false,
+          instagram_verified: false,
+          verification_status: 'unverified',
+          audience_age: { '18-24': 50, '25-34': 35, '35+': 15 },
+          audience_gender: { female: 50, male: 50 },
+          audience_locations: [],
+          packages: pkgs.map((pkg) => ({
+            id: pkg.id,
+            creator_id: pkg.creator_id,
+            name: pkg.name,
+            platform: pkg.platform as any,
+            content_type: pkg.content_type as any,
+            price: Number(pkg.price) || 0,
+            currency: pkg.currency || 'INR',
+            description: pkg.description || '',
+            delivery_days: pkg.delivery_days || 5,
+            active: pkg.active !== false,
+          })),
+        };
+      };
 
-        if (ordersRes.data) {
-          setOrders(ordersRes.data as unknown as Order[]);
-        } else {
-          setOrders([]);
-        }
-      } else if (normalizedRole === 'creator' || normalizedRole === 'influencer') {
-        const [creatorRes, ordersRes] = await Promise.all([
-          supabase.from('creator_profiles').select('*').eq('user_id', userId).maybeSingle(),
-          supabase.from('orders').select('*, brief:order_briefs(*)').eq('creator_id', userId).order('created_at', { ascending: false }),
-        ]);
+      // Map collaboration requests
+      const mappedRequests: CollaborationRequest[] = uniqueReqRows.map((r) => {
+        const b = resolveBusiness(r.business_user_id);
+        const c = resolveCreator(r.creator_user_id);
+        const pkg = relatedPackages.find((p) => p.id === r.package_id);
+        const camp = (campaignsRes.data || []).find((cp) => cp.id === r.campaign_id);
 
-        if (creatorRes.data) {
-          // creator profile handled in creator tab
-        }
+        return {
+          id: r.id,
+          business_user_id: r.business_user_id,
+          business: b,
+          creator_user_id: r.creator_user_id,
+          creator: c,
+          campaign_id: r.campaign_id,
+          campaign: camp as any,
+          package_id: r.package_id,
+          package: pkg ? {
+            id: pkg.id,
+            creator_id: pkg.creator_id,
+            name: pkg.name,
+            price: Number(pkg.price) || 0,
+            delivery_days: pkg.delivery_days || 5,
+            description: pkg.description || '',
+            active: pkg.active !== false,
+          } : undefined,
+          message: r.message,
+          proposed_budget: r.proposed_budget != null ? Number(r.proposed_budget) : null,
+          status: r.status as any,
+          responded_at: r.responded_at,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        };
+      });
 
-        if (ordersRes.data) {
-          setOrders(ordersRes.data as unknown as Order[]);
-        } else {
-          setOrders([]);
+      setCollaborationRequests(mappedRequests);
+
+      // Map orders
+      const mappedOrders: Order[] = (orderRows || []).map((o) => {
+        const bUserId = o.business_user_id || o.business_id;
+        const cUserId = o.creator_user_id || o.creator_id;
+        const b = resolveBusiness(bUserId);
+        const c = resolveCreator(cUserId);
+        const pkg = relatedPackages.find((p) => p.id === o.package_id);
+        const camp = (campaignsRes.data || []).find((cp) => cp.id === o.campaign_id);
+
+        return {
+          id: o.id,
+          order_number: o.order_number,
+          campaign_id: o.campaign_id,
+          campaign: camp as any,
+          request_id: o.request_id,
+          business_id: bUserId,
+          business_user_id: bUserId,
+          business: b,
+          creator_id: cUserId,
+          creator_user_id: cUserId,
+          creator: c,
+          package_id: o.package_id,
+          package: pkg ? {
+            id: pkg.id,
+            creator_id: pkg.creator_id,
+            name: pkg.name,
+            price: Number(pkg.price) || 0,
+            delivery_days: pkg.delivery_days || 5,
+            description: pkg.description || '',
+            active: pkg.active !== false,
+          } : undefined,
+          order_status: o.order_status as any,
+          payment_status: o.payment_status as any,
+          payout_status: o.payout_status as any,
+          subtotal: Number(o.subtotal) || 0,
+          platform_fee: Number(o.platform_fee) || 0,
+          total_amount: Number(o.total_amount) || 0,
+          deadline: o.deadline,
+          created_at: o.created_at,
+          updated_at: o.updated_at,
+          brief: (Array.isArray(o.brief) ? o.brief[0] : o.brief) as any,
+          events: Array.isArray(o.events) ? o.events : [],
+        };
+      });
+
+      setOrders(mappedOrders);
+
+      // Map conversations
+      const mappedConvs: Conversation[] = (convRows || []).map((cv) => {
+        const b = resolveBusiness(cv.business_user_id);
+        const c = resolveCreator(cv.creator_user_id);
+
+        return {
+          id: cv.id,
+          request_id: cv.request_id,
+          order_id: cv.order_id,
+          business_user_id: cv.business_user_id,
+          business: b,
+          creator_user_id: cv.creator_user_id,
+          creator: c,
+          created_at: cv.created_at,
+          updated_at: cv.updated_at,
+        };
+      });
+
+      setConversations(mappedConvs);
+
+      // Fetch messages for all conversations
+      if (mappedConvs.length > 0) {
+        const convIds = mappedConvs.map((cv) => cv.id);
+        const { data: msgsData } = await supabase
+          .from('messages')
+          .select('*')
+          .in('conversation_id', convIds)
+          .order('created_at', { ascending: true });
+
+        if (msgsData) {
+          const grouped: Record<string, ChatMessage[]> = {};
+          msgsData.forEach((m) => {
+            const senderProf = relatedProfiles.find((p) => p.id === m.sender_id || p.id === m.sender_user_id);
+            const chatMsg: ChatMessage = {
+              id: m.id,
+              conversation_id: m.conversation_id,
+              sender_id: m.sender_id || m.sender_user_id || '',
+              sender_user_id: m.sender_user_id || undefined,
+              sender_name: senderProf?.display_name || (m.sender_role === 'creator' ? 'Creator' : 'Business'),
+              sender_role: m.sender_role as any,
+              body: m.body || m.message || '',
+              message: m.message || m.body || '',
+              moderation_status: (m.moderation_status as any) || 'clean',
+              created_at: m.created_at,
+              read_at: m.read_at || undefined,
+            };
+            if (!grouped[m.conversation_id]) {
+              grouped[m.conversation_id] = [];
+            }
+            grouped[m.conversation_id].push(chatMsg);
+
+            // Also index by order_id if conversation is tied to an order
+            const conv = mappedConvs.find((c) => c.id === m.conversation_id);
+            if (conv?.order_id) {
+              if (!grouped[conv.order_id]) {
+                grouped[conv.order_id] = [];
+              }
+              grouped[conv.order_id].push(chatMsg);
+            }
+          });
+
+          setMessages(grouped);
         }
       }
     } catch (err) {
@@ -357,6 +658,9 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         setBusinesses([]);
         setCampaigns([]);
         setOrders([]);
+        setCollaborationRequests([]);
+        setConversations([]);
+        setActiveConversationId(null);
         setMessages({});
       }
     });
@@ -378,6 +682,9 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     setBusinesses([]);
     setCampaigns([]);
     setOrders([]);
+    setCollaborationRequests([]);
+    setConversations([]);
+    setActiveConversationId(null);
     setMessages({});
 
     if (typeof window !== 'undefined') {
@@ -591,6 +898,619 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     );
   };
 
+  // --------------------------------------------------------------------------
+  // Realtime messages subscription for the active conversation
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isSupabaseConfigured || !activeConversationId) return;
+
+    const channel = supabase
+      .channel(`realtime_conv_${activeConversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${activeConversationId}`,
+        },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (!newRow) return;
+
+          const mapped: ChatMessage = {
+            id: newRow.id,
+            conversation_id: newRow.conversation_id,
+            sender_id: newRow.sender_id || newRow.sender_user_id,
+            sender_user_id: newRow.sender_user_id,
+            sender_name: newRow.sender_role === 'creator' ? 'Creator' : 'Business',
+            sender_role: newRow.sender_role as any,
+            body: newRow.body || newRow.message || '',
+            message: newRow.message || newRow.body || '',
+            moderation_status: newRow.moderation_status || 'clean',
+            created_at: newRow.created_at,
+            read_at: newRow.read_at,
+          };
+
+          setMessages((prev) => {
+            const currentList = prev[activeConversationId] || [];
+            if (currentList.some((m) => m.id === mapped.id)) return prev;
+            return {
+              ...prev,
+              [activeConversationId]: [...currentList, mapped],
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeConversationId]);
+
+  // --------------------------------------------------------------------------
+  // COLLABORATION REQUESTS
+  // --------------------------------------------------------------------------
+  const sendCollaborationRequest = async (params: {
+    creatorUserId: string;
+    packageId?: string;
+    campaignId?: string;
+    message?: string;
+    proposedBudget?: number;
+  }): Promise<CollaborationRequest> => {
+    if (!currentUser) throw new Error('Must be logged in to send a request');
+
+    // Prevent duplicate active pending requests
+    const existing = collaborationRequests.find(
+      (r) =>
+        r.business_user_id === currentUser.id &&
+        r.creator_user_id === params.creatorUserId &&
+        r.status === 'PENDING' &&
+        (params.packageId ? r.package_id === params.packageId : true)
+    );
+
+    if (existing) {
+      throw new Error('You already have a pending collaboration request with this creator.');
+    }
+
+    const creator = creators.find((c) => c.user_id === params.creatorUserId);
+    const pkg = creator?.packages?.find((p) => p.id === params.packageId);
+    const campaign = campaigns.find((c) => c.id === params.campaignId);
+    const business = businesses.find((b) => b.user_id === currentUser.id) || {
+      user_id: currentUser.id,
+      business_name: currentUser.display_name,
+      industry: 'Technology & SaaS',
+      city: currentUser.city || 'India',
+      description: '',
+      verification_status: 'unverified' as const,
+    };
+
+    const newReqData = {
+      business_user_id: currentUser.id,
+      creator_user_id: params.creatorUserId,
+      campaign_id: params.campaignId || null,
+      package_id: params.packageId || null,
+      message: params.message || null,
+      proposed_budget: params.proposedBudget != null ? params.proposedBudget : (pkg ? pkg.price : null),
+      status: 'PENDING' as const,
+    };
+
+    let createdId = `req_${Date.now()}`;
+    let createdAt = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('collaboration_requests')
+        .insert(newReqData)
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        console.error('Failed to create collaboration request:', error);
+        throw new Error(error?.message || 'Failed to send collaboration request');
+      }
+
+      createdId = data.id;
+      createdAt = data.created_at;
+    }
+
+    const createdReq: CollaborationRequest = {
+      id: createdId,
+      ...newReqData,
+      business,
+      creator,
+      package: pkg,
+      campaign,
+      created_at: createdAt,
+      updated_at: createdAt,
+    };
+
+    setCollaborationRequests((prev) => [createdReq, ...prev]);
+    return createdReq;
+  };
+
+  const acceptCollaborationRequest = async (requestId: string): Promise<Conversation> => {
+    if (!currentUser) throw new Error('Must be logged in to accept request');
+    const req = collaborationRequests.find((r) => r.id === requestId);
+    if (!req) throw new Error('Request not found');
+
+    const now = new Date().toISOString();
+
+    let convId = `conv_${Date.now()}`;
+
+    if (isSupabaseConfigured) {
+      // 1. Update request status in Supabase
+      const { error: reqErr } = await supabase
+        .from('collaboration_requests')
+        .update({
+          status: 'ACCEPTED',
+          responded_at: now,
+          updated_at: now,
+        })
+        .eq('id', requestId);
+
+      if (reqErr) {
+        console.error('Error accepting request in Supabase:', reqErr);
+        throw new Error(reqErr.message);
+      }
+
+      // 2. Check if a conversation already exists
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('request_id', requestId)
+        .maybeSingle();
+
+      if (existingConv) {
+        convId = existingConv.id;
+      } else {
+        // Create conversation linking the two users
+        const { data: newConv, error: convErr } = await supabase
+          .from('conversations')
+          .insert({
+            request_id: requestId,
+            business_user_id: req.business_user_id,
+            creator_user_id: currentUser.id,
+          })
+          .select('*')
+          .single();
+
+        if (convErr || !newConv) {
+          console.error('Error creating conversation in Supabase:', convErr);
+          throw new Error(convErr?.message || 'Failed to create conversation');
+        }
+        convId = newConv.id;
+
+        // If request included initial message, create initial message in the conversation
+        if (req.message) {
+          await supabase.from('messages').insert({
+            conversation_id: convId,
+            sender_id: req.business_user_id,
+            sender_user_id: req.business_user_id,
+            body: req.message,
+            message: req.message,
+            sender_role: 'business',
+            moderation_status: 'clean',
+          });
+        }
+      }
+    }
+
+    // Update local request state
+    setCollaborationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: 'ACCEPTED', responded_at: now } : r))
+    );
+
+    // Create or find local conversation
+    const newConvObj: Conversation = {
+      id: convId,
+      request_id: requestId,
+      business_user_id: req.business_user_id,
+      business: req.business,
+      creator_user_id: currentUser.id,
+      creator: req.creator,
+      created_at: now,
+      updated_at: now,
+    };
+
+    setConversations((prev) => {
+      const exists = prev.some((c) => c.id === convId || c.request_id === requestId);
+      if (exists) return prev;
+      return [newConvObj, ...prev];
+    });
+
+    setActiveConversationId(convId);
+
+    // If initial message existed, populate in local messages
+    if (req.message) {
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [
+          {
+            id: `msg_init_${Date.now()}`,
+            conversation_id: convId,
+            sender_id: req.business_user_id,
+            sender_user_id: req.business_user_id,
+            sender_name: req.business?.business_name || 'Business',
+            sender_role: 'business',
+            body: req.message || '',
+            message: req.message || '',
+            moderation_status: 'clean',
+            created_at: now,
+          },
+        ],
+      }));
+    }
+
+    return newConvObj;
+  };
+
+  const declineCollaborationRequest = async (requestId: string, reason?: string): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to decline request');
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('collaboration_requests')
+        .update({
+          status: 'DECLINED',
+          responded_at: now,
+          updated_at: now,
+        })
+        .eq('id', requestId);
+
+      if (error) {
+        console.error('Error declining request:', error);
+        throw new Error(error.message);
+      }
+    }
+
+    setCollaborationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: 'DECLINED', responded_at: now } : r))
+    );
+  };
+
+  const cancelCollaborationRequest = async (requestId: string): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to cancel request');
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('collaboration_requests')
+        .update({
+          status: 'CANCELLED',
+          updated_at: now,
+        })
+        .eq('id', requestId)
+        .eq('business_user_id', currentUser.id)
+        .eq('status', 'PENDING');
+
+      if (error) {
+        console.error('Error cancelling request:', error);
+        throw new Error(error.message);
+      }
+    }
+
+    setCollaborationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: 'CANCELLED', updated_at: now } : r))
+    );
+  };
+
+  const fetchConversationMessages = async (conversationId: string): Promise<ChatMessage[]> => {
+    if (!isSupabaseConfigured) {
+      return messages[conversationId] || [];
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching messages from Supabase:', error);
+        return messages[conversationId] || [];
+      }
+
+      const mapped: ChatMessage[] = (data || []).map((m) => ({
+        id: m.id,
+        conversation_id: m.conversation_id,
+        sender_id: m.sender_id || m.sender_user_id || '',
+        sender_user_id: m.sender_user_id || undefined,
+        sender_name: m.sender_role === 'creator' ? 'Creator' : 'Business',
+        sender_role: m.sender_role as any,
+        body: m.body || m.message || '',
+        message: m.message || m.body || '',
+        moderation_status: m.moderation_status as any,
+        created_at: m.created_at,
+        read_at: m.read_at || undefined,
+      }));
+
+      setMessages((prev) => ({
+        ...prev,
+        [conversationId]: mapped,
+      }));
+
+      return mapped;
+    } catch (err) {
+      console.error('Error loading conversation messages:', err);
+      return messages[conversationId] || [];
+    }
+  };
+
+  const detectContactInfoLeakage = (text: string): { allowed: boolean; reason?: string } => {
+    const emailRegex = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/;
+    const phoneRegex = /(\+?\d{1,4}[-.\s]?)?(\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}/;
+    if (emailRegex.test(text) || phoneRegex.test(text)) {
+      return {
+        allowed: false,
+        reason: 'Please keep all communications within Marketur for escrow and dispute protection.',
+      };
+    }
+    return { allowed: true };
+  };
+
+  const sendMessage = async (
+    conversationOrOrderId: string,
+    body: string
+  ): Promise<{ warning?: string; message?: ChatMessage }> => {
+    if (!currentUser) throw new Error('Must be logged in to send messages');
+
+    let warning: string | undefined;
+    let moderationStatus: 'clean' | 'flagged' | 'blocked' = 'clean';
+    const cleanCheck = detectContactInfoLeakage(body);
+    if (!cleanCheck.allowed) {
+      warning = cleanCheck.reason;
+      moderationStatus = 'flagged';
+    }
+
+    let targetConvId = conversationOrOrderId;
+    let targetOrderId: string | null = null;
+
+    const directConv = conversations.find((c) => c.id === conversationOrOrderId);
+    if (directConv) {
+      targetConvId = directConv.id;
+      targetOrderId = directConv.order_id || null;
+    } else {
+      const orderMatch = orders.find((o) => o.id === conversationOrOrderId);
+      if (orderMatch) {
+        targetOrderId = orderMatch.id;
+        const convForOrder = conversations.find((c) => c.order_id === orderMatch.id);
+        if (convForOrder) {
+          targetConvId = convForOrder.id;
+        }
+      }
+    }
+
+    const now = new Date().toISOString();
+    let msgId = `msg_${Date.now()}`;
+
+    if (isSupabaseConfigured) {
+      if (!directConv && targetOrderId) {
+        const { data: convRow } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('order_id', targetOrderId)
+          .maybeSingle();
+        if (convRow) {
+          targetConvId = convRow.id;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: targetConvId,
+          order_id: targetOrderId,
+          sender_id: currentUser.id,
+          sender_user_id: currentUser.id,
+          sender_role: activeRole,
+          body,
+          message: body,
+          moderation_status: moderationStatus,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error sending message to Supabase:', error);
+      } else if (data) {
+        msgId = data.id;
+      }
+
+      await supabase
+        .from('conversations')
+        .update({ updated_at: now })
+        .eq('id', targetConvId);
+    }
+
+    const newMsg: ChatMessage = {
+      id: msgId,
+      conversation_id: targetConvId,
+      order_id: targetOrderId || undefined,
+      sender_id: currentUser.id,
+      sender_user_id: currentUser.id,
+      sender_name: currentUser.display_name,
+      sender_role: activeRole,
+      body,
+      message: body,
+      moderation_status: moderationStatus,
+      created_at: now,
+    };
+
+    setMessages((prev) => {
+      const convList = prev[targetConvId] || [];
+      const orderList = targetOrderId && targetOrderId !== targetConvId ? prev[targetOrderId] || [] : [];
+      return {
+        ...prev,
+        [targetConvId]: [...convList, newMsg],
+        ...(targetOrderId ? { [targetOrderId]: [...orderList, newMsg] } : {}),
+      };
+    });
+
+    return { warning, message: newMsg };
+  };
+
+  // --------------------------------------------------------------------------
+  // DEAL CONFIRMATION & ORDER CREATION
+  // --------------------------------------------------------------------------
+  const createOrderFromCollaboration = async (params: {
+    requestId?: string;
+    creatorId: string;
+    packageId?: string;
+    campaignId?: string;
+    agreedAmount: number;
+    brief: {
+      objective: string;
+      requirements: string;
+      dos: string;
+      donts: string;
+      deadline: string;
+      additionalNotes?: string;
+    };
+  }): Promise<Order> => {
+    if (!currentUser) throw new Error('Must be logged in to confirm deal and create order');
+
+    const creator = creators.find((c) => c.user_id === params.creatorId);
+    const pkg = creator?.packages?.find((p) => p.id === params.packageId) || creator?.packages?.[0];
+    const campaign = campaigns.find((c) => c.id === params.campaignId);
+    const business = businesses.find((b) => b.user_id === currentUser.id) || {
+      user_id: currentUser.id,
+      business_name: currentUser.display_name,
+      industry: 'Technology & SaaS',
+      city: currentUser.city || 'India',
+      description: '',
+      verification_status: 'unverified' as const,
+    };
+
+    const platformFee = paymentService.calculatePlatformFee(params.agreedAmount);
+    const totalAmount = params.agreedAmount + platformFee;
+    const orderNum = `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    let orderId = `o_${Date.now()}`;
+    let createdAt = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { data: orderData, error: orderErr } = await supabase
+        .from('orders')
+        .insert({
+          order_number: orderNum,
+          business_id: currentUser.id,
+          business_user_id: currentUser.id,
+          creator_id: params.creatorId,
+          creator_user_id: params.creatorId,
+          package_id: pkg?.id || params.packageId || '00000000-0000-0000-0000-000000000000',
+          campaign_id: params.campaignId || null,
+          request_id: params.requestId || null,
+          order_status: 'PAYMENT_PENDING',
+          payment_status: 'PENDING',
+          payout_status: 'UNRELEASED',
+          subtotal: params.agreedAmount,
+          platform_fee: platformFee,
+          total_amount: totalAmount,
+          deadline: params.brief.deadline,
+        })
+        .select('*')
+        .single();
+
+      if (orderErr || !orderData) {
+        console.error('Failed to create order in Supabase:', orderErr);
+        throw new Error(orderErr?.message || 'Failed to create order row');
+      }
+
+      orderId = orderData.id;
+      createdAt = orderData.created_at;
+
+      // Insert brief
+      await supabase.from('order_briefs').insert({
+        order_id: orderId,
+        objective: params.brief.objective,
+        requirements: params.brief.requirements,
+        dos: params.brief.dos || null,
+        donts: params.brief.donts || null,
+        deadline: params.brief.deadline,
+        additional_notes: params.brief.additionalNotes || null,
+      });
+
+      // Insert event
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'DRAFT',
+        to_status: 'PAYMENT_PENDING',
+        actor_id: currentUser.id,
+        reason: 'Collaboration deal finalized; order created with payment pending',
+      });
+
+      // Link conversation to order if it exists
+      if (params.requestId) {
+        await supabase
+          .from('conversations')
+          .update({ order_id: orderId, updated_at: new Date().toISOString() })
+          .eq('request_id', params.requestId);
+      }
+    }
+
+    const newOrder: Order = {
+      id: orderId,
+      order_number: orderNum,
+      campaign_id: params.campaignId || null,
+      campaign,
+      request_id: params.requestId || null,
+      business_id: currentUser.id,
+      business_user_id: currentUser.id,
+      business,
+      creator_id: params.creatorId,
+      creator_user_id: params.creatorId,
+      creator,
+      package_id: pkg?.id || params.packageId || '',
+      package: pkg,
+      order_status: 'PAYMENT_PENDING',
+      payment_status: 'PENDING',
+      payout_status: 'UNRELEASED',
+      subtotal: params.agreedAmount,
+      platform_fee: platformFee,
+      total_amount: totalAmount,
+      deadline: params.brief.deadline,
+      created_at: createdAt,
+      updated_at: createdAt,
+      brief: {
+        id: `b_${orderId}`,
+        order_id: orderId,
+        objective: params.brief.objective,
+        requirements: params.brief.requirements,
+        dos: params.brief.dos,
+        donts: params.brief.donts,
+        deadline: params.brief.deadline,
+        additional_notes: params.brief.additionalNotes,
+        created_at: createdAt,
+      },
+      events: [
+        {
+          id: `ev_${Date.now()}`,
+          order_id: orderId,
+          from_status: 'DRAFT',
+          to_status: 'PAYMENT_PENDING',
+          actor_id: currentUser.id,
+          reason: 'Collaboration deal finalized; order created with payment pending',
+          created_at: createdAt,
+        },
+      ],
+    };
+
+    setOrders((prev) => [newOrder, ...prev]);
+
+    // Also update conversations in local state with order_id
+    if (params.requestId) {
+      setConversations((prev) =>
+        prev.map((c) => (c.request_id === params.requestId ? { ...c, order_id: orderId } : c))
+      );
+    }
+
+    return newOrder;
+  };
+
   const createOrder = async (params: {
     creatorId: string;
     packageId: string;
@@ -603,306 +1523,232 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       additionalNotes?: string;
     };
   }): Promise<Order> => {
-    if (!currentUser) throw new Error('Must be logged in to place an order');
-
     const creator = creators.find((c) => c.user_id === params.creatorId);
-    if (!creator) throw new Error('Creator not found');
-    const pkg = creator.packages?.find((p) => p.id === params.packageId);
-    if (!pkg) throw new Error('Package not found');
+    const pkg = creator?.packages?.find((p) => p.id === params.packageId);
+    const price = pkg?.price || 5000;
 
-    const business = businesses.find((b) => b.user_id === currentUser.id) || {
-      user_id: currentUser.id,
-      business_name: currentUser.display_name,
-      industry: 'Technology & SaaS',
-      city: currentUser.city || 'India',
-      description: '',
-      verification_status: 'unverified' as const,
-    };
-
-    const platformFee = paymentService.calculatePlatformFee(pkg.price);
-    const totalAmount = pkg.price + platformFee;
-    const orderId = `o_${Date.now()}`;
-    const orderNum = `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
-
-    const newOrder: Order = {
-      id: orderId,
-      order_number: orderNum,
-      business_id: currentUser.id,
-      business,
-      creator_id: creator.user_id,
-      creator,
-      package_id: pkg.id,
-      package: pkg,
-      order_status: 'FUNDED',
-      payment_status: 'FUNDED',
-      payout_status: 'UNRELEASED',
-      subtotal: pkg.price,
-      platform_fee: platformFee,
-      total_amount: totalAmount,
-      deadline: params.brief.deadline,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      brief: {
-        id: `b_${orderId}`,
-        order_id: orderId,
-        objective: params.brief.objective,
-        requirements: params.brief.requirements,
-        dos: params.brief.dos,
-        donts: params.brief.donts,
-        deadline: params.brief.deadline,
-        additional_notes: params.brief.additionalNotes,
-        created_at: new Date().toISOString(),
-      },
-      events: [
-        {
-          id: `ev_${Date.now()}_1`,
-          order_id: orderId,
-          from_status: 'DRAFT',
-          to_status: 'FUNDED',
-          actor_id: currentUser.id,
-          reason: 'Collaboration package purchased and escrow funded',
-          created_at: new Date().toISOString(),
-        },
-      ],
-    };
-
-    setOrders((prev) => [newOrder, ...prev]);
-
-    setMessages((prev) => ({
-      ...prev,
-      [orderId]: [
-        {
-          id: `msg_init_${orderId}`,
-          conversation_id: orderId,
-          sender_id: currentUser.id,
-          sender_name: business.business_name,
-          sender_role: 'business',
-          body: `Order initiated: ${pkg.name}. Looking forward to collaborating with you!`,
-          moderation_status: 'clean',
-          created_at: new Date().toISOString(),
-        },
-      ],
-    }));
-
-    return newOrder;
-  };
-
-  const acceptOrder = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const fromStatus = o.order_status;
-        const newEvents = [
-          ...(o.events || []),
-          {
-            id: `ev_${Date.now()}`,
-            order_id: orderId,
-            from_status: fromStatus,
-            to_status: 'ACCEPTED' as OrderStatus,
-            reason: 'Creator accepted collaboration and confirmed deliverables',
-            created_at: new Date().toISOString(),
-          },
-        ];
-        return {
-          ...o,
-          order_status: 'ACCEPTED',
-          updated_at: new Date().toISOString(),
-          events: newEvents,
-        };
-      })
-    );
-  };
-
-  const declineOrder = (orderId: string, reason?: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const newEvents = [
-          ...(o.events || []),
-          {
-            id: `ev_${Date.now()}`,
-            order_id: orderId,
-            from_status: o.order_status,
-            to_status: 'CANCELLED' as OrderStatus,
-            reason: reason || 'Creator declined collaboration request',
-            created_at: new Date().toISOString(),
-          },
-        ];
-        return {
-          ...o,
-          order_status: 'CANCELLED',
-          payment_status: 'REFUNDED',
-          updated_at: new Date().toISOString(),
-          events: newEvents,
-        };
-      })
-    );
-  };
-
-  const startOrderProgress = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          order_status: 'IN_PROGRESS',
-          updated_at: new Date().toISOString(),
-          events: [
-            ...(o.events || []),
-            {
-              id: `ev_${Date.now()}`,
-              order_id: orderId,
-              from_status: o.order_status,
-              to_status: 'IN_PROGRESS',
-              reason: 'Creator started production/filming',
-              created_at: new Date().toISOString(),
-            },
-          ],
-        };
-      })
-    );
-  };
-
-  const submitDelivery = (orderId: string, proofUrl: string, notes: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const delivery = {
-          id: `del_${Date.now()}`,
-          order_id: orderId,
-          submitted_by: o.creator_id,
-          proof_url: proofUrl,
-          notes,
-          submitted_at: new Date().toISOString(),
-          status: 'pending_review' as const,
-        };
-        return {
-          ...o,
-          order_status: 'DELIVERED',
-          delivery,
-          updated_at: new Date().toISOString(),
-          events: [
-            ...(o.events || []),
-            {
-              id: `ev_${Date.now()}`,
-              order_id: orderId,
-              from_status: o.order_status,
-              to_status: 'DELIVERED',
-              reason: 'Content delivery proof submitted by creator',
-              created_at: new Date().toISOString(),
-            },
-          ],
-        };
-      })
-    );
-  };
-
-  const approveDelivery = async (orderId: string) => {
-    const order = orders.find((o) => o.id === orderId);
-    if (!order) return;
-
-    await payoutService.initiatePayout({
-      orderId,
-      creatorId: order.creator_id,
-      amount: order.subtotal,
+    return createOrderFromCollaboration({
+      creatorId: params.creatorId,
+      packageId: params.packageId,
+      agreedAmount: price,
+      brief: params.brief,
     });
+  };
+
+  const acceptOrder = async (orderId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'ACCEPTED', updated_at: now })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'PAYMENT_PENDING',
+        to_status: 'ACCEPTED',
+        actor_id: currentUser?.id,
+        reason: 'Creator accepted order',
+      });
+    }
 
     setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          order_status: 'COMPLETED',
-          payout_status: 'PAID',
-          delivery: o.delivery ? { ...o.delivery, status: 'approved' } : undefined,
-          updated_at: new Date().toISOString(),
-          events: [
-            ...(o.events || []),
-            {
-              id: `ev_${Date.now()}_app`,
-              order_id: orderId,
-              from_status: o.order_status,
-              to_status: 'APPROVED',
-              reason: 'Business approved content delivery',
-              created_at: new Date().toISOString(),
-            },
-            {
-              id: `ev_${Date.now()}_comp`,
-              order_id: orderId,
-              from_status: 'APPROVED',
-              to_status: 'COMPLETED',
-              reason: `Escrow payout of ₹${order.subtotal.toLocaleString('en-IN')} released to creator via UPI`,
-              created_at: new Date().toISOString(),
-            },
-          ],
-        };
-      })
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'ACCEPTED',
+              updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: orderId,
+                  from_status: o.order_status,
+                  to_status: 'ACCEPTED',
+                  reason: 'Creator accepted order',
+                  created_at: now,
+                },
+              ],
+            }
+          : o
+      )
     );
   };
 
-  const disputeDelivery = (params: {
+  const declineOrder = async (orderId: string, reason?: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'CANCELLED', updated_at: now })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'PAYMENT_PENDING',
+        to_status: 'CANCELLED',
+        actor_id: currentUser?.id,
+        reason: reason || 'Creator declined order',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'CANCELLED',
+              updated_at: now,
+              events: [
+                ...(o.events || []),
+                {
+                  id: `ev_${Date.now()}`,
+                  order_id: orderId,
+                  from_status: o.order_status,
+                  to_status: 'CANCELLED',
+                  reason: reason || 'Creator declined order',
+                  created_at: now,
+                },
+              ],
+            }
+          : o
+      )
+    );
+  };
+
+  const startOrderProgress = async (orderId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'IN_PROGRESS', updated_at: now })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'ACCEPTED',
+        to_status: 'IN_PROGRESS',
+        actor_id: currentUser?.id,
+        reason: 'Creator began work on deliverables',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'IN_PROGRESS',
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const submitDelivery = async (orderId: string, proofUrl: string, notes: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'DELIVERED', updated_at: now })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'IN_PROGRESS',
+        to_status: 'DELIVERED',
+        actor_id: currentUser?.id,
+        reason: 'Creator submitted deliverables for review',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'DELIVERED',
+              delivery: {
+                id: `del_${Date.now()}`,
+                order_id: orderId,
+                submitted_by: o.creator_id,
+                proof_url: proofUrl,
+                notes,
+                submitted_at: now,
+                status: 'pending_review',
+              },
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const approveDelivery = async (orderId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'APPROVED', updated_at: now })
+        .eq('id', orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: orderId,
+        from_status: 'DELIVERED',
+        to_status: 'APPROVED',
+        actor_id: currentUser?.id,
+        reason: 'Business approved deliverables',
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'APPROVED',
+              updated_at: now,
+            }
+          : o
+      )
+    );
+  };
+
+  const disputeDelivery = async (params: {
     orderId: string;
     reason: DisputeReason;
     description: string;
     evidenceUrl?: string;
-  }) => {
+  }): Promise<void> => {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('orders')
+        .update({ order_status: 'DISPUTED', updated_at: now })
+        .eq('id', params.orderId);
+
+      await supabase.from('order_events').insert({
+        order_id: params.orderId,
+        from_status: 'DELIVERED',
+        to_status: 'DISPUTED',
+        actor_id: currentUser?.id,
+        reason: `Dispute opened: ${params.reason}`,
+      });
+    }
+
     setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== params.orderId) return o;
-        const dispute = {
-          id: `dsp_${Date.now()}`,
-          order_id: params.orderId,
-          opened_by: o.business_id,
-          reason: params.reason,
-          description: params.description,
-          evidence_url: params.evidenceUrl,
-          status: 'open' as const,
-          created_at: new Date().toISOString(),
-        };
-        return {
-          ...o,
-          order_status: 'DISPUTED',
-          payout_status: 'HELD',
-          dispute,
-          delivery: o.delivery ? { ...o.delivery, status: 'disputed' } : undefined,
-          updated_at: new Date().toISOString(),
-          events: [
-            ...(o.events || []),
-            {
-              id: `ev_${Date.now()}_disp`,
-              order_id: params.orderId,
-              from_status: o.order_status,
-              to_status: 'DISPUTED',
-              reason: `Dispute opened: ${params.reason}`,
-              metadata: { description: params.description },
-              created_at: new Date().toISOString(),
-            },
-          ],
-        };
-      })
+      prev.map((o) =>
+        o.id === params.orderId
+          ? {
+              ...o,
+              order_status: 'DISPUTED',
+              updated_at: now,
+            }
+          : o
+      )
     );
-  };
-
-  const sendMessage = (orderId: string, body: string): { warning?: string } => {
-    const moderation = moderationService.inspectMessage(body);
-
-    const newMsg: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      conversation_id: orderId,
-      sender_id: currentUser?.id || 'guest',
-      sender_name: currentUser?.display_name || 'User',
-      sender_role: activeRole,
-      body,
-      moderation_status: moderation.status,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((prev) => ({
-      ...prev,
-      [orderId]: [...(prev[orderId] || []), newMsg],
-    }));
-
-    return { warning: moderation.warningMessage };
   };
 
   const resolveDispute = async (orderId: string, resolution: DisputeResolution, notes?: string) => {
@@ -1241,8 +2087,18 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         businesses,
         orders,
         campaigns,
+        collaborationRequests,
+        conversations,
+        activeConversationId,
+        setActiveConversationId,
         messages,
         adminActions,
+        sendCollaborationRequest,
+        acceptCollaborationRequest,
+        declineCollaborationRequest,
+        cancelCollaborationRequest,
+        fetchConversationMessages,
+        createOrderFromCollaboration,
         getOrder,
         getCreator,
         createOrder,

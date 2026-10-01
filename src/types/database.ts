@@ -357,12 +357,58 @@ export interface Database {
         };
         Relationships: [];
       };
+      collaboration_requests: {
+        Row: {
+          id: string;
+          business_user_id: string;
+          creator_user_id: string;
+          campaign_id: string | null;
+          package_id: string | null;
+          message: string | null;
+          proposed_budget: number | null;
+          status: string;
+          responded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_user_id: string;
+          creator_user_id: string;
+          campaign_id?: string | null;
+          package_id?: string | null;
+          message?: string | null;
+          proposed_budget?: number | null;
+          status?: string;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          business_user_id?: string;
+          creator_user_id?: string;
+          campaign_id?: string | null;
+          package_id?: string | null;
+          message?: string | null;
+          proposed_budget?: number | null;
+          status?: string;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;
           order_number: string;
+          campaign_id: string | null;
+          request_id: string | null;
           business_id: string;
+          business_user_id: string;
           creator_id: string;
+          creator_user_id: string;
           package_id: string;
           order_status: string;
           payment_status: string;
@@ -377,8 +423,12 @@ export interface Database {
         Insert: {
           id?: string;
           order_number: string;
+          campaign_id?: string | null;
+          request_id?: string | null;
           business_id: string;
+          business_user_id?: string;
           creator_id: string;
+          creator_user_id?: string;
           package_id: string;
           order_status?: string;
           payment_status?: string;
@@ -393,8 +443,12 @@ export interface Database {
         Update: {
           id?: string;
           order_number?: string;
+          campaign_id?: string | null;
+          request_id?: string | null;
           business_id?: string;
+          business_user_id?: string;
           creator_id?: string;
+          creator_user_id?: string;
           package_id?: string;
           order_status?: string;
           payment_status?: string;
@@ -447,25 +501,34 @@ export interface Database {
       conversations: {
         Row: {
           id: string;
+          request_id: string | null;
           order_id: string | null;
-          business_id: string;
-          creator_id: string;
+          business_id: string | null;
+          creator_id: string | null;
+          business_user_id: string;
+          creator_user_id: string;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
+          request_id?: string | null;
           order_id?: string | null;
-          business_id: string;
-          creator_id: string;
+          business_id?: string | null;
+          creator_id?: string | null;
+          business_user_id: string;
+          creator_user_id: string;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
+          request_id?: string | null;
           order_id?: string | null;
-          business_id?: string;
-          creator_id?: string;
+          business_id?: string | null;
+          creator_id?: string | null;
+          business_user_id?: string;
+          creator_user_id?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -475,31 +538,82 @@ export interface Database {
         Row: {
           id: string;
           conversation_id: string;
+          order_id?: string | null;
           sender_id: string;
+          sender_user_id: string | null;
           sender_role: string;
           body: string;
+          message: string | null;
           moderation_status: string;
           moderation_flags: Json | null;
           created_at: string;
+          updated_at?: string;
+          read_at?: string | null;
         };
         Insert: {
           id?: string;
           conversation_id: string;
+          order_id?: string | null;
           sender_id: string;
-          sender_role: string;
+          sender_user_id?: string | null;
+          sender_role?: string;
           body: string;
+          message?: string | null;
           moderation_status?: string;
           moderation_flags?: Json | null;
           created_at?: string;
+          updated_at?: string;
+          read_at?: string | null;
         };
         Update: {
           id?: string;
           conversation_id?: string;
+          order_id?: string | null;
           sender_id?: string;
+          sender_user_id?: string | null;
           sender_role?: string;
           body?: string;
+          message?: string | null;
           moderation_status?: string;
           moderation_flags?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+          read_at?: string | null;
+        };
+        Relationships: [];
+      };
+      order_events: {
+        Row: {
+          id: string;
+          order_id: string;
+          actor_id: string | null;
+          event_type: string;
+          from_status: string | null;
+          to_status: string;
+          reason: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          actor_id?: string | null;
+          event_type?: string;
+          from_status?: string | null;
+          to_status: string;
+          reason?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          actor_id?: string | null;
+          event_type?: string;
+          from_status?: string | null;
+          to_status?: string;
+          reason?: string | null;
+          metadata?: Json;
           created_at?: string;
         };
         Relationships: [];

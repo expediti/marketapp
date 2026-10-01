@@ -198,10 +198,13 @@ export interface OrderBrief {
 export interface OrderEvent {
   id: string;
   order_id: string;
-  from_status?: OrderStatus | string;
-  to_status: OrderStatus;
-  actor_id?: string;
-  reason?: string;
+  event_type?: string;
+  from_status?: OrderStatus | string | null;
+  to_status: OrderStatus | string;
+  actor_id?: string | null;
+  triggered_by?: string;
+  reason?: string | null;
+  notes?: string;
   metadata?: Record<string, unknown>;
   created_at: string;
 }
@@ -230,13 +233,54 @@ export interface DisputeRecord {
   created_at: string;
 }
 
+export type CollaborationRequestStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'DECLINED'
+  | 'CANCELLED'
+  | 'EXPIRED';
+
+export interface CollaborationRequest {
+  id: string;
+  business_user_id: string;
+  business?: BusinessProfile;
+  creator_user_id: string;
+  creator?: CreatorProfile;
+  campaign_id?: string | null;
+  campaign?: Campaign;
+  package_id?: string | null;
+  package?: CreatorPackage;
+  message?: string | null;
+  proposed_budget?: number | null;
+  status: CollaborationRequestStatus;
+  responded_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  request_id?: string | null;
+  order_id?: string | null;
+  business_user_id: string;
+  business?: BusinessProfile;
+  creator_user_id: string;
+  creator?: CreatorProfile;
+  created_at: string;
+  updated_at: string;
+  last_message?: ChatMessage;
+}
+
 export interface ChatMessage {
   id: string;
   conversation_id: string;
+  order_id?: string;
   sender_id: string;
+  sender_user_id?: string;
   sender_name?: string;
   sender_role?: UserRole;
   body: string;
+  message?: string;
   moderation_status: 'clean' | 'flagged' | 'blocked';
   created_at: string;
   read_at?: string;
@@ -245,9 +289,14 @@ export interface ChatMessage {
 export interface Order {
   id: string;
   order_number: string;
+  campaign_id?: string | null;
+  campaign?: Campaign;
+  request_id?: string | null;
   business_id: string;
+  business_user_id?: string;
   business?: BusinessProfile;
   creator_id: string;
+  creator_user_id?: string;
   creator?: CreatorProfile;
   package_id: string;
   package?: CreatorPackage;

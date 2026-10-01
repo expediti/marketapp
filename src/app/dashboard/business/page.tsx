@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { CreatorCard } from '@/components/marketplace/CreatorCard';
 import { Campaign } from '@/types/marketplace';
+import { ConversationChat } from '@/components/chat/ConversationChat';
 import {
   ArrowRight,
   Search,
@@ -29,9 +30,10 @@ import {
   Trash2,
   X,
   AlertCircle,
+  FileCheck2,
 } from 'lucide-react';
 
-type TabKey = 'overview' | 'campaigns' | 'find' | 'saved' | 'orders' | 'messages' | 'profile';
+type TabKey = 'overview' | 'campaigns' | 'requests' | 'orders' | 'messages' | 'find' | 'saved' | 'profile';
 
 interface DbBusinessProfile {
   user_id: string;
@@ -60,6 +62,9 @@ export default function BusinessDashboardPage() {
     createCampaign,
     deleteCampaign,
     updateBusinessProfile,
+    collaborationRequests,
+    cancelCollaborationRequest,
+    conversations,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
@@ -153,8 +158,34 @@ export default function BusinessDashboardPage() {
 
   // Real orders belonging to this authenticated business user
   const businessOrders = orders.filter(
-    (o) => o.business_id === currentUser?.id || o.business?.user_id === currentUser?.id
+    (o) =>
+      o.business_id === currentUser?.id ||
+      o.business_user_id === currentUser?.id ||
+      o.business?.user_id === currentUser?.id
   );
+
+  // Real collaboration requests sent by this authenticated business user
+  const sentRequests = collaborationRequests.filter(
+    (r) => r.business_user_id === currentUser?.id
+  );
+  const pendingRequests = sentRequests.filter((r) => r.status === 'PENDING');
+  const acceptedRequests = sentRequests.filter((r) => r.status === 'ACCEPTED');
+  const userConversations = conversations.filter(
+    (c) => c.business_user_id === currentUser?.id || c.creator_user_id === currentUser?.id
+  );
+
+  const [processingCancelId, setProcessingCancelId] = useState<string | null>(null);
+
+  const handleCancelRequest = async (requestId: string) => {
+    setProcessingCancelId(requestId);
+    try {
+      await cancelCollaborationRequest(requestId);
+    } catch (err) {
+      console.error('Failed to cancel request:', err);
+    } finally {
+      setProcessingCancelId(null);
+    }
+  };
 
   const activeOrders = businessOrders.filter(
     (o) => o.order_status !== 'COMPLETED' && o.order_status !== 'CANCELLED'
@@ -341,10 +372,11 @@ export default function BusinessDashboardPage() {
         {[
           { key: 'overview', label: 'Overview' },
           { key: 'campaigns', label: `My Campaigns (${campaigns.length})` },
+          { key: 'requests', label: `Requests (${sentRequests.length})` },
+          { key: 'orders', label: `Orders (${businessOrders.length})` },
+          { key: 'messages', label: `Messages (${userConversations.length})` },
           { key: 'find', label: 'Find Influencers' },
           { key: 'saved', label: `Saved Influencers (${savedCreatorIds.length})` },
-          { key: 'orders', label: `My Orders (${businessOrders.length})` },
-          { key: 'messages', label: `Messages (${businessOrders.length})` },
           { key: 'profile', label: 'Business Profile' },
         ].map((tab) => (
           <button
@@ -686,6 +718,127 @@ export default function BusinessDashboardPage() {
         </div>
       )}
 
+      {/* TAB: COLLABORATION REQUESTS */}
+      {activeTab === 'requests' && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Sent Proposals</span>
+              <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                Collaboration Requests
+              </h3>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Proposals you have sent to influencers. When accepted, private chat unlocks for deal finalization.
+              </p>
+            </div>
+
+            <Link href="/discover">
+              <Button variant="primary" size="sm">
+                <span>Browse More Influencers</span>
+              </Button>
+            </Link>
+          </div>
+
+          {sentRequests.length === 0 ? (
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
+              <p>No collaboration requests sent yet.</p>
+              <Link href="/discover">
+                <Button variant="primary" size="sm">
+                  Find Influencers
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {sentRequests.map((req) => (
+                <div
+                  key={req.id}
+                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-4 shadow-sm"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {req.creator?.profile_image_path ? (
+                        <img
+                          src={req.creator.profile_image_path}
+                          alt={req.creator.display_name}
+                          className="w-12 h-12 rounded-xl object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-base text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
+                          {(req.creator?.display_name || 'C')[0]}
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="editorial-label text-[#FF5416]">
+                            {req.creator?.display_name || 'Influencer'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold ${
+                            req.status === 'ACCEPTED'
+                              ? 'bg-[#ECFDF5] text-[#047857] dark:bg-[#064E3B]/40 dark:text-[#34D399]'
+                              : req.status === 'DECLINED'
+                              ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                          {req.campaign?.campaign_name || req.campaign?.product_name || 'Influencer Reel Collaboration'}
+                        </h4>
+                        <p className="text-xs text-[#71717A] dark:text-zinc-400 font-mono">
+                          Package: {req.package?.name || 'Custom Package'} • Sent {new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="sm:text-right">
+                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 block">Proposed Budget:</span>
+                      <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
+                        {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price).toLocaleString('en-IN')}` : 'Budget Open')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {req.message && (
+                    <div className="p-3 bg-white dark:bg-zinc-800/80 rounded-lg border border-[#ECECE6] dark:border-zinc-800 text-xs font-mono text-[#3F3F46] dark:text-zinc-300 leading-relaxed">
+                      &quot;{req.message}&quot;
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
+                    {req.status === 'PENDING' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={processingCancelId === req.id}
+                        onClick={() => handleCancelRequest(req.id)}
+                        className="text-red-600 hover:text-red-700 border-red-200"
+                      >
+                        {processingCancelId === req.id ? 'Cancelling...' : 'Cancel Request'}
+                      </Button>
+                    ) : req.status === 'ACCEPTED' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setActiveTab('messages')}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                        <span>Chat & Finalize Deal</span>
+                      </Button>
+                    ) : (
+                      <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                        Request {req.status.toLowerCase()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB: MY ORDERS */}
       {activeTab === 'orders' && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
@@ -704,7 +857,7 @@ export default function BusinessDashboardPage() {
 
           {businessOrders.length === 0 ? (
             <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
-              <p>No collaboration orders yet. Start by finding an influencer.</p>
+              <p>No active orders yet.</p>
               <Link href="/discover">
                 <Button variant="primary" size="sm">
                   Find Influencers
@@ -721,25 +874,31 @@ export default function BusinessDashboardPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
                       <strong className="font-mono text-[#121214] dark:text-white text-base">
-                        {ord.order_number}
+                        #{ord.order_number}
                       </strong>
                       <StatusBadge status={ord.order_status} size="sm" />
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                        {ord.payment_status}
+                      </span>
                     </div>
                     <div className="text-xs text-[#52525B] dark:text-zinc-400 font-mono">
                       <span>
-                        Influencer: <strong>{ord.creator?.profile?.display_name || 'Influencer'}</strong>
+                        Influencer: <strong>{ord.creator?.profile?.display_name || ord.creator?.display_name || 'Influencer'}</strong>
                       </span>
                       <span className="mx-2">•</span>
-                      <span>Package: {ord.package?.name}</span>
+                      <span>Package: {ord.package?.name || 'Custom Deliverable'}</span>
+                    </div>
+                    <div className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
+                      Created {new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <div className="text-right font-mono">
                       <span className="text-sm font-bold text-[#121214] dark:text-white block">
-                        ₹{Number(ord.total_amount || 0).toLocaleString('en-IN')}
+                        ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
                       </span>
-                      <span className="text-[10px] text-[#047857]">Protected</span>
+                      <span className="text-[10px] text-[#047857]">Escrow Pending</span>
                     </div>
 
                     <Link href={`/orders/${ord.id}`}>
@@ -758,52 +917,14 @@ export default function BusinessDashboardPage() {
 
       {/* TAB: MESSAGES */}
       {activeTab === 'messages' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <span className="editorial-label text-[#FF5416]">Communications</span>
-            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-              Order Discussions
-            </h3>
-            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              Messages are organized around active campaign orders so revision notes and briefs are never lost.
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Messages & Negotiations</h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Private discussions with influencers for accepted collaboration requests. Finalize deliverables and confirm orders directly here.
             </p>
           </div>
-
-          <div className="space-y-3">
-            {businessOrders.length === 0 ? (
-              <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                No active discussions yet. Book an influencer to start a campaign conversation.
-              </div>
-            ) : (
-              businessOrders.map((ord) => (
-                <div
-                  key={ord.id}
-                  className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 flex items-center justify-center text-[#121214] dark:text-white">
-                      <MessageSquare className="w-4 h-4 text-[#FF5416]" />
-                    </div>
-                    <div>
-                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                        {ord.creator?.profile?.display_name || 'Influencer'}
-                      </h4>
-                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                        Order #{ord.order_number} • {ord.package?.name}
-                      </span>
-                    </div>
-                  </div>
-
-                  <Link href={`/orders/${ord.id}`}>
-                    <Button variant="outline" size="sm">
-                      <span>Open Chat</span>
-                      <ArrowRight className="w-3 h-3 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              ))
-            )}
-          </div>
+          <ConversationChat role="business" />
         </div>
       )}
 

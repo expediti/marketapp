@@ -26,17 +26,18 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
     scrollToBottom();
   }, [orderMessages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const result = sendMessage(orderId, inputText.trim());
+    const text = inputText.trim();
+    setInputText('');
+    const result = await sendMessage(orderId, text);
     if (result.warning) {
       setWarning(result.warning);
     } else {
       setWarning(null);
     }
-    setInputText('');
   };
 
   return (

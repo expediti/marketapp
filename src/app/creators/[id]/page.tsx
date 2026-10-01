@@ -20,16 +20,37 @@ import {
   Package,
   Users,
   Info,
+  X,
+  Send,
+  AlertCircle,
+  Check,
 } from 'lucide-react';
 
 export default function CreatorDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getCreator, isLoading: storeLoading } = useMarketplace();
+  const {
+    getCreator,
+    isLoading: storeLoading,
+    currentUser,
+    campaigns,
+    sendCollaborationRequest,
+    collaborationRequests,
+  } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<'work' | 'packages' | 'audience' | 'about'>('work');
   const [dbCreator, setDbCreator] = useState<CreatorProfile | null>(null);
   const [isFetchingDirect, setIsFetchingDirect] = useState(false);
+
+  // Request modal state
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [proposedBudget, setProposedBudget] = useState<number>(0);
+  const [initialMessage, setInitialMessage] = useState<string>('');
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const creatorId = params.id as string;
   const storeCreator = getCreator(creatorId);
@@ -157,6 +178,70 @@ export default function CreatorDetailPage() {
 
   const reels = creator.reels || [];
 
+  const isOwnProfile = currentUser?.id === creator.user_id;
+  const activePendingRequest = currentUser
+    ? collaborationRequests.find(
+        (r) =>
+          r.business_user_id === currentUser.id &&
+          r.creator_user_id === creator.user_id &&
+          r.status === 'PENDING'
+      )
+    : null;
+
+  const openRequestModal = (pkgId?: string) => {
+    if (!currentUser) {
+      router.push(`/auth/login?redirect=/creators/${creatorId}`);
+      return;
+    }
+    const chosenPkg = pkgId
+      ? creator.packages?.find((p) => p.id === pkgId)
+      : creator.packages?.[0];
+
+    if (chosenPkg) {
+      setSelectedPackageId(chosenPkg.id);
+      setProposedBudget(chosenPkg.price);
+    } else {
+      setSelectedPackageId('');
+      setProposedBudget(startingPrice || 5000);
+    }
+
+    if (campaigns && campaigns.length > 0 && !selectedCampaignId) {
+      setSelectedCampaignId(campaigns[0].id);
+    }
+
+    setRequestError(null);
+    setRequestSuccess(false);
+    setIsRequestModalOpen(true);
+  };
+
+  const handleSendCollaborationRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) {
+      router.push(`/auth/login?redirect=/creators/${creatorId}`);
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    setRequestError(null);
+
+    try {
+      await sendCollaborationRequest({
+        creatorUserId: creator.user_id,
+        packageId: selectedPackageId || undefined,
+        campaignId: selectedCampaignId || undefined,
+        proposedBudget: Number(proposedBudget) || 0,
+        message: initialMessage.trim() || undefined,
+      });
+
+      setRequestSuccess(true);
+    } catch (err: any) {
+      console.error('Error sending collaboration request:', err);
+      setRequestError(err.message || 'Failed to send collaboration request. Please try again.');
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Navigation breadcrumb */}
@@ -212,17 +297,42 @@ export default function CreatorDetailPage() {
             </div>
           </div>
 
-          {/* Quick Action Button */}
+          {/* Quick Action Buttons */}
           <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => setActiveTab('packages')}
-              className="w-full sm:w-auto px-6"
-            >
-              <span>Choose a Package</span>
-              <ArrowRight className="w-4 h-4 ml-1.5" />
-            </Button>
+            {isOwnProfile ? (
+              <Link href="/dashboard/creator">
+                <Button variant="outline" size="md">
+                  <span>Your Studio Dashboard</span>
+                </Button>
+              </Link>
+            ) : activePendingRequest ? (
+              <Link href="/dashboard/business">
+                <Button variant="outline" size="md" className="border-[#047857] text-[#047857]">
+                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                  <span>Request Pending • View Status</span>
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="md"
+                  onClick={() => setActiveTab('packages')}
+                  className="w-full sm:w-auto"
+                >
+                  <span>View Packages</span>
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => openRequestModal()}
+                  className="w-full sm:w-auto px-6"
+                >
+                  <Sparkles className="w-4 h-4 mr-1.5" />
+                  <span>Send Request</span>
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -317,7 +427,7 @@ export default function CreatorDetailPage() {
             </div>
           ) : (
             <div className="p-12 text-center bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl text-xs font-mono text-[#71717A]">
-              No reels uploaded yet for this influencer.
+              Work samples coming soon.
             </div>
           )}
         </div>
@@ -338,7 +448,12 @@ export default function CreatorDetailPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {creator.packages?.map((pkg) => (
-              <PackageCard key={pkg.id} pkg={pkg} creatorId={creator.user_id} />
+              <PackageCard
+                key={pkg.id}
+                pkg={pkg}
+                creatorId={creator.user_id}
+                onRequest={(pkgId) => openRequestModal(pkgId)}
+              />
             ))}
           </div>
         </div>
@@ -457,6 +572,183 @@ export default function CreatorDetailPage() {
                 </strong>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SEND COLLABORATION REQUEST MODAL */}
+      {isRequestModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#FF5416]" />
+                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                  Send Collaboration Request
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRequestModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {requestSuccess ? (
+              <div className="text-center py-6 space-y-4 font-mono">
+                <div className="w-12 h-12 rounded-full bg-[#ECFDF5] dark:bg-[#064E3B]/40 text-[#047857] dark:text-[#34D399] flex items-center justify-center mx-auto border border-[#A7F3D0] dark:border-[#065F46]">
+                  <Check className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold text-[#121214] dark:text-white">
+                    Request Sent Successfully!
+                  </h4>
+                  <p className="text-xs text-[#71717A] dark:text-zinc-400 max-w-sm mx-auto">
+                    {creator.profile?.display_name} has received your proposal. When they accept, private chat will unlock so you can discuss specifics and confirm the deal.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-3 pt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsRequestModalOpen(false)}
+                  >
+                    Close
+                  </Button>
+                  <Link href="/dashboard/business">
+                    <Button variant="primary" size="sm">
+                      Go to Dashboard
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSendCollaborationRequest} className="space-y-4 text-xs font-mono">
+                {requestError && (
+                  <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded text-xs text-red-600 font-mono flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{requestError}</span>
+                  </div>
+                )}
+
+                {/* Package selection */}
+                {creator.packages && creator.packages.length > 0 && (
+                  <div>
+                    <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                      Choose Package (Optional)
+                    </label>
+                    <select
+                      value={selectedPackageId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedPackageId(val);
+                        const pkg = creator.packages?.find((p) => p.id === val);
+                        if (pkg) {
+                          setProposedBudget(pkg.price);
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    >
+                      <option value="">-- Custom Collaboration / Open Discussion --</option>
+                      {creator.packages.map((pkg) => (
+                        <option key={pkg.id} value={pkg.id}>
+                          {pkg.name} — ₹{pkg.price.toLocaleString('en-IN')} ({pkg.delivery_days} days delivery)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Campaign Selection if business has campaigns */}
+                {campaigns && campaigns.length > 0 && (
+                  <div>
+                    <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                      Associate Campaign (Optional)
+                    </label>
+                    <select
+                      value={selectedCampaignId}
+                      onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    >
+                      <option value="">-- General / Direct Collaboration --</option>
+                      {campaigns.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.campaign_name} ({c.product_name})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Proposed Budget */}
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Proposed Budget (₹ INR)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-[#71717A]">₹</span>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={proposedBudget || ''}
+                      onChange={(e) => setProposedBudget(Number(e.target.value))}
+                      placeholder="e.g. 5000"
+                      className="w-full pl-7 pr-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Initial Message */}
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Initial Message & Concept
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={initialMessage}
+                    onChange={(e) => setInitialMessage(e.target.value)}
+                    placeholder="Describe your app/website, target audience, and what you would like the influencer to create..."
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white placeholder-[#71717A]"
+                  />
+                </div>
+
+                <div className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded-lg text-[11px] text-[#71717A] dark:text-zinc-400">
+                  Sending a request does NOT trigger an immediate charge. You will discuss specifics via private chat first, agree on deliverables, and finalize the deal.
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsRequestModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    disabled={isSubmittingRequest}
+                  >
+                    {isSubmittingRequest ? (
+                      <span className="flex items-center gap-1.5">
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Sending...</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Send Request</span>
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
