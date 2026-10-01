@@ -164,24 +164,18 @@ export default function OrderWorkspacePage() {
           <span>Back to Dashboard</span>
         </Link>
 
-        {/* Creator Accept / Decline Actions if in pending state */}
-        {order.order_status === 'PAYMENT_PENDING' && activeRole === 'creator' && (
-          <div className="flex items-center gap-2 bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] px-3 py-1.5 rounded-lg text-xs">
-            <span className="text-[#C2410C] dark:text-[#F97316] font-semibold">Deal Confirmed:</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => declineOrder(order.id, 'Creator unavailable')}
-            >
-              Decline
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => acceptOrder(order.id)}
-            >
-              Accept Collaboration
-            </Button>
+        {/* Contextual Status Indicator */}
+        {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
+          <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 px-3 py-1.5 rounded-lg text-xs text-purple-700 dark:text-purple-300">
+            <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
+            <span className="font-semibold">Deal Confirmed ✓ {activeRole === 'business' ? '— Payment Required' : '— Awaiting Business Payment'}</span>
+          </div>
+        )}
+
+        {order.order_status === 'PAID' && (
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-1.5 rounded-lg text-xs text-emerald-700 dark:text-emerald-300">
+            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="font-semibold">Payment Confirmed {activeRole === 'creator' ? '— Mark as Started Below' : '— Creator Notified'}</span>
           </div>
         )}
       </div>
@@ -211,20 +205,29 @@ export default function OrderWorkspacePage() {
         </div>
 
         {/* CONTEXTUAL WORKFLOW NOTICES */}
-        {order.order_status === 'PAYMENT_PENDING' && (
-          <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3.5 rounded-lg text-xs text-[#C2410C] dark:text-[#F97316] flex items-center gap-2">
-            <Info className="w-4 h-4 shrink-0 text-[#FF5416]" />
+        {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
+          <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 p-3.5 rounded-lg text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
+            <Info className="w-4 h-4 shrink-0 text-purple-600" />
             <p>
-              Payment is required before the creator begins the confirmed collaboration. Platform payment will be integrated soon.
+              Deal terms are locked and confirmed. Business payment is required before production begins.
             </p>
           </div>
         )}
 
-        {order.order_status === 'IN_PROGRESS' && (
+        {order.order_status === 'PAID' && (
           <div className="bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800 p-3.5 rounded-lg text-xs text-[#047857] dark:text-emerald-400 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 shrink-0 text-[#047857]" />
             <p>
-              Payment has been confirmed. The creator is now actively preparing deliverables according to the brief specs.
+              Payment confirmed! Creator can now mark work as started and begin preparation.
+            </p>
+          </div>
+        )}
+
+        {(order.order_status === 'WORK_STARTED' || order.order_status === 'IN_PROGRESS') && (
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 p-3.5 rounded-lg text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0 text-blue-600" />
+            <p>
+              Work has started! Creator is actively preparing deliverable according to the agreed brief.
             </p>
           </div>
         )}

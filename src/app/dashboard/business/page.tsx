@@ -222,7 +222,9 @@ export default function BusinessDashboardPage() {
   const sentRequests = collaborationRequests.filter(
     (r) => r.business_user_id === currentUser?.id
   );
-  const pendingRequests = sentRequests.filter((r) => r.status === 'PENDING');
+  const pendingRequests = sentRequests.filter(
+    (r) => r.status === 'REQUESTED' || r.status === 'PENDING'
+  );
   const acceptedRequests = sentRequests.filter((r) => r.status === 'ACCEPTED');
   const userConversations = conversations.filter(
     (c) => c.business_user_id === currentUser?.id || c.creator_user_id === currentUser?.id

@@ -501,6 +501,8 @@ export interface Database {
           order_id: string;
           submitted_by: string | null;
           proof_url: string;
+          instagram_post_url: string | null;
+          file_storage_path: string | null;
           notes: string | null;
           submitted_at: string;
           status: string;
@@ -510,6 +512,8 @@ export interface Database {
           order_id: string;
           submitted_by?: string | null;
           proof_url: string;
+          instagram_post_url?: string | null;
+          file_storage_path?: string | null;
           notes?: string | null;
           submitted_at?: string;
           status?: string;
@@ -519,9 +523,71 @@ export interface Database {
           order_id?: string;
           submitted_by?: string | null;
           proof_url?: string;
+          instagram_post_url?: string | null;
+          file_storage_path?: string | null;
           notes?: string | null;
           submitted_at?: string;
           status?: string;
+        };
+        Relationships: [];
+      };
+      deal_proposals: {
+        Row: {
+          id: string;
+          request_id: string | null;
+          conversation_id: string;
+          order_id: string | null;
+          proposed_by: string;
+          deliverable: string;
+          price: number;
+          deadline: string;
+          revisions_included: number;
+          key_requirements: string;
+          status: string;
+          version: number;
+          supersedes_proposal_id: string | null;
+          accepted_by: string | null;
+          accepted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id?: string | null;
+          conversation_id: string;
+          order_id?: string | null;
+          proposed_by: string;
+          deliverable: string;
+          price: number;
+          deadline: string;
+          revisions_included?: number;
+          key_requirements: string;
+          status?: string;
+          version?: number;
+          supersedes_proposal_id?: string | null;
+          accepted_by?: string | null;
+          accepted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          request_id?: string | null;
+          conversation_id?: string;
+          order_id?: string | null;
+          proposed_by?: string;
+          deliverable?: string;
+          price?: number;
+          deadline?: string;
+          revisions_included?: number;
+          key_requirements?: string;
+          status?: string;
+          version?: number;
+          supersedes_proposal_id?: string | null;
+          accepted_by?: string | null;
+          accepted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -766,6 +832,43 @@ export interface Database {
     Functions: {
       process_auto_approvals: {
         Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      accept_deal_proposal: {
+        Args: { p_proposal_id: string };
+        Returns: Json;
+      };
+      end_collaboration: {
+        Args: { p_conversation_id: string; p_reason?: string };
+        Returns: Json;
+      };
+      cancel_confirmed_deal: {
+        Args: { p_order_id: string; p_reason?: string };
+        Returns: Json;
+      };
+      mark_work_started: {
+        Args: { p_order_id: string };
+        Returns: Json;
+      };
+      simulate_payment_success: {
+        Args: { p_order_id: string };
+        Returns: Json;
+      };
+      submit_order_delivery: {
+        Args: {
+          p_order_id: string;
+          p_proof_url: string;
+          p_instagram_post_url?: string;
+          p_notes?: string;
+        };
+        Returns: Json;
+      };
+      accept_order_delivery: {
+        Args: { p_order_id: string };
+        Returns: Json;
+      };
+      request_order_revision: {
+        Args: { p_order_id: string; p_notes: string };
         Returns: Json;
       };
     };

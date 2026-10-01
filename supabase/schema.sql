@@ -1445,6 +1445,86 @@ BEGIN
     END;
 END $$;
 
+-- ============================================================================
+-- 19. DEAL PROPOSALS TABLE & WORKFLOW
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.deal_proposals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id UUID REFERENCES public.collaboration_requests(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES public.conversations(id) ON DELETE CASCADE,
+    order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+    proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    deliverable TEXT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
+    deadline TIMESTAMPTZ NOT NULL,
+    revisions_included INTEGER NOT NULL DEFAULT 1 CHECK (revisions_included >= 0),
+    key_requirements TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'ACCEPTED', 'SUPERSEDED', 'DECLINED', 'CANCELLED')),
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    supersedes_proposal_id UUID REFERENCES public.deal_proposals(id) ON DELETE SET NULL,
+    accepted_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    accepted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_deal_proposals_conversation_id ON public.deal_proposals(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_deal_proposals_request_id ON public.deal_proposals(request_id);
+CREATE INDEX IF NOT EXISTS idx_deal_proposals_order_id ON public.deal_proposals(order_id);
+CREATE INDEX IF NOT EXISTS idx_deal_proposals_status ON public.deal_proposals(status);
+
+ALTER TABLE public.deal_proposals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Participants can view deal proposals" ON public.deal_proposals;
+CREATE POLICY "Participants can view deal proposals"
+    ON public.deal_proposals FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.conversations c
+            WHERE c.id = deal_proposals.conversation_id
+            AND (c.business_user_id = auth.uid() OR c.creator_user_id = auth.uid())
+        )
+        OR proposed_by = auth.uid()
+        OR public.is_admin()
+    );
+
+DROP POLICY IF EXISTS "Participants can create deal proposals" ON public.deal_proposals;
+CREATE POLICY "Participants can create deal proposals"
+    ON public.deal_proposals FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        auth.uid() = proposed_by
+        AND EXISTS (
+            SELECT 1 FROM public.conversations c
+            WHERE c.id = deal_proposals.conversation_id
+            AND (c.business_user_id = auth.uid() OR c.creator_user_id = auth.uid())
+        )
+    );
+
+DROP POLICY IF EXISTS "Participants can update deal proposals" ON public.deal_proposals;
+CREATE POLICY "Participants can update deal proposals"
+    ON public.deal_proposals FOR UPDATE
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.conversations c
+            WHERE c.id = deal_proposals.conversation_id
+            AND (c.business_user_id = auth.uid() OR c.creator_user_id = auth.uid())
+        )
+        OR proposed_by = auth.uid()
+        OR public.is_admin()
+    );
+
+ALTER TABLE public.deal_proposals REPLICA IDENTITY FULL;
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.deal_proposals;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
 

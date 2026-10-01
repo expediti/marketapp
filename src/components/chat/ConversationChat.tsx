@@ -3,7 +3,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
-import { Conversation, ChatMessage, UserRole } from '@/types/marketplace';
+import {
+  Conversation,
+  ChatMessage,
+  DealProposal,
+  UserRole,
+} from '@/types/marketplace';
 import { Button } from '@/components/ui/Button';
 import {
   MessageSquare,
@@ -15,11 +20,16 @@ import {
   FileCheck2,
   Calendar,
   IndianRupee,
-  Package as PackageIcon,
   X,
   Clock,
   Sparkles,
   Info,
+  AlertTriangle,
+  FileText,
+  Check,
+  Edit3,
+  Ban,
+  CreditCard,
 } from 'lucide-react';
 
 interface ConversationChatProps {
@@ -27,21 +37,29 @@ interface ConversationChatProps {
   initialConversationId?: string | null;
 }
 
-export function ConversationChat({ role, initialConversationId }: ConversationChatProps) {
+export function ConversationChat({
+  role,
+  initialConversationId,
+}: ConversationChatProps) {
   const {
     currentUser,
     conversations,
     collaborationRequests,
     orders,
     messages,
+    dealProposals,
     activeConversationId,
     setActiveConversationId,
     fetchConversationMessages,
+    fetchConversationProposals,
     sendMessage,
-    createOrderFromCollaboration,
+    createDealProposal,
+    acceptDealProposal,
+    endCollaboration,
+    cancelConfirmedDeal,
+    simulatePaymentSuccess,
     creators,
     businesses,
-    campaigns,
   } = useMarketplace();
 
   const [selectedConvId, setSelectedConvId] = useState<string | null>(
@@ -51,20 +69,39 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
   const [isSending, setIsSending] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
 
-  // Deal finalization modal state
-  const [isFinalizingDeal, setIsFinalizingDeal] = useState(false);
-  const [dealPackageId, setDealPackageId] = useState<string>('');
-  const [dealAmount, setDealAmount] = useState<number>(5000);
-  const [dealObjective, setDealObjective] = useState<string>('');
-  const [dealRequirements, setDealRequirements] = useState<string>('');
-  const [dealDos, setDealDos] = useState<string>('');
-  const [dealDonts, setDealDonts] = useState<string>('');
-  const [dealDeadline, setDealDeadline] = useState<string>(
+  // Proposal modal state
+  const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
+  const [editingProposal, setEditingProposal] = useState<DealProposal | null>(
+    null
+  );
+  const [proposalDeliverable, setProposalDeliverable] = useState('');
+  const [proposalPrice, setProposalPrice] = useState<number>(5000);
+  const [proposalDeadline, setProposalDeadline] = useState<string>(
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   );
-  const [dealRevisions, setDealRevisions] = useState<number>(1);
-  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [dealError, setDealError] = useState<string | null>(null);
+  const [proposalRevisions, setProposalRevisions] = useState<number>(1);
+  const [proposalRequirements, setProposalRequirements] = useState('');
+  const [isSubmittingProposal, setIsSubmittingProposal] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+
+  // Proposal accepting state
+  const [acceptingProposalId, setAcceptingProposalId] = useState<string | null>(
+    null
+  );
+
+  // End collaboration modal state
+  const [isEndCollabModalOpen, setIsEndCollabModalOpen] = useState(false);
+  const [endCollabReason, setEndCollabReason] = useState('');
+  const [isEndingCollab, setIsEndingCollab] = useState(false);
+
+  // Cancel deal modal state
+  const [isCancelDealModalOpen, setIsCancelDealModalOpen] = useState(false);
+  const [cancelDealReason, setCancelDealReason] = useState('');
+  const [isCancellingDeal, setIsCancellingDeal] = useState(false);
+
+  // Pay Now modal state
+  const [isPayNowModalOpen, setIsPayNowModalOpen] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -83,66 +120,213 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
     } else if (selectedConvId) {
       setActiveConversationId(selectedConvId);
     }
-  }, [userConversations.length, selectedConvId]);
+  }, [userConversations.length, selectedConvId, setActiveConversationId]);
 
-  const activeConversation = userConversations.find((c) => c.id === selectedConvId);
+  const activeConversation = userConversations.find(
+    (c) => c.id === selectedConvId
+  );
 
-  // Load messages for selected conversation
+  // Load messages and deal proposals for selected conversation
   useEffect(() => {
     if (selectedConvId) {
       fetchConversationMessages(selectedConvId);
+      fetchConversationProposals(selectedConvId);
     }
-  }, [selectedConvId]);
+  }, [selectedConvId, fetchConversationMessages, fetchConversationProposals]);
+
+  const convMessages = (selectedConvId ? messages[selectedConvId] : []) || [];
+  const convProposals =
+    (selectedConvId ? dealProposals[selectedConvId] : []) ||
+    activeConversation?.proposals ||
+    [];
+
+  // Find linked order for active conversation
+  const activeOrder = activeConversation?.order_id
+    ? orders.find((o) => o.id === activeConversation.order_id)
+    : orders.find(
+        (o) =>
+          o.request_id === activeConversation?.request_id ||
+          (o.creator_user_id === activeConversation?.creator_user_id &&
+            o.business_user_id === activeConversation?.business_user_id)
+      );
+
+  // Linked request
+  const linkedRequest = collaborationRequests.find(
+    (r) => r.id === activeConversation?.request_id
+  );
+
+  // Active proposal (the latest ACTIVE one)
+  const activeProposal = convProposals
+    .slice()
+    .reverse()
+    .find((p) => p.status === 'ACTIVE');
+
+  // Check if conversation is ended
+  const isEnded =
+    linkedRequest?.status === 'ENDED' ||
+    linkedRequest?.status === 'DECLINED' ||
+    activeOrder?.order_status === 'CANCELLED';
+
+  // Check if current user is business in this conversation
+  const isMeBusiness = activeConversation?.business_user_id === currentUser?.id;
+  const otherPartyName = isMeBusiness
+    ? activeConversation?.creator?.display_name || 'Creator'
+    : activeConversation?.business?.business_name || 'Advertiser';
 
   // Scroll to bottom when messages update
-  const convMessages = (selectedConvId ? messages[selectedConvId] : []) || [];
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [convMessages.length]);
+  }, [convMessages.length, convProposals.length]);
 
-  // Pre-fill deal confirmation modal when opening
-  useEffect(() => {
-    if (activeConversation && isFinalizingDeal) {
-      const linkedReq = collaborationRequests.find(
-        (r) => r.id === activeConversation.request_id
-      );
-      const creator = creators.find(
-        (c) => c.user_id === activeConversation.creator_user_id
-      );
+  // Open proposal modal for brand new proposal
+  const handleOpenNewProposalModal = () => {
+    setEditingProposal(null);
+    setProposalError(null);
 
-      if (linkedReq?.package_id) {
-        setDealPackageId(linkedReq.package_id);
-      } else if (creator?.packages && creator.packages.length > 0) {
-        setDealPackageId(creator.packages[0].id);
-      }
+    const req = linkedRequest;
+    const creator = creators.find(
+      (c) => c.user_id === activeConversation?.creator_user_id
+    );
 
-      if (linkedReq?.proposed_budget) {
-        setDealAmount(linkedReq.proposed_budget);
-      } else if (creator?.packages && creator.packages.length > 0) {
-        setDealAmount(creator.packages[0].price);
-      }
-
-      if (linkedReq?.message && !dealObjective) {
-        setDealObjective(`Collaboration: ${linkedReq.message.slice(0, 60)}`);
-      } else if (!dealObjective) {
-        setDealObjective('Sponsored Video Reel & Brand Promotion');
-      }
-
-      if (!dealRequirements) {
-        setDealRequirements('Deliver 1 high-quality vertical 9:16 reel showcasing the app features.');
-      }
-      if (!dealDos) {
-        setDealDos('Tag official brand handle and include download link in bio.');
-      }
-      if (!dealDonts) {
-        setDealDonts('Do not mention competitor apps or products.');
-      }
+    if (req?.proposed_budget) {
+      setProposalPrice(req.proposed_budget);
+    } else if (creator?.packages && creator.packages.length > 0) {
+      setProposalPrice(creator.packages[0].price);
+    } else {
+      setProposalPrice(5000);
     }
-  }, [isFinalizingDeal, activeConversation]);
+
+    if (req?.message) {
+      setProposalDeliverable(`Deliverable: ${req.message.slice(0, 60)}`);
+    } else {
+      setProposalDeliverable('1 High-Quality Vertical Reel (9:16) with brand CTA');
+    }
+
+    setProposalRequirements(
+      'Feature the app onboarding flow, demonstrate key features, and pin official link in bio.'
+    );
+    setProposalDeadline(
+      new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+    );
+    setProposalRevisions(1);
+    setIsProposalModalOpen(true);
+  };
+
+  // Open proposal modal pre-filled to propose changes
+  const handleOpenProposeChanges = (prop: DealProposal) => {
+    setEditingProposal(prop);
+    setProposalError(null);
+    setProposalDeliverable(prop.deliverable);
+    setProposalPrice(prop.price);
+    setProposalDeadline(
+      new Date(prop.deadline).toISOString().split('T')[0] ||
+        new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+    );
+    setProposalRevisions(prop.revisions_included);
+    setProposalRequirements(prop.key_requirements);
+    setIsProposalModalOpen(true);
+  };
+
+  // Submit deal proposal
+  const handleSubmitProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeConversation) return;
+
+    setIsSubmittingProposal(true);
+    setProposalError(null);
+
+    try {
+      await createDealProposal({
+        conversationId: activeConversation.id,
+        requestId: activeConversation.request_id || undefined,
+        deliverable: proposalDeliverable.trim(),
+        price: Number(proposalPrice) || 0,
+        deadline: new Date(proposalDeadline).toISOString(),
+        revisionsIncluded: Number(proposalRevisions) || 1,
+        keyRequirements: proposalRequirements.trim(),
+        supersedesProposalId: editingProposal?.id || undefined,
+      });
+
+      setIsProposalModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to submit deal proposal:', err);
+      setProposalError(err.message || 'Failed to submit proposal');
+    } finally {
+      setIsSubmittingProposal(false);
+    }
+  };
+
+  // Accept deal proposal (receiving participant only)
+  const handleAcceptTerms = async (proposalId: string) => {
+    setAcceptingProposalId(proposalId);
+    try {
+      await acceptDealProposal(proposalId);
+    } catch (err: any) {
+      console.error('Failed to accept terms:', err);
+      alert(err.message || 'Failed to accept deal terms');
+    } finally {
+      setAcceptingProposalId(null);
+    }
+  };
+
+  // End collaboration
+  const handleConfirmEndCollab = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeConversation) return;
+    setIsEndingCollab(true);
+    try {
+      await endCollaboration(
+        activeConversation.id,
+        endCollabReason.trim() || 'Collaboration ended by mutual agreement.'
+      );
+      setIsEndCollabModalOpen(false);
+      setEndCollabReason('');
+    } catch (err: any) {
+      console.error('Failed to end collaboration:', err);
+      alert(err.message || 'Failed to end collaboration');
+    } finally {
+      setIsEndingCollab(false);
+    }
+  };
+
+  // Cancel confirmed unpaid deal
+  const handleConfirmCancelDeal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOrder) return;
+    setIsCancellingDeal(true);
+    try {
+      await cancelConfirmedDeal(
+        activeOrder.id,
+        cancelDealReason.trim() || 'Business cancelled deal before payment.'
+      );
+      setIsCancelDealModalOpen(false);
+      setCancelDealReason('');
+    } catch (err: any) {
+      console.error('Failed to cancel deal:', err);
+      alert(err.message || 'Failed to cancel deal');
+    } finally {
+      setIsCancellingDeal(false);
+    }
+  };
+
+  // Confirm simulated platform payment
+  const handleConfirmPayment = async () => {
+    if (!activeOrder) return;
+    setIsPaying(true);
+    try {
+      await simulatePaymentSuccess(activeOrder.id);
+      setIsPayNowModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to process payment:', err);
+      alert(err.message || 'Failed to process payment');
+    } finally {
+      setIsPaying(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !selectedConvId || isSending) return;
+    if (!inputText.trim() || !selectedConvId || isSending || isEnded) return;
 
     const text = inputText.trim();
     setInputText('');
@@ -162,77 +346,47 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
     }
   };
 
-  const handleConfirmDeal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeConversation) return;
-
-    setIsCreatingOrder(true);
-    setDealError(null);
-
-    try {
-      const newOrder = await createOrderFromCollaboration({
-        requestId: activeConversation.request_id || undefined,
-        creatorId: activeConversation.creator_user_id,
-        packageId: dealPackageId || undefined,
-        agreedAmount: Number(dealAmount) || 0,
-        includedRevisions: Number(dealRevisions) || 1,
-        brief: {
-          objective: dealObjective,
-          requirements: dealRequirements,
-          dos: dealDos,
-          donts: dealDonts,
-          deadline: new Date(dealDeadline).toISOString(),
-          additionalNotes: 'Deal agreed via private collaboration chat.',
-        },
-      });
-
-      // Send confirmation message to the chat
-      await sendMessage(
-        activeConversation.id,
-        `Deal confirmed! Order #${newOrder.order_number} has been created for ₹${Number(dealAmount).toLocaleString('en-IN')}. (Status: Payment Pending)`
-      );
-
-      setIsFinalizingDeal(false);
-    } catch (err: any) {
-      console.error('Failed to confirm deal:', err);
-      setDealError(err.message || 'Failed to create order. Please try again.');
-    } finally {
-      setIsCreatingOrder(false);
-    }
-  };
-
   if (userConversations.length === 0) {
     return (
-      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-12 text-center space-y-3">
+      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-12 text-center space-y-3 font-mono">
         <div className="w-12 h-12 rounded-full bg-[#FFF2EC] dark:bg-zinc-800 text-[#FF5416] flex items-center justify-center mx-auto">
           <MessageSquare className="w-6 h-6" />
         </div>
-        <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+        <h4 className="text-base font-bold text-[#121214] dark:text-white">
           No Conversations Yet
         </h4>
         <p className="text-xs text-[#71717A] dark:text-zinc-400 max-w-sm mx-auto">
-          Private chat becomes available automatically when a creator accepts a collaboration request.
+          Private chat becomes available automatically when a creator accepts a
+          collaboration request.
         </p>
       </div>
     );
   }
 
-  // Find linked order for active conversation
-  const activeOrder = activeConversation?.order_id
-    ? orders.find((o) => o.id === activeConversation.order_id)
-    : orders.find(
-        (o) =>
-          o.request_id === activeConversation?.request_id ||
-          (o.creator_user_id === activeConversation?.creator_user_id &&
-            o.business_user_id === activeConversation?.business_user_id)
-      );
+  // Combine messages and proposals for the chronological paper trail
+  type FeedItem =
+    | { type: 'message'; data: ChatMessage; timestamp: number }
+    | { type: 'proposal'; data: DealProposal; timestamp: number };
+
+  const feedItems: FeedItem[] = [
+    ...convMessages.map((m) => ({
+      type: 'message' as const,
+      data: m,
+      timestamp: new Date(m.created_at).getTime(),
+    })),
+    ...convProposals.map((p) => ({
+      type: 'proposal' as const,
+      data: p,
+      timestamp: new Date(p.created_at).getTime(),
+    })),
+  ].sort((a, b) => a.timestamp - b.timestamp);
 
   return (
-    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-[620px]">
+    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-[660px] font-mono">
       {/* SIDEBAR: Conversation List */}
       <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-[#E5E5DE] dark:border-zinc-800 flex flex-col shrink-0">
         <div className="p-3.5 border-b border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/50 flex items-center justify-between">
-          <span className="font-mono text-xs font-bold text-[#121214] dark:text-white">
+          <span className="text-xs font-bold text-[#121214] dark:text-white">
             Conversations ({userConversations.length})
           </span>
           <span className="editorial-label text-[#047857] flex items-center gap-1">
@@ -243,11 +397,11 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
 
         <div className="flex-1 overflow-y-auto divide-y divide-[#ECECE6] dark:divide-zinc-800/60">
           {userConversations.map((conv) => {
-            const isMeBusiness = conv.business_user_id === currentUser?.id;
-            const otherName = isMeBusiness
+            const isMeBiz = conv.business_user_id === currentUser?.id;
+            const otherName = isMeBiz
               ? conv.creator?.display_name || 'Creator'
               : conv.business?.business_name || 'Advertiser';
-            const otherAvatar = isMeBusiness
+            const otherAvatar = isMeBiz
               ? conv.creator?.profile_image_path
               : conv.business?.logo_path;
             const isSelected = conv.id === selectedConvId;
@@ -279,23 +433,27 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
                     className="w-10 h-10 rounded-full object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-sm text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-[#F4F4F0] dark:bg-zinc-800 font-bold text-sm text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
                     {otherName[0]}
                   </div>
                 )}
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-[#121214] dark:text-white truncate">
+                    <span className="text-xs font-bold text-[#121214] dark:text-white truncate">
                       {otherName}
                     </span>
-                    <span className="text-[10px] font-mono text-[#71717A] dark:text-zinc-500 shrink-0">
+                    <span className="text-[10px] text-[#71717A] dark:text-zinc-500 shrink-0">
                       {lastUpdated}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 truncate">
-                      {conv.order_id ? 'Order confirmed' : 'Active collaboration'}
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 truncate">
+                      {conv.order_id
+                        ? 'Order confirmed'
+                        : conv.active_proposal
+                        ? 'Proposal pending'
+                        : 'Active negotiation'}
                     </span>
                   </div>
                 </div>
@@ -305,52 +463,122 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
         </div>
       </div>
 
-      {/* CHAT PANE */}
+      {/* CHAT & PROPOSAL PANE */}
       {activeConversation ? (
         <div className="flex-1 flex flex-col bg-white dark:bg-[#18181B] overflow-hidden">
           {/* Header */}
           <div className="px-5 py-3.5 border-b border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#047857]" />
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isEnded ? 'bg-zinc-400' : 'bg-[#047857]'
+                }`}
+              />
               <div>
-                <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                  {activeConversation.business_user_id === currentUser?.id
-                    ? activeConversation.creator?.display_name || 'Creator'
-                    : activeConversation.business?.business_name || 'Advertiser'}
+                <h4 className="text-sm font-bold text-[#121214] dark:text-white flex items-center gap-2">
+                  <span>{otherPartyName}</span>
+                  {isEnded && (
+                    <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded font-normal">
+                      Ended
+                    </span>
+                  )}
                 </h4>
-                <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                  Private Discussion & Negotiation
+                <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                  {isEnded
+                    ? 'Negotiation Closed'
+                    : 'Private Negotiation & Terms Agreement'}
                 </span>
               </div>
             </div>
 
-            {/* Deal Status & Action */}
-            <div className="flex items-center gap-2">
-              {activeOrder ? (
+            {/* Contextual Action Bar */}
+            <div className="flex items-center flex-wrap gap-2">
+              {/* DEAL CONFIRMED STATE */}
+              {activeOrder && activeOrder.order_status === 'DEAL_CONFIRMED' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#047857] flex items-center gap-1 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Deal Confirmed ✓</span>
+                  </span>
+
+                  {isMeBusiness && (
+                    <>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setIsPayNowModalOpen(true)}
+                        className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 mr-1" />
+                        <span>Pay Now</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsCancelDealModalOpen(true)}
+                        className="text-xs text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <span>Cancel Deal</span>
+                      </Button>
+                    </>
+                  )}
+
+                  <Link href={`/orders/${activeOrder.id}`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <FileCheck2 className="w-3.5 h-3.5 mr-1 text-[#047857]" />
+                      <span>Order #{activeOrder.order_number}</span>
+                      <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+              ) : activeOrder && activeOrder.order_status !== 'CANCELLED' ? (
+                // Order already created and past confirmation
                 <Link href={`/orders/${activeOrder.id}`}>
-                  <Button variant="outline" size="sm" className="font-mono text-xs">
+                  <Button variant="outline" size="sm" className="text-xs">
                     <FileCheck2 className="w-3.5 h-3.5 mr-1 text-[#047857]" />
                     <span>Order #{activeOrder.order_number}</span>
                     <ArrowRight className="w-3 h-3 ml-1" />
                   </Button>
                 </Link>
-              ) : (
+              ) : !isEnded ? (
+                // NEGOTIATING STATE: Both can make proposals or end collaboration
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 hidden sm:inline">
-                    Deal pending:
-                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsEndCollabModalOpen(true)}
+                    className="text-xs text-[#71717A] hover:text-red-600"
+                  >
+                    <Ban className="w-3.5 h-3.5 mr-1" />
+                    <span>End Collaboration</span>
+                  </Button>
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={() => setIsFinalizingDeal(true)}
-                    className="font-mono text-xs"
+                    onClick={handleOpenNewProposalModal}
+                    className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white"
                   >
                     <Sparkles className="w-3.5 h-3.5 mr-1" />
-                    <span>Confirm Deal & Order</span>
+                    <span>Make Deal Proposal</span>
                   </Button>
                 </div>
-              )}
+              ) : null}
             </div>
+          </div>
+
+          {/* Safety & Traceability Notice */}
+          <div className="bg-[#FAF9F6] dark:bg-zinc-900 border-b border-[#E5E5DE] dark:border-zinc-800 px-4 py-2 flex items-center gap-2 text-[11px] text-[#52525B] dark:text-zinc-400">
+            <Info className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
+            <p className="leading-tight">
+              Keep collaboration details and payments within Market My App so your
+              order, delivery and transaction records remain protected and
+              traceable. Avoid sharing personal phone numbers, emails, or
+              external payment details.
+            </p>
           </div>
 
           {/* Warning Banner */}
@@ -363,69 +591,264 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
               <button
                 type="button"
                 onClick={() => setWarning(null)}
-                className="text-[10px] font-mono uppercase underline ml-2"
+                className="text-[10px] uppercase underline ml-2 cursor-pointer"
               >
                 Dismiss
               </button>
             </div>
           )}
 
-          {/* Platform Communication & Safety Notice */}
-          <div className="bg-[#FAF9F6] dark:bg-zinc-900 border-b border-[#E5E5DE] dark:border-zinc-800 px-4 py-2 flex items-center gap-2 text-[11px] font-mono text-[#52525B] dark:text-zinc-400">
-            <Info className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
-            <p className="leading-tight">
-              Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable. Avoid sharing personal phone numbers, emails, or off-platform payment details.
-            </p>
-          </div>
+          {/* Active Proposal Pinned Notice */}
+          {activeProposal && !activeOrder && !isEnded && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="text-amber-900 dark:text-amber-300">
+                  <strong>Proposal v{activeProposal.version} Active:</strong>{' '}
+                  {activeProposal.deliverable} • ₹
+                  {activeProposal.price.toLocaleString('en-IN')}
+                </span>
+              </div>
 
-          {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#FAF9F5] dark:bg-zinc-950/40">
-            {convMessages.length === 0 ? (
+              {currentUser?.id !== activeProposal.proposed_by ? (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenProposeChanges(activeProposal)}
+                    className="text-xs h-7 px-2.5"
+                  >
+                    <Edit3 className="w-3 h-3 mr-1" />
+                    <span>Propose Changes</span>
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={acceptingProposalId === activeProposal.id}
+                    onClick={() => handleAcceptTerms(activeProposal.id)}
+                    className="text-xs h-7 px-2.5 bg-[#047857] hover:bg-[#065F46] text-white"
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    <span>
+                      {acceptingProposalId === activeProposal.id
+                        ? 'Confirming...'
+                        : 'Accept Terms'}
+                    </span>
+                  </Button>
+                </div>
+              ) : (
+                <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                  Waiting for {otherPartyName} to accept or propose changes
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Messages & Proposals Scroll Feed */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FAF9F5] dark:bg-zinc-950/40">
+            {feedItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-xs text-[#71717A] dark:text-zinc-400 p-6 space-y-2">
                 <Lock className="w-8 h-8 text-[#A1A1AA] dark:text-zinc-600" />
                 <p className="font-semibold text-[#121214] dark:text-white">
-                  Collaboration Accepted
+                  Collaboration Accepted & Ready for Negotiation
                 </p>
                 <p className="max-w-sm">
-                  Discuss project deliverables, pricing, and deadlines directly. Once agreed, click &quot;Confirm Deal & Order&quot; to formalize the order.
+                  Discuss deliverables, price, and deadlines. Use &quot;Make Deal
+                  Proposal&quot; to formalize structured terms for both parties to
+                  agree on.
                 </p>
               </div>
             ) : (
-              convMessages.map((msg) => {
-                const isMe =
-                  msg.sender_id === currentUser?.id ||
-                  msg.sender_user_id === currentUser?.id;
-                const timeStr = msg.created_at
-                  ? new Date(msg.created_at).toLocaleTimeString('en-IN', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : '';
+              feedItems.map((item) => {
+                if (item.type === 'message') {
+                  const msg = item.data;
+                  const isMe =
+                    msg.sender_id === currentUser?.id ||
+                    msg.sender_user_id === currentUser?.id;
+                  const timeStr = msg.created_at
+                    ? new Date(msg.created_at).toLocaleTimeString('en-IN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '';
+
+                  return (
+                    <div
+                      key={`msg_${msg.id}`}
+                      className={`flex flex-col ${
+                        isMe ? 'items-end' : 'items-start'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1 px-1">
+                        <span className="text-[10px] font-semibold text-[#71717A] dark:text-zinc-400 uppercase">
+                          {isMe
+                            ? 'You'
+                            : msg.sender_name ||
+                              (msg.sender_role === 'creator'
+                                ? 'Creator'
+                                : 'Advertiser')}
+                        </span>
+                        <span className="text-[9px] text-[#A1A1AA] dark:text-zinc-500">
+                          {timeStr}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-sm break-words ${
+                          isMe
+                            ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] rounded-br-none'
+                            : 'bg-white dark:bg-zinc-800 text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-zinc-700 rounded-bl-none'
+                        }`}
+                      >
+                        {msg.body || msg.message}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // DEDICATED PROPOSAL CARD IN FEED
+                const prop = item.data;
+                const isProposerMe = prop.proposed_by === currentUser?.id;
+                const canAct =
+                  prop.status === 'ACTIVE' &&
+                  !isProposerMe &&
+                  !isEnded &&
+                  !activeOrder;
 
                 return (
                   <div
-                    key={msg.id}
-                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                    key={`prop_${prop.id}`}
+                    className="max-w-lg mx-auto w-full my-2"
                   >
-                    <div className="flex items-center gap-2 mb-1 px-1">
-                      <span className="text-[10px] font-mono font-semibold text-[#71717A] dark:text-zinc-400 uppercase">
-                        {isMe
-                          ? 'You'
-                          : msg.sender_name || (msg.sender_role === 'creator' ? 'Creator' : 'Advertiser')}
-                      </span>
-                      <span className="text-[9px] font-mono text-[#A1A1AA] dark:text-zinc-500">
-                        {timeStr}
-                      </span>
-                    </div>
-
                     <div
-                      className={`max-w-md px-4 py-2.5 rounded-2xl text-xs font-mono leading-relaxed shadow-sm break-words ${
-                        isMe
-                          ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] rounded-br-none'
-                          : 'bg-white dark:bg-zinc-800 text-[#121214] dark:text-white border border-[#E5E5DE] dark:border-zinc-700 rounded-bl-none'
+                      className={`rounded-xl border p-4 space-y-3 shadow-sm ${
+                        prop.status === 'ACCEPTED'
+                          ? 'bg-[#ECFDF5] dark:bg-emerald-950/30 border-[#A7F3D0] dark:border-emerald-800'
+                          : prop.status === 'SUPERSEDED'
+                          ? 'bg-zinc-50 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-800 opacity-75'
+                          : prop.status === 'CANCELLED'
+                          ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/60 opacity-80'
+                          : 'bg-white dark:bg-zinc-900 border-[#FFD2C1] dark:border-[#4D1F0E]'
                       }`}
                     >
-                      {msg.body || msg.message}
+                      {/* Proposal Header */}
+                      <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <FileText
+                            className={`w-4 h-4 ${
+                              prop.status === 'ACCEPTED'
+                                ? 'text-[#047857]'
+                                : 'text-[#FF5416]'
+                            }`}
+                          />
+                          <span className="font-bold text-xs text-[#121214] dark:text-white">
+                            Deal Proposal v{prop.version}
+                          </span>
+                          <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
+                            • by {isProposerMe ? 'You' : prop.proposer_name}
+                          </span>
+                        </div>
+
+                        {/* Status Badge */}
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                            prop.status === 'ACCEPTED'
+                              ? 'bg-[#047857] text-white'
+                              : prop.status === 'SUPERSEDED'
+                              ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                              : prop.status === 'CANCELLED'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                              : 'bg-[#FF5416] text-white'
+                          }`}
+                        >
+                          {prop.status}
+                        </span>
+                      </div>
+
+                      {/* Proposal Terms */}
+                      <div className="space-y-1.5 text-xs text-[#121214] dark:text-zinc-200">
+                        <div className="font-semibold text-sm">
+                          {prop.deliverable}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-2 border-y border-[#ECECE6] dark:border-zinc-800 text-[11px]">
+                          <div>
+                            <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
+                              Agreed Price
+                            </span>
+                            <span className="font-bold text-[#121214] dark:text-white text-xs">
+                              ₹{prop.price.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
+                              Deadline
+                            </span>
+                            <span className="font-medium text-[#121214] dark:text-white text-xs">
+                              {new Date(prop.deadline).toLocaleDateString(
+                                'en-IN'
+                              )}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
+                              Revisions
+                            </span>
+                            <span className="font-medium text-[#121214] dark:text-white text-xs">
+                              {prop.revisions_included} included
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-[#52525B] dark:text-zinc-400 pt-1">
+                          <span className="font-semibold text-[#121214] dark:text-white block text-[10px]">
+                            Requirements:
+                          </span>
+                          <p className="line-clamp-3">{prop.key_requirements}</p>
+                        </div>
+                      </div>
+
+                      {/* Action buttons on Active proposal */}
+                      {canAct && (
+                        <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenProposeChanges(prop)}
+                            className="text-xs"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 mr-1" />
+                            <span>Propose Changes</span>
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={acceptingProposalId === prop.id}
+                            onClick={() => handleAcceptTerms(prop.id)}
+                            className="text-xs bg-[#047857] hover:bg-[#065F46] text-white"
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1" />
+                            <span>
+                              {acceptingProposalId === prop.id
+                                ? 'Accepting...'
+                                : 'Accept Terms'}
+                            </span>
+                          </Button>
+                        </div>
+                      )}
+
+                      {prop.status === 'ACTIVE' && isProposerMe && (
+                        <div className="text-[11px] text-amber-700 dark:text-amber-400 italic pt-1 border-t border-[#ECECE6] dark:border-zinc-800">
+                          Waiting for {otherPartyName} to accept or propose
+                          changes.
+                        </div>
+                      )}
+
+                      {prop.status === 'ACCEPTED' && (
+                        <div className="text-[11px] text-[#047857] dark:text-emerald-400 font-bold flex items-center gap-1 pt-1 border-t border-[#A7F3D0] dark:border-emerald-800">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>Terms locked & deal confirmed.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -441,17 +864,22 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
           >
             <input
               type="text"
+              disabled={isEnded}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Type message, clarify deliverables, agree on budget..."
-              className="flex-1 py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800/80 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-xs font-mono text-[#121214] dark:text-white placeholder-[#71717A] focus:outline-none focus:border-[#FF5416]"
+              placeholder={
+                isEnded
+                  ? 'Collaboration has ended. Messages are read-only.'
+                  : 'Type message, discuss deliverables, clarify brief specs...'
+              }
+              className="flex-1 py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800/80 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-xs text-[#121214] dark:text-white placeholder-[#71717A] focus:outline-none focus:border-[#FF5416] disabled:opacity-60"
             />
             <Button
               type="submit"
               variant="primary"
               size="sm"
-              disabled={isSending || !inputText.trim()}
-              className="shrink-0 px-4"
+              disabled={isSending || !inputText.trim() || isEnded}
+              className="shrink-0 px-4 bg-[#FF5416] hover:bg-[#E0450C] text-white"
             >
               <Send className="w-3.5 h-3.5 mr-1" />
               <span>Send</span>
@@ -459,147 +887,124 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
           </form>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center p-8 text-center text-xs font-mono text-[#71717A]">
+        <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-[#71717A]">
           Select a conversation from the left to start chatting.
         </div>
       )}
 
-      {/* DEAL FINALIZATION MODAL */}
-      {isFinalizingDeal && activeConversation && (
+      {/* DEAL PROPOSAL MODAL (FOR MAKE PROPOSAL OR PROPOSE CHANGES) */}
+      {isProposalModalOpen && activeConversation && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-xl animate-in fade-in zoom-in duration-150">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl animate-in fade-in zoom-in duration-150">
             <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#FF5416]" />
-                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
-                  Confirm Deal & Create Order
+                <FileText className="w-4 h-4 text-[#FF5416]" />
+                <h3 className="text-base font-bold text-[#121214] dark:text-white">
+                  {editingProposal
+                    ? `Propose Changes (v${editingProposal.version + 1})`
+                    : 'Make Structured Deal Proposal'}
                 </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setIsFinalizingDeal(false)}
-                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                onClick={() => setIsProposalModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3 rounded-lg text-xs font-mono text-[#C2410C] dark:text-[#F97316] space-y-1">
-              <div className="flex items-center gap-1 font-bold">
-                <Info className="w-3.5 h-3.5" />
-                <span>Platform Payment Information</span>
-              </div>
-              <p className="text-[11px]">
-                Confirming the deal creates an official order in <strong>PAYMENT_PENDING</strong> status. Payment is required before the creator begins the confirmed collaboration.
-              </p>
-            </div>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              {editingProposal
+                ? `Modify terms. Submitting will supersede proposal v${editingProposal.version} and notify ${otherPartyName}.`
+                : `Submit formal collaboration terms to ${otherPartyName}. Once accepted, these terms become the locked deal.`}
+            </p>
 
-            {dealError && (
+            {proposalError && (
               <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded text-xs text-red-600 font-mono">
-                {dealError}
+                {proposalError}
               </div>
             )}
 
-            <form onSubmit={handleConfirmDeal} className="space-y-4 text-xs font-mono">
+            <form
+              onSubmit={handleSubmitProposal}
+              className="space-y-3.5 text-xs font-mono"
+            >
               <div>
                 <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Agreed Amount (₹ INR)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-[#71717A]">₹</span>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={dealAmount}
-                    onChange={(e) => setDealAmount(Number(e.target.value))}
-                    className="w-full pl-7 pr-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Campaign / Deliverable Objective
+                  Deliverable Package / Description
                 </label>
                 <input
                   type="text"
                   required
-                  value={dealObjective}
-                  onChange={(e) => setDealObjective(e.target.value)}
-                  placeholder="e.g. 1 Instagram Reel showcasing App UI & Key Features"
+                  value={proposalDeliverable}
+                  onChange={(e) => setProposalDeliverable(e.target.value)}
+                  placeholder="e.g. 1 Instagram Reel (9:16) showcasing App Features"
+                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Agreed Price (₹ INR)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-[#71717A]">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={proposalPrice}
+                      onChange={(e) => setProposalPrice(Number(e.target.value))}
+                      className="w-full pl-7 pr-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Target Deadline
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={proposalDeadline}
+                    onChange={(e) => setProposalDeadline(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                  Included Revisions
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={5}
+                  value={proposalRevisions}
+                  onChange={(e) => setProposalRevisions(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
                 />
               </div>
 
               <div>
                 <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Specific Requirements
+                  Key Requirements & Guidelines
                 </label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   required
-                  value={dealRequirements}
-                  onChange={(e) => setDealRequirements(e.target.value)}
-                  placeholder="What must be included in the video or reel..."
+                  value={proposalRequirements}
+                  onChange={(e) => setProposalRequirements(e.target.value)}
+                  placeholder="Specify key CTA, hashtag, brand tags, and format specifications..."
                   className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
                 />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Do&apos;s
-                  </label>
-                  <input
-                    type="text"
-                    value={dealDos}
-                    onChange={(e) => setDealDos(e.target.value)}
-                    placeholder="e.g. Pin comment with download link"
-                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Don&apos;ts
-                  </label>
-                  <input
-                    type="text"
-                    value={dealDonts}
-                    onChange={(e) => setDealDonts(e.target.value)}
-                    placeholder="e.g. No competitor mentions"
-                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Target Delivery Deadline
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={dealDeadline}
-                    onChange={(e) => setDealDeadline(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Included Revisions
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={5}
-                    value={dealRevisions}
-                    onChange={(e) => setDealRevisions(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
@@ -607,7 +1012,7 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setIsFinalizingDeal(false)}
+                  onClick={() => setIsProposalModalOpen(false)}
                 >
                   Cancel
                 </Button>
@@ -615,12 +1020,229 @@ export function ConversationChat({ role, initialConversationId }: ConversationCh
                   type="submit"
                   variant="primary"
                   size="sm"
-                  disabled={isCreatingOrder}
+                  disabled={isSubmittingProposal}
+                  className="bg-[#FF5416] hover:bg-[#E0450C] text-white"
                 >
-                  {isCreatingOrder ? 'Creating Order...' : 'Confirm Order (Payment Pending)'}
+                  {isSubmittingProposal
+                    ? 'Submitting...'
+                    : editingProposal
+                    ? 'Submit Modified Proposal'
+                    : 'Send Proposal'}
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* END COLLABORATION CONFIRMATION MODAL */}
+      {isEndCollabModalOpen && activeConversation && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2 text-red-600">
+                <Ban className="w-4 h-4" />
+                <h3 className="text-base font-bold text-[#121214] dark:text-white">
+                  End Collaboration
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEndCollabModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Ending collaboration will terminate this negotiation. The
+              conversation will become read-only and any active proposals will be
+              cancelled. No payment or obligation will occur.
+            </p>
+
+            <form onSubmit={handleConfirmEndCollab} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                  Reason for Ending (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={endCollabReason}
+                  onChange={(e) => setEndCollabReason(e.target.value)}
+                  placeholder="e.g. Budget mismatch, timeline conflict..."
+                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEndCollabModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isEndingCollab}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isEndingCollab ? 'Ending...' : 'Confirm End Collaboration'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL CONFIRMED DEAL MODAL */}
+      {isCancelDealModalOpen && activeOrder && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="w-4 h-4" />
+                <h3 className="text-base font-bold text-[#121214] dark:text-white">
+                  Cancel Confirmed Deal
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCancelDealModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Cancelling before payment will close Order #{activeOrder.order_number}.
+              No payment has been charged. An audit event will be recorded and the
+              creator will be notified.
+            </p>
+
+            <form onSubmit={handleConfirmCancelDeal} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                  Cancellation Reason
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={cancelDealReason}
+                  onChange={(e) => setCancelDealReason(e.target.value)}
+                  placeholder="e.g. Campaign cancelled or schedule changed..."
+                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCancelDealModalOpen(false)}
+                >
+                  Keep Deal
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isCancellingDeal}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isCancellingDeal ? 'Cancelling...' : 'Confirm Cancel Deal'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PAY NOW MODAL (PLATFORM PAYMENT CONFIRMATION) */}
+      {isPayNowModalOpen && activeOrder && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[#FF5416]" />
+                <h3 className="text-base font-bold text-[#121214] dark:text-white">
+                  Platform Payment Checkout
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPayNowModalOpen(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#FAF9F5] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 p-4 rounded-xl space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-[#71717A] dark:text-zinc-400">Order</span>
+                <span className="font-bold text-[#121214] dark:text-white">
+                  #{activeOrder.order_number}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#71717A] dark:text-zinc-400">
+                  Subtotal
+                </span>
+                <span className="font-medium text-[#121214] dark:text-white">
+                  ₹{activeOrder.subtotal.toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#71717A] dark:text-zinc-400">
+                  Platform Fee (5%)
+                </span>
+                <span className="font-medium text-[#121214] dark:text-white">
+                  ₹{activeOrder.platform_fee.toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-sm font-bold">
+                <span className="text-[#121214] dark:text-white">
+                  Total Payable
+                </span>
+                <span className="text-[#FF5416]">
+                  ₹{activeOrder.total_amount.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-[#FFF2EC] dark:bg-[#27140B] p-3 rounded-lg text-xs text-[#C2410C] dark:text-[#F97316] flex items-start gap-2">
+              <Info className="w-4 h-4 shrink-0 text-[#FF5416] mt-0.5" />
+              <p className="text-[11px] leading-relaxed">
+                Payment is protected by Market My App. Once confirmed, the
+                creator will be notified to start work immediately.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPayNowModalOpen(false)}
+              >
+                Back
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isPaying}
+                onClick={handleConfirmPayment}
+                className="bg-[#047857] hover:bg-[#065F46] text-white"
+              >
+                {isPaying ? 'Processing...' : 'Confirm Platform Payment'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

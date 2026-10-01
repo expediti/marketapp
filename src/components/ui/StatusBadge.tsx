@@ -35,6 +35,10 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
       case 'REFUNDED':
       case 'CANCELLED':
         return 'bg-[#F4F4F5] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 border-[#E4E4E7] dark:border-zinc-700';
+      case 'DEAL_CONFIRMED':
+        return 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+      case 'WORK_STARTED':
+        return 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800';
       case 'CREATOR_PENDING':
       case 'PAYMENT_PENDING':
       case 'PAYOUT_PENDING':

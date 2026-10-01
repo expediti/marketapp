@@ -16,6 +16,8 @@ import {
   Campaign,
   CollaborationRequest,
   Conversation,
+  DealProposal,
+  DealProposalStatus,
 } from '@/types/marketplace';
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
@@ -38,6 +40,7 @@ interface MarketplaceContextType {
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
   messages: Record<string, ChatMessage[]>;
+  dealProposals: Record<string, DealProposal[]>;
   adminActions: AdminAction[];
   
   // Collaboration Request Actions
@@ -52,6 +55,23 @@ interface MarketplaceContextType {
   declineCollaborationRequest: (requestId: string, reason?: string) => Promise<void>;
   cancelCollaborationRequest: (requestId: string) => Promise<void>;
   fetchConversationMessages: (conversationId: string) => Promise<ChatMessage[]>;
+  fetchConversationProposals: (conversationId: string) => Promise<DealProposal[]>;
+  createDealProposal: (params: {
+    conversationId: string;
+    requestId?: string;
+    deliverable: string;
+    price: number;
+    deadline: string;
+    revisionsIncluded?: number;
+    keyRequirements: string;
+    supersedesProposalId?: string;
+  }) => Promise<DealProposal>;
+  acceptDealProposal: (proposalId: string) => Promise<Order>;
+  endCollaboration: (conversationId: string, reason?: string) => Promise<void>;
+  cancelConfirmedDeal: (orderId: string, reason?: string) => Promise<void>;
+  simulatePaymentSuccess: (orderId: string) => Promise<void>;
+  markWorkStarted: (orderId: string) => Promise<void>;
+  uploadDeliveryProofFile: (file: File) => Promise<{ publicUrl: string; storagePath: string }>;
   createOrderFromCollaboration: (params: {
     requestId?: string;
     creatorId: string;
@@ -87,7 +107,7 @@ interface MarketplaceContextType {
   acceptOrder: (orderId: string) => Promise<void>;
   declineOrder: (orderId: string, reason?: string) => Promise<void>;
   startOrderProgress: (orderId: string) => Promise<void>;
-  submitDelivery: (orderId: string, proofUrl: string, notes: string) => Promise<void>;
+  submitDelivery: (orderId: string, proofUrl: string, notes: string, instagramPostUrl?: string) => Promise<void>;
   approveDelivery: (orderId: string) => Promise<void>;
   requestRevision: (orderId: string, notes: string) => Promise<void>;
   requestSystemReview: (params: {
@@ -155,6 +175,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [dealProposals, setDealProposals] = useState<Record<string, DealProposal[]>>({});
   const [adminActions, setAdminActions] = useState<AdminAction[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -614,6 +635,58 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
           setMessages(grouped);
         }
+
+        // Fetch deal proposals for all conversations
+        const { data: propsData } = await supabase
+          .from('deal_proposals')
+          .select('*')
+          .in('conversation_id', convIds)
+          .order('created_at', { ascending: true });
+
+        if (propsData) {
+          const propsGrouped: Record<string, DealProposal[]> = {};
+          (propsData || []).forEach((p: any) => {
+            const conv = mappedConvs.find((c) => c.id === p.conversation_id);
+            const isBiz = p.proposed_by === conv?.business_user_id;
+            const proposal: DealProposal = {
+              id: p.id,
+              request_id: p.request_id,
+              conversation_id: p.conversation_id,
+              order_id: p.order_id,
+              proposed_by: p.proposed_by,
+              proposer_name: isBiz
+                ? conv?.business?.business_name || 'Business'
+                : conv?.creator?.display_name || 'Creator',
+              proposer_role: isBiz ? 'business' : 'creator',
+              deliverable: p.deliverable,
+              price: Number(p.price) || 0,
+              deadline: p.deadline,
+              revisions_included: p.revisions_included ?? 1,
+              key_requirements: p.key_requirements,
+              status: p.status as DealProposalStatus,
+              version: p.version || 1,
+              supersedes_proposal_id: p.supersedes_proposal_id,
+              accepted_by: p.accepted_by,
+              accepted_at: p.accepted_at,
+              created_at: p.created_at,
+              updated_at: p.updated_at,
+            };
+            if (!propsGrouped[p.conversation_id]) {
+              propsGrouped[p.conversation_id] = [];
+            }
+            propsGrouped[p.conversation_id].push(proposal);
+          });
+
+          setDealProposals(propsGrouped);
+
+          // Attach proposals to mappedConvs
+          mappedConvs.forEach((c) => {
+            const plist = propsGrouped[c.id] || [];
+            c.proposals = plist;
+            c.active_proposal = plist.slice().reverse().find((p) => p.status === 'ACTIVE') || plist[plist.length - 1];
+          });
+          setConversations([...mappedConvs]);
+        }
       }
     } catch (err) {
       console.error('Error fetching user data from Supabase:', err);
@@ -631,6 +704,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     setConversations([]);
     setActiveConversationId(null);
     setMessages({});
+    setDealProposals({});
   }, []);
 
   // Main loader for manual data refresh
@@ -1079,7 +1153,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       package_id: params.packageId || null,
       message: params.message || null,
       proposed_budget: params.proposedBudget != null ? params.proposedBudget : (pkg ? pkg.price : null),
-      status: 'PENDING' as const,
+      status: 'REQUESTED' as const,
     };
 
     let createdId = `req_${Date.now()}`;
@@ -1440,7 +1514,321 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   };
 
   // --------------------------------------------------------------------------
-  // DEAL CONFIRMATION & ORDER CREATION
+  // STRUCTURED DEAL PROPOSALS & NEGOTIATION
+  // --------------------------------------------------------------------------
+  const fetchConversationProposals = useCallback(
+    async (conversationId: string): Promise<DealProposal[]> => {
+      if (!isSupabaseConfigured) {
+        return dealProposals[conversationId] || [];
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('deal_proposals')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching deal proposals:', error);
+          return dealProposals[conversationId] || [];
+        }
+
+        const conv = conversations.find((c) => c.id === conversationId);
+
+        const mapped: DealProposal[] = (data || []).map((p: any) => {
+          const isBiz = p.proposed_by === conv?.business_user_id;
+          const proposerName = isBiz
+            ? conv?.business?.business_name || 'Business'
+            : conv?.creator?.display_name || 'Creator';
+          const proposerRole: UserRole = isBiz ? 'business' : 'creator';
+
+          return {
+            id: p.id,
+            request_id: p.request_id,
+            conversation_id: p.conversation_id,
+            order_id: p.order_id,
+            proposed_by: p.proposed_by,
+            proposer_name: proposerName,
+            proposer_role: proposerRole,
+            deliverable: p.deliverable,
+            price: Number(p.price) || 0,
+            deadline: p.deadline,
+            revisions_included: p.revisions_included ?? 1,
+            key_requirements: p.key_requirements,
+            status: p.status as DealProposalStatus,
+            version: p.version || 1,
+            supersedes_proposal_id: p.supersedes_proposal_id,
+            accepted_by: p.accepted_by,
+            accepted_at: p.accepted_at,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+          };
+        });
+
+        setDealProposals((prev) => ({
+          ...prev,
+          [conversationId]: mapped,
+        }));
+
+        const activeP =
+          mapped.slice().reverse().find((p) => p.status === 'ACTIVE') ||
+          mapped[mapped.length - 1];
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? { ...c, proposals: mapped, active_proposal: activeP }
+              : c
+          )
+        );
+
+        return mapped;
+      } catch (err) {
+        console.error('Error in fetchConversationProposals:', err);
+        return dealProposals[conversationId] || [];
+      }
+    },
+    [conversations, dealProposals]
+  );
+
+  const createDealProposal = async (params: {
+    conversationId: string;
+    requestId?: string;
+    deliverable: string;
+    price: number;
+    deadline: string;
+    revisionsIncluded?: number;
+    keyRequirements: string;
+    supersedesProposalId?: string;
+  }): Promise<DealProposal> => {
+    if (!currentUser) throw new Error('Must be logged in to create a proposal');
+    const conv = conversations.find((c) => c.id === params.conversationId);
+    if (!conv) throw new Error('Conversation not found');
+
+    const now = new Date().toISOString();
+    let version = 1;
+
+    if (isSupabaseConfigured) {
+      if (params.supersedesProposalId) {
+        const { data: prevP } = await supabase
+          .from('deal_proposals')
+          .select('version')
+          .eq('id', params.supersedesProposalId)
+          .maybeSingle();
+
+        version = ((prevP as any)?.version || 1) + 1;
+
+        await supabase
+          .from('deal_proposals')
+          .update({ status: 'SUPERSEDED', updated_at: now })
+          .eq('id', params.supersedesProposalId);
+      }
+
+      const { data: inserted, error: insErr } = await supabase
+        .from('deal_proposals')
+        .insert({
+          conversation_id: params.conversationId,
+          request_id: params.requestId || conv.request_id || null,
+          proposed_by: currentUser.id,
+          deliverable: params.deliverable,
+          price: params.price,
+          deadline: new Date(params.deadline).toISOString(),
+          revisions_included: params.revisionsIncluded ?? 1,
+          key_requirements: params.keyRequirements,
+          status: 'ACTIVE',
+          version,
+          supersedes_proposal_id: params.supersedesProposalId || null,
+          created_at: now,
+          updated_at: now,
+        })
+        .select('*')
+        .single();
+
+      if (insErr || !inserted) {
+        console.error('Failed to insert deal proposal:', insErr);
+        throw new Error(insErr?.message || 'Failed to create deal proposal');
+      }
+
+      const isBiz = currentUser.id === conv.business_user_id;
+      const proposerName = isBiz
+        ? conv.business?.business_name || 'Business'
+        : conv.creator?.display_name || 'Creator';
+
+      await sendMessage(
+        params.conversationId,
+        `📋 [Deal Proposal v${version}] ${params.deliverable} • ₹${params.price.toLocaleString('en-IN')} • Deadline: ${new Date(params.deadline).toLocaleDateString('en-IN')}`
+      );
+
+      await fetchConversationProposals(params.conversationId);
+
+      return {
+        id: inserted.id,
+        request_id: inserted.request_id,
+        conversation_id: inserted.conversation_id,
+        order_id: inserted.order_id,
+        proposed_by: inserted.proposed_by,
+        proposer_name: proposerName,
+        proposer_role: isBiz ? 'business' : 'creator',
+        deliverable: inserted.deliverable,
+        price: Number(inserted.price),
+        deadline: inserted.deadline,
+        revisions_included: inserted.revisions_included,
+        key_requirements: inserted.key_requirements,
+        status: 'ACTIVE',
+        version: inserted.version,
+        supersedes_proposal_id: inserted.supersedes_proposal_id,
+        created_at: inserted.created_at,
+        updated_at: inserted.updated_at,
+      };
+    }
+
+    throw new Error('Supabase is required for deal proposals');
+  };
+
+  const acceptDealProposal = async (proposalId: string): Promise<Order> => {
+    if (!currentUser) throw new Error('Must be logged in to accept deal proposal');
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await (supabase as any).rpc('accept_deal_proposal', {
+        p_proposal_id: proposalId,
+      });
+
+      if (error) {
+        console.error('Failed to accept deal proposal:', error);
+        throw new Error(error.message);
+      }
+
+      const res = data as any;
+      if (!res?.order_id) {
+        throw new Error('Failed to create order from proposal');
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+
+      const updatedOrder = orders.find((o) => o.id === res.order_id);
+      return updatedOrder || ({} as Order);
+    }
+
+    throw new Error('Supabase required');
+  };
+
+  const endCollaboration = async (
+    conversationId: string,
+    reason?: string
+  ): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to end collaboration');
+
+    if (isSupabaseConfigured) {
+      const { error } = await (supabase as any).rpc('end_collaboration', {
+        p_conversation_id: conversationId,
+        p_reason: reason || 'Collaboration ended during negotiation.',
+      });
+
+      if (error) {
+        console.error('Failed to end collaboration:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+      await fetchConversationProposals(conversationId);
+    }
+  };
+
+  const cancelConfirmedDeal = async (
+    orderId: string,
+    reason?: string
+  ): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to cancel deal');
+
+    if (isSupabaseConfigured) {
+      const { error } = await (supabase as any).rpc('cancel_confirmed_deal', {
+        p_order_id: orderId,
+        p_reason: reason || 'Business cancelled deal before payment.',
+      });
+
+      if (error) {
+        console.error('Failed to cancel confirmed deal:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+    }
+  };
+
+  const simulatePaymentSuccess = async (orderId: string): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to simulate payment');
+
+    if (isSupabaseConfigured) {
+      const { error } = await (supabase as any).rpc('simulate_payment_success', {
+        p_order_id: orderId,
+      });
+
+      if (error) {
+        console.error('Failed to simulate payment:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+    }
+  };
+
+  const markWorkStarted = async (orderId: string): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to mark work started');
+
+    if (isSupabaseConfigured) {
+      const { error } = await (supabase as any).rpc('mark_work_started', {
+        p_order_id: orderId,
+      });
+
+      if (error) {
+        console.error('Failed to mark work started:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+    }
+  };
+
+  const uploadDeliveryProofFile = async (
+    file: File
+  ): Promise<{ publicUrl: string; storagePath: string }> => {
+    if (!isSupabaseConfigured) {
+      const fakeUrl = URL.createObjectURL(file);
+      return { publicUrl: fakeUrl, storagePath: file.name };
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const path = `proofs/${Date.now()}_${safeName}`;
+    const { error } = await supabase.storage.from('deliveries').upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+
+    if (error) {
+      console.error('Failed to upload delivery file to storage:', error);
+      throw new Error(error.message || 'File upload failed');
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('deliveries')
+      .getPublicUrl(path);
+
+    return { publicUrl: publicUrlData.publicUrl, storagePath: path };
+  };
+
+  // --------------------------------------------------------------------------
+  // DEAL CONFIRMATION & ORDER CREATION (FALLBACK)
   // --------------------------------------------------------------------------
   const createOrderFromCollaboration = async (params: {
     requestId?: string;
@@ -1747,38 +2135,33 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
   }, []);
 
-  const submitDelivery = async (orderId: string, proofUrl: string, notes: string): Promise<void> => {
+  const submitDelivery = async (
+    orderId: string,
+    proofUrl: string,
+    notes: string,
+    instagramPostUrl?: string
+  ): Promise<void> => {
     const now = new Date().toISOString();
     const fourDaysLater = new Date(Date.now() + 4 * 86400000).toISOString();
     const currentOrder = orders.find((o) => o.id === orderId);
 
     if (isSupabaseConfigured) {
-      await supabase
-        .from('orders')
-        .update({
-          order_status: 'DELIVERED',
-          delivered_at: now,
-          auto_approve_deadline: fourDaysLater,
-          updated_at: now,
-        })
-        .eq('id', orderId);
-
-      await supabase.from('deliveries').insert({
-        order_id: orderId,
-        submitted_by: currentUser?.id,
-        proof_url: proofUrl,
-        notes,
-        submitted_at: now,
-        status: 'pending_review',
+      const { error } = await (supabase as any).rpc('submit_order_delivery', {
+        p_order_id: orderId,
+        p_proof_url: proofUrl,
+        p_instagram_post_url: instagramPostUrl || null,
+        p_notes: notes || null,
       });
 
-      await supabase.from('order_events').insert({
-        order_id: orderId,
-        from_status: currentOrder?.order_status || 'IN_PROGRESS',
-        to_status: 'DELIVERED',
-        actor_id: currentUser?.id,
-        reason: 'Creator submitted deliverables for 4-day business review',
-      });
+      if (error) {
+        console.error('Failed to submit delivery via RPC:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+      return;
     }
 
     setOrders((prev) =>
@@ -1794,6 +2177,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
                 order_id: orderId,
                 submitted_by: currentUser?.id || o.creator_id,
                 proof_url: proofUrl,
+                instagram_post_url: instagramPostUrl,
                 notes,
                 submitted_at: now,
                 status: 'pending_review',
@@ -1820,23 +2204,19 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const approveDelivery = async (orderId: string): Promise<void> => {
     const now = new Date().toISOString();
     if (isSupabaseConfigured) {
-      await supabase
-        .from('orders')
-        .update({
-          order_status: 'APPROVED',
-          payout_status: 'PAYOUT_PENDING',
-          auto_approve_deadline: null,
-          updated_at: now,
-        })
-        .eq('id', orderId);
-
-      await supabase.from('order_events').insert({
-        order_id: orderId,
-        from_status: 'DELIVERED',
-        to_status: 'APPROVED',
-        actor_id: currentUser?.id,
-        reason: 'Business approved deliverables; creator payout eligible',
+      const { error } = await (supabase as any).rpc('accept_order_delivery', {
+        p_order_id: orderId,
       });
+
+      if (error) {
+        console.error('Failed to accept delivery via RPC:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+      return;
     }
 
     setOrders((prev) =>
@@ -1844,7 +2224,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         o.id === orderId
           ? {
               ...o,
-              order_status: 'APPROVED',
+              order_status: 'COMPLETED',
               payout_status: 'PAYOUT_PENDING',
               auto_approve_deadline: null,
               updated_at: now,
@@ -1854,7 +2234,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
                   id: `ev_${Date.now()}`,
                   order_id: orderId,
                   from_status: o.order_status,
-                  to_status: 'APPROVED',
+                  to_status: 'COMPLETED',
                   actor_id: currentUser?.id,
                   reason: 'Business approved deliverables',
                   created_at: now,
@@ -1876,26 +2256,22 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
 
     const now = new Date().toISOString();
-    const newUsed = used + 1;
 
     if (isSupabaseConfigured) {
-      await supabase
-        .from('orders')
-        .update({
-          order_status: 'REVISION_REQUESTED',
-          revisions_used: newUsed,
-          auto_approve_deadline: null,
-          updated_at: now,
-        })
-        .eq('id', orderId);
-
-      await supabase.from('order_events').insert({
-        order_id: orderId,
-        from_status: 'DELIVERED',
-        to_status: 'REVISION_REQUESTED',
-        actor_id: currentUser?.id,
-        reason: `Revision requested (${newUsed}/${included}): ${notes}`,
+      const { error } = await (supabase as any).rpc('request_order_revision', {
+        p_order_id: orderId,
+        p_notes: notes,
       });
+
+      if (error) {
+        console.error('Failed to request revision via RPC:', error);
+        throw new Error(error.message);
+      }
+
+      if (currentUser?.id) {
+        await fetchUserData(currentUser.id, activeRole);
+      }
+      return;
     }
 
     setOrders((prev) =>
@@ -1904,21 +2280,9 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           ? {
               ...o,
               order_status: 'REVISION_REQUESTED',
-              revisions_used: newUsed,
+              revisions_used: (o.revisions_used ?? 0) + 1,
               auto_approve_deadline: null,
               updated_at: now,
-              events: [
-                ...(o.events || []),
-                {
-                  id: `ev_${Date.now()}`,
-                  order_id: orderId,
-                  from_status: 'DELIVERED',
-                  to_status: 'REVISION_REQUESTED',
-                  actor_id: currentUser?.id,
-                  reason: `Revision requested (${newUsed}/${included}): ${notes}`,
-                  created_at: now,
-                },
-              ],
             }
           : o
       )
@@ -2508,12 +2872,21 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         activeConversationId,
         setActiveConversationId,
         messages,
+        dealProposals,
         adminActions,
         sendCollaborationRequest,
         acceptCollaborationRequest,
         declineCollaborationRequest,
         cancelCollaborationRequest,
         fetchConversationMessages,
+        fetchConversationProposals,
+        createDealProposal,
+        acceptDealProposal,
+        endCollaboration,
+        cancelConfirmedDeal,
+        simulatePaymentSuccess,
+        markWorkStarted,
+        uploadDeliveryProofFile,
         createOrderFromCollaboration,
         getOrder,
         getCreator,

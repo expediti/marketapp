@@ -13,11 +13,14 @@ export type OrderStatus =
   | 'REQUESTED'
   | 'PAYMENT_PENDING'
   | 'ACCEPTED_AWAITING_PAYMENT'
+  | 'NEGOTIATING'
+  | 'DEAL_CONFIRMED'
   | 'FUNDED'
   | 'PAID_IN_ESCROW'
   | 'CREATOR_PENDING'
   | 'ACCEPTED'
   | 'IN_PROGRESS'
+  | 'WORK_STARTED'
   | 'WAITING_FOR_BUSINESS'
   | 'OVERDUE'
   | 'DELIVERED'
@@ -230,6 +233,8 @@ export interface DeliverySubmission {
   order_id: string;
   submitted_by: string;
   proof_url: string;
+  instagram_post_url?: string;
+  file_storage_path?: string;
   notes: string;
   submitted_at: string;
   status: 'pending_review' | 'approved' | 'disputed' | 'revised';
@@ -249,11 +254,44 @@ export interface DisputeRecord {
   created_at: string;
 }
 
+export type DealProposalStatus =
+  | 'ACTIVE'
+  | 'ACCEPTED'
+  | 'SUPERSEDED'
+  | 'DECLINED'
+  | 'CANCELLED';
+
+export interface DealProposal {
+  id: string;
+  request_id?: string | null;
+  conversation_id: string;
+  order_id?: string | null;
+  proposed_by: string;
+  proposer_name?: string;
+  proposer_role?: UserRole;
+  deliverable: string;
+  price: number;
+  deadline: string;
+  revisions_included: number;
+  key_requirements: string;
+  status: DealProposalStatus;
+  version: number;
+  supersedes_proposal_id?: string | null;
+  accepted_by?: string | null;
+  accepted_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
 export type CollaborationRequestStatus =
+  | 'REQUESTED'
   | 'PENDING'
   | 'ACCEPTED'
+  | 'NEGOTIATING'
+  | 'DEAL_CONFIRMED'
   | 'DECLINED'
   | 'CANCELLED'
+  | 'ENDED'
   | 'EXPIRED';
 
 export interface CollaborationRequest {
@@ -285,6 +323,8 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   last_message?: ChatMessage;
+  proposals?: DealProposal[];
+  active_proposal?: DealProposal;
 }
 
 export interface ChatMessage {

@@ -29,14 +29,17 @@ export function OrderTimeline({ currentStatus }: OrderTimelineProps) {
       case 'DRAFT':
       case 'REQUESTED':
         return -1;
+      case 'DEAL_CONFIRMED':
       case 'PAYMENT_PENDING':
       case 'ACCEPTED_AWAITING_PAYMENT':
       case 'FUNDED':
       case 'PAID_IN_ESCROW':
       case 'CREATOR_PENDING':
         return 0;
+      case 'PAID':
       case 'ACCEPTED':
         return 1;
+      case 'WORK_STARTED':
       case 'IN_PROGRESS':
       case 'WAITING_FOR_BUSINESS':
       case 'OVERDUE':
@@ -52,7 +55,6 @@ export function OrderTimeline({ currentStatus }: OrderTimelineProps) {
       case 'PAYOUT_PENDING':
         return 4;
       case 'COMPLETED':
-      case 'PAID':
         return 5;
       default:
         return 0;

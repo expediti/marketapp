@@ -260,7 +260,9 @@ export default function CreatorDashboardPage() {
   const incomingRequests = (collaborationRequests || []).filter(
     (r) => r.creator_user_id === creatorId
   );
-  const pendingRequests = incomingRequests.filter((r) => r.status === 'PENDING');
+  const pendingRequests = incomingRequests.filter(
+    (r) => r.status === 'REQUESTED' || r.status === 'PENDING'
+  );
   const userConversations = (conversations || []).filter(
     (c) => c.creator_user_id === creatorId || c.business_user_id === creatorId
   );
