@@ -18,6 +18,7 @@ const SYSTEM_REVIEW_REASONS = [
   'Required format was not followed',
   'Agreed deliverable was not provided',
   'Late or missed delivery',
+  'Cancellation request after work started',
   'Other agreed requirement not met',
 ];
 

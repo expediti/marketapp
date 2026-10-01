@@ -547,6 +547,16 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                     <Calendar className="w-3.5 h-3.5 mr-1" />
                     <span>Request Extension</span>
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenDispute}
+                    className="font-mono text-xs text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900"
+                    title="Request cancellation of active order (routes to System Review)"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1 text-red-600" />
+                    <span>Request Cancellation</span>
+                  </Button>
                 </>
               )}
             </div>

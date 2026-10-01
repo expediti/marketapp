@@ -1160,19 +1160,29 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     let createdAt = new Date().toISOString();
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase
+      let insertRes = await supabase
         .from('collaboration_requests')
         .insert(newReqData)
         .select('*')
         .single();
 
-      if (error || !data) {
-        console.error('Failed to create collaboration request:', error);
-        throw new Error(error?.message || 'Failed to send collaboration request');
+      // If remote database still has old constraint rejecting REQUESTED, gracefully fallback to PENDING
+      if (insertRes.error && insertRes.error.message?.includes('collaboration_requests_status_check')) {
+        console.warn('Remote database constraint requires migration 025 to enable REQUESTED. Retrying with PENDING.');
+        insertRes = await supabase
+          .from('collaboration_requests')
+          .insert({ ...newReqData, status: 'PENDING' as any })
+          .select('*')
+          .single();
       }
 
-      createdId = data.id;
-      createdAt = data.created_at;
+      if (insertRes.error || !insertRes.data) {
+        console.error('Failed to create collaboration request:', insertRes.error);
+        throw new Error(insertRes.error?.message || 'Failed to send collaboration request');
+      }
+
+      createdId = insertRes.data.id;
+      createdAt = insertRes.data.created_at;
     }
 
     const createdReq: CollaborationRequest = {
@@ -1344,7 +1354,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         })
         .eq('id', requestId)
         .eq('business_user_id', currentUser.id)
-        .eq('status', 'PENDING');
+        .in('status', ['REQUESTED', 'PENDING']);
 
       if (error) {
         console.error('Error cancelling request:', error);

@@ -885,7 +885,7 @@ export default function BusinessDashboardPage() {
                   )}
 
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
-                    {req.status === 'PENDING' ? (
+                    {req.status === 'REQUESTED' || req.status === 'PENDING' ? (
                       <Button
                         variant="outline"
                         size="sm"

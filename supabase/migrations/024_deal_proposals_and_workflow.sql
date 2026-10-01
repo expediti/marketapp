@@ -702,6 +702,20 @@ BEGIN
         RAISE EXCEPTION 'Cannot submit delivery before payment is verified';
     END IF;
 
+    -- Server-side validation of proof asset URL
+    IF p_proof_url IS NULL OR trim(p_proof_url) = '' THEN
+        RAISE EXCEPTION 'Proof asset URL is required';
+    END IF;
+
+    -- Server-side validation of Instagram post URL
+    IF p_instagram_post_url IS NULL OR trim(p_instagram_post_url) = '' THEN
+        RAISE EXCEPTION 'Live Instagram post URL is required for verification';
+    END IF;
+
+    IF p_instagram_post_url !~* '^https?://(www\.)?instagram\.com/(p|reel|tv)/[a-zA-Z0-9_-]+.*' THEN
+        RAISE EXCEPTION 'Invalid Instagram URL format. Must be a valid Instagram post or reel link (e.g. https://www.instagram.com/p/...)';
+    END IF;
+
     -- Insert into deliveries table
     INSERT INTO public.deliveries (
         order_id,
@@ -886,4 +900,24 @@ BEGIN
     );
 END;
 $$;
+
+-- 15. Optional: Schedule server-side auto-approvals hourly via pg_cron if available
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+    ) THEN
+        PERFORM cron.schedule(
+            'process_auto_approvals_hourly',
+            '0 * * * *',
+            'SELECT public.process_auto_approvals();'
+        );
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL; -- Safe fallback if pg_cron is not enabled in this Supabase tier
+END $$;
+
+-- 16. Reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';
+
 
