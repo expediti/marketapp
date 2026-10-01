@@ -52,6 +52,8 @@ interface DbBusinessProfile {
   created_at?: string | null;
 }
 
+export const dynamic = 'force-dynamic';
+
 export default function BusinessDashboardPage() {
   const router = useRouter();
   const {
@@ -71,6 +73,7 @@ export default function BusinessDashboardPage() {
   const [dbBusiness, setDbBusiness] = useState<DbBusinessProfile | null>(null);
   const [savedCreatorIds, setSavedCreatorIds] = useState<string[]>([]);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Campaign creation modal state
   const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
@@ -102,57 +105,108 @@ export default function BusinessDashboardPage() {
   const [profileErrorMsg, setProfileErrorMsg] = useState<string | null>(null);
 
   // Authenticate user & load real business data
-  useEffect(() => {
-    async function initUser() {
-      if (!isSupabaseConfigured) {
-        setIsLoadingAuth(false);
+  const initUser = async () => {
+    setIsLoadingAuth(true);
+    setPageError(null);
+
+    if (!isSupabaseConfigured) {
+      setIsLoadingAuth(false);
+      return;
+    }
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        router.replace('/auth/login');
         return;
       }
 
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+      // 1. Verify profile and role
+      const { data: profile, error: profError } = await supabase
+        .from('profiles')
+        .select('id, role, display_name')
+        .eq('id', user.id)
+        .maybeSingle();
 
-        if (!user) {
-          router.push('/auth/login');
-          return;
-        }
+      if (profError) {
+        console.error('Error fetching profile in business dashboard:', profError);
+      }
 
-        const { data: bp, error } = await supabase
+      if (!profile?.role) {
+        router.replace('/auth/role-select');
+        return;
+      }
+
+      const normalizedRole = profile.role.toLowerCase();
+      if (normalizedRole === 'creator' || normalizedRole === 'influencer') {
+        router.replace('/dashboard/creator');
+        return;
+      }
+
+      // 2. Query business profile using exact auth UUID
+      const { data: bp, error: bpError } = await supabase
+        .from('business_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (bpError) {
+        console.error('Error fetching business profile:', bpError);
+      }
+
+      if (bp) {
+        setDbBusiness(bp);
+        setEditName(bp.business_name || '');
+        setEditIndustry(bp.industry || 'Technology & SaaS');
+        setEditWebsite(bp.website || '');
+        setEditAppUrl(bp.app_url || '');
+        setEditCountry(bp.country || 'India');
+        setEditState(bp.state || '');
+        setEditCity(bp.city || 'India');
+        setEditDescription(bp.description || '');
+        setEditBudgetRange(bp.budget_range || '');
+      } else {
+        // Safely recover / create business profile row
+        const meta = user.user_metadata || {};
+        const fallbackName = meta.full_name || meta.name || profile.display_name || 'My Business';
+        const { data: newBp } = await supabase
           .from('business_profiles')
+          .upsert(
+            {
+              user_id: user.id,
+              business_name: fallbackName,
+              business_type: 'app',
+              industry: 'Technology & SaaS',
+              city: 'India',
+              country: 'India',
+              verification_status: 'unverified',
+            },
+            { onConflict: 'user_id' }
+          )
           .select('*')
-          .eq('user_id', user.id)
           .maybeSingle();
 
-        if (error) {
-          console.error('Error fetching business profile:', error);
-        }
-
-        if (bp) {
-          setDbBusiness(bp);
-          setEditName(bp.business_name || '');
-          setEditIndustry(bp.industry || 'Technology & SaaS');
-          setEditWebsite(bp.website || '');
-          setEditAppUrl(bp.app_url || '');
-          setEditCountry(bp.country || 'India');
-          setEditState(bp.state || '');
-          setEditCity(bp.city || 'India');
-          setEditDescription(bp.description || '');
-          setEditBudgetRange(bp.budget_range || '');
+        if (newBp) {
+          setDbBusiness(newBp);
+          setEditName(newBp.business_name || fallbackName);
         } else {
-          // If no business profile exists yet, prefill from user metadata
-          const meta = user.user_metadata || {};
-          const fallbackName = meta.full_name || meta.name || 'My Business';
-          setEditName(fallbackName);
+          router.replace('/auth/onboarding/business');
+          return;
         }
-      } catch (err) {
-        console.error('Error initializing business dashboard:', err);
-      } finally {
-        setIsLoadingAuth(false);
       }
+    } catch (err) {
+      console.error('Error initializing business dashboard:', err);
+      setPageError('Unable to load business dashboard. Please try again.');
+    } finally {
+      setIsLoadingAuth(false);
     }
+  };
 
+  useEffect(() => {
     initUser();
   }, [router]);
 
@@ -296,6 +350,28 @@ export default function BusinessDashboardPage() {
       <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
         <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
         <p>Loading your authenticated business workspace...</p>
+      </div>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4">
+        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Workspace Error</h2>
+        <p className="text-xs text-[#71717A] dark:text-zinc-400">{pageError}</p>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Button variant="primary" size="sm" onClick={() => initUser()}>
+            Try Again
+          </Button>
+          <Link href="/">
+            <Button variant="outline" size="sm">
+              Back to Home
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }

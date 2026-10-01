@@ -24,6 +24,8 @@ import {
   User,
 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function OrderWorkspacePage() {
   const params = useParams();
   const orderId = params.id as string;

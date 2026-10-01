@@ -104,23 +104,20 @@ function LoginForm() {
           .maybeSingle();
 
         if (!profile?.role) {
-          router.push('/auth/role-select');
+          router.replace('/auth/role-select');
           return;
         }
 
         await refreshData();
         const role = profile.role.toLowerCase();
         if (role === 'creator' || role === 'influencer') {
-          switchUser('creator');
-          router.push('/dashboard/creator');
+          router.replace('/dashboard/creator');
         } else if (role === 'business' || role === 'advertiser') {
-          switchUser('business');
-          router.push('/dashboard/business');
+          router.replace('/dashboard/business');
         } else if (role === 'admin') {
-          switchUser('admin');
-          router.push('/admin');
+          router.replace('/admin');
         } else {
-          router.push('/auth/role-select');
+          router.replace('/auth/role-select');
         }
       }
     } catch (err: unknown) {

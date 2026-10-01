@@ -24,7 +24,8 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface MarketplaceContextType {
   currentUser: Profile | null;
-  activeRole: UserRole;
+  activeRole: UserRole | null;
+  authInitialized: boolean;
   isLoading: boolean;
   switchUser: (role: UserRole) => void;
   signOut: () => Promise<void>;
@@ -130,8 +131,9 @@ interface MarketplaceContextType {
 const MarketplaceContext = createContext<MarketplaceContextType | undefined>(undefined);
 
 export function MarketplaceProvider({ children }: { children: React.ReactNode }) {
-  const [activeRole, setActiveRole] = useState<UserRole>('business');
+  const [activeRole, setActiveRole] = useState<UserRole | null>(null);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
   const [creators, setCreators] = useState<CreatorProfile[]>([]);
   const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -576,109 +578,10 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
   }, []);
 
-  // Main initial loader
-  const refreshData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await fetchCreators();
-
-      if (isSupabaseConfigured) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          if (profile) {
-            const r = (profile.role as UserRole) || 'business';
-            setActiveRole(r);
-            setCurrentUser({
-              id: profile.id,
-              role: (profile.role as UserRole) || null,
-              display_name: profile.display_name || user.user_metadata?.full_name || 'User',
-              email: profile.email || user.email || '',
-              avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
-              city: profile.city || 'India',
-              created_at: profile.created_at,
-              updated_at: profile.updated_at,
-            });
-
-            await fetchUserData(profile.id, r);
-          } else {
-            setCurrentUser(null);
-          }
-        } else {
-          setCurrentUser(null);
-          setBusinesses([]);
-          setCampaigns([]);
-          setOrders([]);
-        }
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fetchCreators, fetchUserData]);
-
-  // Sync authenticated user on mount and subscribe to auth changes
-  useEffect(() => {
-    refreshData();
-
-    if (!isSupabaseConfigured) return;
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (profile) {
-          const r = (profile.role as UserRole) || 'business';
-          setActiveRole(r);
-          setCurrentUser({
-            id: profile.id,
-            role: (profile.role as UserRole) || null,
-            display_name: profile.display_name || session.user.user_metadata?.full_name || 'User',
-            email: profile.email || session.user.email || '',
-            avatar_url: profile.avatar_url || session.user.user_metadata?.avatar_url || null,
-            city: profile.city || 'India',
-            created_at: profile.created_at,
-            updated_at: profile.updated_at,
-          });
-
-          await fetchUserData(profile.id, r);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-        setBusinesses([]);
-        setCampaigns([]);
-        setOrders([]);
-        setCollaborationRequests([]);
-        setConversations([]);
-        setActiveConversationId(null);
-        setMessages({});
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [refreshData, fetchUserData]);
-
-  const signOut = async () => {
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.auth.signOut();
-      } catch (err) {
-        console.error('Error signing out of Supabase:', err);
-      }
-    }
+  // Clears all private user and dashboard data immediately
+  const clearUserData = useCallback(() => {
     setCurrentUser(null);
+    setActiveRole(null);
     setBusinesses([]);
     setCampaigns([]);
     setOrders([]);
@@ -686,14 +589,155 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     setConversations([]);
     setActiveConversationId(null);
     setMessages({});
+  }, []);
 
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('marketur_user');
-        localStorage.removeItem('marketur_active_role');
-        sessionStorage.clear();
-        document.cookie = 'marketur_role_intent=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-      } catch {}
+  // Main loader for manual data refresh
+  const refreshData = useCallback(async () => {
+    await fetchCreators();
+
+    if (!isSupabaseConfigured) return;
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profile) {
+          const r = (profile.role as UserRole) || null;
+          setActiveRole(r);
+          setCurrentUser({
+            id: profile.id,
+            role: r,
+            display_name: profile.display_name || user.user_metadata?.full_name || 'User',
+            email: profile.email || user.email || '',
+            avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
+            city: profile.city || 'India',
+            created_at: profile.created_at,
+            updated_at: profile.updated_at,
+          });
+
+          await fetchUserData(profile.id, r);
+        } else {
+          setCurrentUser({
+            id: user.id,
+            role: null,
+            display_name: user.user_metadata?.full_name || 'User',
+            email: user.email || '',
+            avatar_url: user.user_metadata?.avatar_url || null,
+            city: 'India',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          setActiveRole(null);
+        }
+      } else {
+        clearUserData();
+      }
+    } catch (err) {
+      console.error('Error refreshing marketplace store:', err);
+    }
+  }, [fetchCreators, fetchUserData, clearUserData]);
+
+  // Single source of truth: Supabase auth state change listener
+  useEffect(() => {
+    fetchCreators();
+
+    if (!isSupabaseConfigured) {
+      setAuthInitialized(true);
+      setIsLoading(false);
+      return;
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Handle SIGNED_OUT or missing session
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        clearUserData();
+        setAuthInitialized(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // Handle INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED
+      if (session?.user) {
+        try {
+          const { data: profile, error: profError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profError) {
+            console.error('Error loading user profile:', profError);
+          }
+
+          if (profile) {
+            const r = (profile.role as UserRole) || null;
+            setActiveRole(r);
+            setCurrentUser({
+              id: profile.id,
+              role: r,
+              display_name: profile.display_name || session.user.user_metadata?.full_name || 'User',
+              email: profile.email || session.user.email || '',
+              avatar_url: profile.avatar_url || session.user.user_metadata?.avatar_url || null,
+              city: profile.city || 'India',
+              created_at: profile.created_at,
+              updated_at: profile.updated_at,
+            });
+
+            await fetchUserData(profile.id, r);
+          } else {
+            setCurrentUser({
+              id: session.user.id,
+              role: null,
+              display_name: session.user.user_metadata?.full_name || 'User',
+              email: session.user.email || '',
+              avatar_url: session.user.user_metadata?.avatar_url || null,
+              city: 'India',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            setActiveRole(null);
+          }
+        } catch (err) {
+          console.error('Error synchronizing auth state:', err);
+        } finally {
+          setAuthInitialized(true);
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [fetchCreators, fetchUserData, clearUserData]);
+
+  const signOut = async () => {
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error('Error signing out of Supabase:', error);
+          throw error;
+        }
+      }
+    } finally {
+      clearUserData();
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.clear();
+          document.cookie = 'marketur_role_intent=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        } catch {}
+      }
     }
   };
 
@@ -1306,7 +1350,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           order_id: targetOrderId,
           sender_id: currentUser.id,
           sender_user_id: currentUser.id,
-          sender_role: activeRole,
+          sender_role: ((currentUser.role || activeRole || 'business') as any),
           body,
           message: body,
           moderation_status: moderationStatus,
@@ -1333,7 +1377,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       sender_id: currentUser.id,
       sender_user_id: currentUser.id,
       sender_name: currentUser.display_name,
-      sender_role: activeRole,
+      sender_role: ((currentUser.role || activeRole || 'business') as any),
       body,
       message: body,
       moderation_status: moderationStatus,
@@ -2080,6 +2124,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       value={{
         currentUser,
         activeRole,
+        authInitialized,
         isLoading,
         switchUser,
         signOut,

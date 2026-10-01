@@ -12,7 +12,7 @@ import { Menu, X, Search, User, LogOut } from 'lucide-react';
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, activeRole, signOut } = useMarketplace();
+  const { currentUser, activeRole, signOut, authInitialized } = useMarketplace();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -23,16 +23,24 @@ export function Navbar() {
     { label: 'For Influencers', href: '/for-creators' },
   ];
 
+  const userRole = (currentUser?.role || activeRole || '').toLowerCase();
   const dashboardHref =
-    activeRole === 'creator' || activeRole === 'influencer'
+    userRole === 'creator' || userRole === 'influencer'
       ? '/dashboard/creator'
-      : activeRole === 'admin'
+      : userRole === 'admin'
       ? '/admin'
-      : '/dashboard/business';
+      : userRole === 'business' || userRole === 'advertiser'
+      ? '/dashboard/business'
+      : currentUser
+      ? '/auth/role-select'
+      : '/';
 
   const handleSignOut = async () => {
-    await signOut();
-    router.push('/auth/login');
+    try {
+      await signOut();
+    } finally {
+      router.replace('/');
+    }
   };
 
   return (
@@ -90,46 +98,50 @@ export function Navbar() {
 
             {/* Desktop Auth CTAs */}
             <div className="hidden sm:flex items-center gap-2 pl-1">
-              {currentUser ? (
-                <div className="flex items-center gap-2">
-                  <Link href={dashboardHref}>
-                    <Button variant="outline" size="sm" className="text-xs flex items-center gap-1.5 border-[#FF5416]/40 hover:border-[#FF5416]">
-                      {currentUser.avatar_url ? (
-                        <img
-                          src={currentUser.avatar_url}
-                          alt={currentUser.display_name}
-                          className="w-4 h-4 rounded-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-3.5 h-3.5 text-[#FF5416]" />
-                      )}
-                      <span>Dashboard</span>
+              {authInitialized ? (
+                currentUser ? (
+                  <div className="flex items-center gap-2">
+                    <Link href={dashboardHref}>
+                      <Button variant="outline" size="sm" className="text-xs flex items-center gap-1.5 border-[#FF5416]/40 hover:border-[#FF5416]">
+                        {currentUser.avatar_url ? (
+                          <img
+                            src={currentUser.avatar_url}
+                            alt={currentUser.display_name}
+                            className="w-4 h-4 rounded-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-3.5 h-3.5 text-[#FF5416]" />
+                        )}
+                        <span>Dashboard</span>
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSignOut}
+                      className="text-xs text-[#71717A] hover:text-red-600 px-2"
+                      title="Log Out"
+                    >
+                      <LogOut className="w-4 h-4" />
                     </Button>
-                  </Link>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSignOut}
-                    className="text-xs text-[#71717A] hover:text-red-600 px-2"
-                    title="Log Out"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Link href="/auth/login">
-                    <Button variant="ghost" size="sm" className="text-xs text-[#52525B] dark:text-[#A1A1AA] hover:text-[#121214] dark:hover:text-white">
-                      <span>Login</span>
-                    </Button>
-                  </Link>
+                  </div>
+                ) : (
+                  <>
+                    <Link href="/auth/login">
+                      <Button variant="ghost" size="sm" className="text-xs text-[#52525B] dark:text-[#A1A1AA] hover:text-[#121214] dark:hover:text-white">
+                        <span>Login</span>
+                      </Button>
+                    </Link>
 
-                  <Link href="/auth/signup">
-                    <Button variant="primary" size="sm" className="text-xs px-3.5">
-                      <span>Sign Up</span>
-                    </Button>
-                  </Link>
-                </>
+                    <Link href="/auth/signup">
+                      <Button variant="primary" size="sm" className="text-xs px-3.5">
+                        <span>Sign Up</span>
+                      </Button>
+                    </Link>
+                  </>
+                )
+              ) : (
+                <div className="w-24 h-8" />
               )}
             </div>
 
@@ -161,38 +173,44 @@ export function Navbar() {
             </div>
 
             <div className="pt-3 border-t border-[#E5E5DE] dark:border-[#27272A] flex flex-col gap-2">
-              {currentUser ? (
-                <>
-                  <Link href={dashboardHref} onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="primary" size="sm" className="w-full">
-                      Go to Dashboard ({activeRole})
+              {authInitialized ? (
+                currentUser ? (
+                  <>
+                    <Link href={dashboardHref} onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="primary" size="sm" className="w-full">
+                        Go to Dashboard {currentUser.role ? `(${currentUser.role})` : ''}
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleSignOut();
+                      }}
+                      className="w-full text-red-600"
+                    >
+                      Log Out
                     </Button>
-                  </Link>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleSignOut();
-                    }}
-                    className="w-full text-red-600"
-                  >
-                    Log Out
-                  </Button>
-                </>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="outline" size="sm" className="w-full">
+                        Login
+                      </Button>
+                    </Link>
+                    <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="primary" size="sm" className="w-full">
+                        Sign Up
+                      </Button>
+                    </Link>
+                  </>
+                )
               ) : (
-                <>
-                  <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="outline" size="sm" className="w-full">
-                      Login
-                    </Button>
-                  </Link>
-                  <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="primary" size="sm" className="w-full">
-                      Sign Up
-                    </Button>
-                  </Link>
-                </>
+                <div className="py-2 text-center text-xs text-[#71717A] dark:text-zinc-500 font-mono">
+                  Checking authentication...
+                </div>
               )}
             </div>
           </div>

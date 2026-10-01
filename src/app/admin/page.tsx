@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -28,8 +29,13 @@ import {
   User,
 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function AdminDashboardPage() {
+  const router = useRouter();
   const {
+    currentUser,
+    authInitialized,
     orders,
     creators,
     businesses,
@@ -41,7 +47,24 @@ export default function AdminDashboardPage() {
     adminModerateReel,
   } = useMarketplace();
 
+  useEffect(() => {
+    if (authInitialized) {
+      if (!currentUser || currentUser.role !== 'admin') {
+        router.replace('/');
+      }
+    }
+  }, [authInitialized, currentUser, router]);
+
   const [activeTab, setActiveTab] = useState<'overview' | 'reels' | 'disputes' | 'orders' | 'creators' | 'businesses' | 'audit'>('overview');
+
+  if (!authInitialized || !currentUser || currentUser.role !== 'admin') {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p>Verifying administrative credentials...</p>
+      </div>
+    );
+  }
   const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);

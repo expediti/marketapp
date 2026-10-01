@@ -43,6 +43,8 @@ const POPULAR_CATEGORIES = [
   'Productivity',
 ];
 
+export const dynamic = 'force-dynamic';
+
 export default function CreatorOnboardingPage() {
   const router = useRouter();
   const { onboardCreator, refreshData } = useMarketplace();

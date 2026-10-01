@@ -111,46 +111,39 @@ export async function GET(request: Request) {
       }
 
       // 6 & 7. Determine whether role is already selected and route accordingly
-      if (!activeRole) {
-        return NextResponse.redirect(`${origin}/auth/role-select`);
-      }
+      let destination = `${origin}/auth/role-select`;
 
-      const normalizedRole = activeRole.toLowerCase();
+      if (activeRole) {
+        const normalizedRole = activeRole.toLowerCase();
 
-      if (normalizedRole === 'creator' || normalizedRole === 'influencer') {
-        // Check if creator onboarding was completed
-        const { data: creatorProfile } = await supabase
-          .from('creator_profiles')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        if (normalizedRole === 'creator' || normalizedRole === 'influencer') {
+          const { data: creatorProfile } = await supabase
+            .from('creator_profiles')
+            .select('user_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-        if (creatorProfile) {
-          return NextResponse.redirect(`${origin}/dashboard/creator`);
+          destination = creatorProfile
+            ? `${origin}/dashboard/creator`
+            : `${origin}/auth/onboarding/creator`;
+        } else if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
+          const { data: businessProfile } = await supabase
+            .from('business_profiles')
+            .select('user_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          destination = businessProfile
+            ? `${origin}/dashboard/business`
+            : `${origin}/auth/onboarding/business`;
+        } else if (normalizedRole === 'admin') {
+          destination = `${origin}/admin`;
         }
-        return NextResponse.redirect(`${origin}/auth/onboarding/creator`);
       }
 
-      if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
-        // Check if business onboarding was completed
-        const { data: businessProfile } = await supabase
-          .from('business_profiles')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (businessProfile) {
-          return NextResponse.redirect(`${origin}/dashboard/business`);
-        }
-        return NextResponse.redirect(`${origin}/auth/onboarding/business`);
-      }
-
-      if (normalizedRole === 'admin') {
-        return NextResponse.redirect(`${origin}/admin`);
-      }
-
-      // Fallback to role selection
-      return NextResponse.redirect(`${origin}/auth/role-select`);
+      const redirectResponse = NextResponse.redirect(destination);
+      redirectResponse.cookies.set('marketur_role_intent', '', { maxAge: 0, path: '/' });
+      return redirectResponse;
     } catch (err: unknown) {
       console.error('Unexpected error in auth callback:', err);
       const message = err instanceof Error ? err.message : 'Authentication callback failed';

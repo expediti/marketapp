@@ -14,6 +14,8 @@ import {
   Check,
 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function RoleSelectPage() {
   const router = useRouter();
   const { switchUser, refreshData } = useMarketplace();

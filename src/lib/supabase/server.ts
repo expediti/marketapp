@@ -29,3 +29,36 @@ export async function createClient() {
     }
   );
 }
+
+/**
+ * Server-side helper to verify the authenticated user and retrieve their profile
+ * Uses auth.users.id strictly to query public.profiles.
+ */
+export async function getAuthenticatedUser() {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { user: null, profile: null, error: userError || null };
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    return { user, profile: profile || null, error: profileError || null };
+  } catch (err) {
+    return {
+      user: null,
+      profile: null,
+      error: err instanceof Error ? err : new Error('Unknown server auth error'),
+    };
+  }
+}
+

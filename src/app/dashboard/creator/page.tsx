@@ -66,6 +66,8 @@ function generatePackageId(): string {
   return `pkg_${Date.now()}`;
 }
 
+export const dynamic = 'force-dynamic';
+
 export default function CreatorDashboardPage() {
   const router = useRouter();
   const {
@@ -84,6 +86,7 @@ export default function CreatorDashboardPage() {
   const [packages, setPackages] = useState<CreatorPackage[]>([]);
   const [reels, setReels] = useState<CreatorReel[]>([]);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Reels management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,45 +104,81 @@ export default function CreatorDashboardPage() {
   const [newPkgDesc, setNewPkgDesc] = useState('');
   const [isSavingPkg, setIsSavingPkg] = useState(false);
 
-  useEffect(() => {
-    async function loadDbCreator() {
-      if (!isSupabaseConfigured) {
-        setIsLoadingAuth(false);
+  const loadDbCreator = async () => {
+    setIsLoadingAuth(true);
+    setPageError(null);
+
+    if (!isSupabaseConfigured) {
+      setIsLoadingAuth(false);
+      return;
+    }
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        router.replace('/auth/login');
         return;
       }
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
 
-        if (!user) {
-          router.push('/auth/login');
-          return;
-        }
+      // 1. Verify profile and role
+      const { data: profile, error: profError } = await supabase
+        .from('profiles')
+        .select('id, role, display_name')
+        .eq('id', user.id)
+        .maybeSingle();
 
-        const [cpRes, pkgsRes, reelsRes] = await Promise.all([
-          supabase.from('creator_profiles').select('*').eq('user_id', user.id).maybeSingle(),
-          supabase.from('creator_packages').select('*').eq('creator_id', user.id),
-          supabase.from('creator_reels').select('*').eq('creator_id', user.id).order('sort_order', { ascending: true }),
-        ]);
-
-        if (cpRes.data) {
-          setDbCreator({
-            ...cpRes.data,
-            creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
-          });
-          setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
-        }
-
-        if (reelsRes.data) {
-          setReels(reelsRes.data as unknown as CreatorReel[]);
-        }
-      } catch (err) {
-        console.error('Error loading creator profile:', err);
-      } finally {
-        setIsLoadingAuth(false);
+      if (profError) {
+        console.error('Error loading profile in creator dashboard:', profError);
       }
+
+      if (!profile?.role) {
+        router.replace('/auth/role-select');
+        return;
+      }
+
+      const normalizedRole = profile.role.toLowerCase();
+      if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
+        router.replace('/dashboard/business');
+        return;
+      }
+
+      // 2. Query creator data using exact auth UUID
+      const [cpRes, pkgsRes, reelsRes] = await Promise.all([
+        supabase.from('creator_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('creator_packages').select('*').eq('creator_id', user.id),
+        supabase.from('creator_reels').select('*').eq('creator_id', user.id).order('sort_order', { ascending: true }),
+      ]);
+
+      if (cpRes.error) {
+        console.error('Error loading creator profile:', cpRes.error);
+      }
+
+      if (cpRes.data) {
+        setDbCreator({
+          ...cpRes.data,
+          creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
+        });
+        setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
+      } else {
+        setDbCreator(null);
+      }
+
+      if (reelsRes.data) {
+        setReels(reelsRes.data as unknown as CreatorReel[]);
+      }
+    } catch (err) {
+      console.error('Error loading creator dashboard:', err);
+      setPageError('Unable to load influencer studio. Please try again.');
+    } finally {
+      setIsLoadingAuth(false);
     }
+  };
+
+  useEffect(() => {
     loadDbCreator();
   }, [router]);
 
@@ -148,6 +187,28 @@ export default function CreatorDashboardPage() {
       <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
         <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
         <p>Loading your influencer studio...</p>
+      </div>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4">
+        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Studio Error</h2>
+        <p className="text-xs text-[#71717A] dark:text-zinc-400">{pageError}</p>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Button variant="primary" size="sm" onClick={() => loadDbCreator()}>
+            Try Again
+          </Button>
+          <Link href="/">
+            <Button variant="outline" size="sm">
+              Back to Home
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }

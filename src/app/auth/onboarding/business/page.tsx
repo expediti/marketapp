@@ -67,6 +67,8 @@ const BUDGET_RANGES = [
   '₹1,50,000+',
 ];
 
+export const dynamic = 'force-dynamic';
+
 export default function BusinessOnboardingPage() {
   const router = useRouter();
   const { onboardBusiness, switchUser, refreshData } = useMarketplace();
