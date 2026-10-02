@@ -135,7 +135,7 @@ export function ConversationChat({
       fetchConversationMessages(selectedConvId);
       fetchConversationProposals(selectedConvId);
     }
-  }, [selectedConvId, fetchConversationMessages, fetchConversationProposals]);
+  }, [selectedConvId]);
 
   const convMessages = (selectedConvId ? messages[selectedConvId] : []) || [];
   const convProposals =
@@ -234,7 +234,7 @@ export function ConversationChat({
   // Submit deal proposal
   const handleSubmitProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeConversation) return;
+    if (!activeConversation || isSubmittingProposal) return;
 
     setIsSubmittingProposal(true);
     setProposalError(null);
@@ -252,6 +252,7 @@ export function ConversationChat({
       });
 
       setIsProposalModalOpen(false);
+      setEditingProposal(null);
     } catch (err: any) {
       console.error('Failed to submit deal proposal:', err);
       setProposalError(err.message || 'Failed to submit proposal');
@@ -979,88 +980,91 @@ export function ConversationChat({
               onSubmit={handleSubmitProposal}
               className="space-y-3.5 text-xs font-mono"
             >
-              <div>
-                <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Deliverable Package / Description
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={proposalDeliverable}
-                  onChange={(e) => setProposalDeliverable(e.target.value)}
-                  placeholder="e.g. 1 Instagram Reel (9:16) showcasing App Features"
-                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <fieldset disabled={isSubmittingProposal} className="space-y-3.5">
                 <div>
                   <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Agreed Price (₹ INR)
+                    Deliverable Package / Description
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-[#71717A]">
-                      ₹
-                    </span>
+                  <input
+                    type="text"
+                    required
+                    value={proposalDeliverable}
+                    onChange={(e) => setProposalDeliverable(e.target.value)}
+                    placeholder="e.g. 1 Instagram Reel (9:16) showcasing App Features"
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white disabled:opacity-60"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                      Agreed Price (₹ INR)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-[#71717A]">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={proposalPrice}
+                        onChange={(e) => setProposalPrice(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                      Target Deadline
+                    </label>
                     <input
-                      type="number"
+                      type="date"
                       required
-                      min={1}
-                      value={proposalPrice}
-                      onChange={(e) => setProposalPrice(Number(e.target.value))}
-                      className="w-full pl-7 pr-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                      value={proposalDeadline}
+                      onChange={(e) => setProposalDeadline(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white disabled:opacity-60"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                    Target Deadline
+                    Included Revisions
                   </label>
                   <input
-                    type="date"
+                    type="number"
                     required
-                    value={proposalDeadline}
-                    onChange={(e) => setProposalDeadline(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    min={1}
+                    max={5}
+                    value={proposalRevisions}
+                    onChange={(e) => setProposalRevisions(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white disabled:opacity-60"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Included Revisions
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  max={5}
-                  value={proposalRevisions}
-                  onChange={(e) => setProposalRevisions(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-[#121214] dark:text-white block mb-1">
-                  Key Requirements & Guidelines
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={proposalRequirements}
-                  onChange={(e) => setProposalRequirements(e.target.value)}
-                  placeholder="Specify key CTA, hashtag, brand tags, and format specifications..."
-                  className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                />
-              </div>
+                <div>
+                  <label className="font-bold text-[#121214] dark:text-white block mb-1">
+                    Key Requirements & Guidelines
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={proposalRequirements}
+                    onChange={(e) => setProposalRequirements(e.target.value)}
+                    placeholder="Specify key CTA, hashtag, brand tags, and format specifications..."
+                    className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white disabled:opacity-60"
+                  />
+                </div>
+              </fieldset>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={isSubmittingProposal}
                   onClick={() => setIsProposalModalOpen(false)}
                 >
                   Cancel
@@ -1070,7 +1074,7 @@ export function ConversationChat({
                   variant="primary"
                   size="sm"
                   disabled={isSubmittingProposal}
-                  className="bg-[#FF5416] hover:bg-[#E0450C] text-white"
+                  className="bg-[#FF5416] hover:bg-[#E0450C] text-white disabled:opacity-50"
                 >
                   {isSubmittingProposal
                     ? 'Submitting...'

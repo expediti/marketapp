@@ -419,6 +419,10 @@ export interface Database {
           deadline: string;
           included_revisions: number;
           revisions_used: number;
+          work_started_at?: string | null;
+          agreed_price?: number | null;
+          agreed_deadline?: string | null;
+          requirements?: string | null;
           delivered_at: string | null;
           auto_approve_deadline: string | null;
           waiting_reason: string | null;
@@ -448,8 +452,12 @@ export interface Database {
           platform_fee: number;
           total_amount: number;
           deadline: string;
+          agreed_price?: number | null;
+          agreed_deadline?: string | null;
+          requirements?: string | null;
           included_revisions?: number;
           revisions_used?: number;
+          work_started_at?: string | null;
           delivered_at?: string | null;
           auto_approve_deadline?: string | null;
           waiting_reason?: string | null;
@@ -479,8 +487,12 @@ export interface Database {
           platform_fee?: number;
           total_amount?: number;
           deadline?: string;
+          agreed_price?: number | null;
+          agreed_deadline?: string | null;
+          requirements?: string | null;
           included_revisions?: number;
           revisions_used?: number;
+          work_started_at?: string | null;
           delivered_at?: string | null;
           auto_approve_deadline?: string | null;
           waiting_reason?: string | null;

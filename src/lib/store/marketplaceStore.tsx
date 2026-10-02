@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   CreatorProfile,
   BusinessProfile,
@@ -184,6 +184,22 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const [dealProposals, setDealProposals] = useState<Record<string, DealProposal[]>>({});
   const [adminActions, setAdminActions] = useState<AdminAction[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Synchronization refs for stable callbacks without infinite re-fetch loops
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  const dealProposalsRef = useRef(dealProposals);
+  useEffect(() => {
+    dealProposalsRef.current = dealProposals;
+  }, [dealProposals]);
+
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Switch role without using fake demo profiles
   const switchUser = (role: UserRole) => {
@@ -544,6 +560,10 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           deadline: o.deadline,
           included_revisions: o.included_revisions ?? 1,
           revisions_used: o.revisions_used ?? 0,
+          work_started_at: o.work_started_at || null,
+          agreed_price: o.agreed_price ? Number(o.agreed_price) : Number(o.subtotal) || 0,
+          agreed_deadline: o.agreed_deadline || o.deadline,
+          requirements: o.requirements || o.brief?.requirements || undefined,
           delivered_at: o.delivered_at,
           auto_approve_deadline: o.auto_approve_deadline,
           waiting_reason: o.waiting_reason,
@@ -1373,48 +1393,51 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     );
   };
 
-  const fetchConversationMessages = async (conversationId: string): Promise<ChatMessage[]> => {
-    if (!isSupabaseConfigured) {
-      return messages[conversationId] || [];
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching messages from Supabase:', error);
-        return messages[conversationId] || [];
+  const fetchConversationMessages = useCallback(
+    async (conversationId: string): Promise<ChatMessage[]> => {
+      if (!isSupabaseConfigured) {
+        return messagesRef.current[conversationId] || [];
       }
 
-      const mapped: ChatMessage[] = (data || []).map((m) => ({
-        id: m.id,
-        conversation_id: m.conversation_id,
-        sender_id: m.sender_id || m.sender_user_id || '',
-        sender_user_id: m.sender_user_id || undefined,
-        sender_name: m.sender_role === 'creator' ? 'Creator' : 'Business',
-        sender_role: m.sender_role as any,
-        body: m.body || m.message || '',
-        message: m.message || m.body || '',
-        moderation_status: m.moderation_status as any,
-        created_at: m.created_at,
-        read_at: m.read_at || undefined,
-      }));
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
 
-      setMessages((prev) => ({
-        ...prev,
-        [conversationId]: mapped,
-      }));
+        if (error) {
+          console.error('Error fetching messages from Supabase:', error);
+          return messagesRef.current[conversationId] || [];
+        }
 
-      return mapped;
-    } catch (err) {
-      console.error('Error loading conversation messages:', err);
-      return messages[conversationId] || [];
-    }
-  };
+        const mapped: ChatMessage[] = (data || []).map((m) => ({
+          id: m.id,
+          conversation_id: m.conversation_id,
+          sender_id: m.sender_id || m.sender_user_id || '',
+          sender_user_id: m.sender_user_id || undefined,
+          sender_name: m.sender_role === 'creator' ? 'Creator' : 'Business',
+          sender_role: m.sender_role as any,
+          body: m.body || m.message || '',
+          message: m.message || m.body || '',
+          moderation_status: m.moderation_status as any,
+          created_at: m.created_at,
+          read_at: m.read_at || undefined,
+        }));
+
+        setMessages((prev) => ({
+          ...prev,
+          [conversationId]: mapped,
+        }));
+
+        return mapped;
+      } catch (err) {
+        console.error('Error loading conversation messages:', err);
+        return messagesRef.current[conversationId] || [];
+      }
+    },
+    []
+  );
 
   const detectContactInfoLeakage = (text: string): { allowed: boolean; reason?: string } => {
     const emailRegex = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/;
@@ -1535,7 +1558,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const fetchConversationProposals = useCallback(
     async (conversationId: string): Promise<DealProposal[]> => {
       if (!isSupabaseConfigured) {
-        return dealProposals[conversationId] || [];
+        return dealProposalsRef.current[conversationId] || [];
       }
 
       try {
@@ -1547,10 +1570,10 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
         if (error) {
           console.error('Error fetching deal proposals:', error);
-          return dealProposals[conversationId] || [];
+          return dealProposalsRef.current[conversationId] || [];
         }
 
-        const conv = conversations.find((c) => c.id === conversationId);
+        const conv = conversationsRef.current.find((c) => c.id === conversationId);
 
         const mapped: DealProposal[] = (data || []).map((p: any) => {
           const isBiz = p.proposed_by === conv?.business_user_id;
@@ -1602,10 +1625,10 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         return mapped;
       } catch (err) {
         console.error('Error in fetchConversationProposals:', err);
-        return dealProposals[conversationId] || [];
+        return dealProposalsRef.current[conversationId] || [];
       }
     },
-    [conversations, dealProposals]
+    []
   );
 
   const createDealProposal = async (params: {
@@ -1671,14 +1694,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         ? conv.business?.business_name || 'Business'
         : conv.creator?.display_name || 'Creator';
 
-      await sendMessage(
-        params.conversationId,
-        `📋 [Deal Proposal v${version}] ${params.deliverable} • ₹${params.price.toLocaleString('en-IN')} • Deadline: ${new Date(params.deadline).toLocaleDateString('en-IN')}`
-      );
-
-      await fetchConversationProposals(params.conversationId);
-
-      return {
+      const createdProposal: DealProposal = {
         id: inserted.id,
         request_id: inserted.request_id,
         conversation_id: inserted.conversation_id,
@@ -1697,6 +1713,54 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
       };
+
+      // 1. Immediately update local state synchronously with the real DB record
+      setDealProposals((prev) => {
+        const existingList = (prev[params.conversationId] || []).filter(
+          (p) => p.id !== createdProposal.id
+        );
+        const updatedList = params.supersedesProposalId
+          ? existingList.map((p) =>
+              p.id === params.supersedesProposalId
+                ? { ...p, status: 'SUPERSEDED' as DealProposalStatus }
+                : p
+            )
+          : existingList;
+        return {
+          ...prev,
+          [params.conversationId]: [...updatedList, createdProposal],
+        };
+      });
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === params.conversationId
+            ? {
+                ...c,
+                active_proposal: createdProposal,
+                proposals: [
+                  ...(c.proposals || []).map((p) =>
+                    p.id === params.supersedesProposalId
+                      ? { ...p, status: 'SUPERSEDED' as DealProposalStatus }
+                      : p
+                  ),
+                  createdProposal,
+                ],
+              }
+            : c
+        )
+      );
+
+      // 2. Dispatch conversation system message in the background without holding the modal hostage
+      sendMessage(
+        params.conversationId,
+        `📋 [Deal Proposal v${version}] ${params.deliverable} • ₹${params.price.toLocaleString('en-IN')} • Deadline: ${new Date(params.deadline).toLocaleDateString('en-IN')}`
+      ).catch((err) => {
+        console.warn('Background message dispatch for proposal note:', err);
+      });
+
+      // 3. Return the real created proposal immediately so dialog closes without delay
+      return createdProposal;
     }
 
     throw new Error('Supabase is required for deal proposals');

@@ -371,6 +371,10 @@ export interface Order {
   events?: OrderEvent[];
   included_revisions?: number;
   revisions_used?: number;
+  work_started_at?: string | null;
+  agreed_price?: number;
+  agreed_deadline?: string;
+  requirements?: string;
   delivered_at?: string | null;
   auto_approve_deadline?: string | null;
   waiting_reason?: string | null;
