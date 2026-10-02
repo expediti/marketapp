@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 export interface RazorpayOrderResponse {
   id: string;
@@ -34,12 +35,50 @@ export interface RazorpayPaymentResponse {
 }
 
 /**
+ * Safely resolves a server runtime variable from Cloudflare Context (Worker env)
+ * or process.env, without throwing or exposing secrets.
+ */
+export function getServerRuntimeSecret(key: string): string | undefined {
+  // 1. Try OpenNext getCloudflareContext()
+  try {
+    const cf = getCloudflareContext();
+    const val = (cf?.env as Record<string, any>)?.[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+  } catch {
+    // getCloudflareContext may throw outside of request context or during local build/prerender
+  }
+
+  // 2. Try global ALS store directly via Symbol.for("__cloudflare-context__")
+  try {
+    const globalContext = (globalThis as any)[Symbol.for('__cloudflare-context__')];
+    const val = (globalContext?.env as Record<string, any>)?.[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+  } catch {}
+
+  // 3. Fallback to process.env
+  try {
+    const procVal = process.env[key];
+    if (typeof procVal === 'string' && procVal.trim().length > 0) {
+      return procVal.trim();
+    }
+  } catch {}
+
+  return undefined;
+}
+
+/**
  * Retrieves and validates server-side Razorpay credentials from runtime environment.
  * NEVER expose RAZORPAY_KEY_SECRET to the client.
  */
 export function getRazorpayCredentials() {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const keyId =
+    getServerRuntimeSecret('RAZORPAY_KEY_ID') ||
+    getServerRuntimeSecret('NEXT_PUBLIC_RAZORPAY_KEY_ID');
+  const keySecret = getServerRuntimeSecret('RAZORPAY_KEY_SECRET');
 
   if (!keyId || !keySecret) {
     throw new Error(
@@ -48,6 +87,19 @@ export function getRazorpayCredentials() {
   }
 
   return { keyId, keySecret };
+}
+
+/**
+ * Retrieves and validates server-side Razorpay Webhook secret from runtime environment.
+ */
+export function getRazorpayWebhookSecret(): string {
+  const webhookSecret = getServerRuntimeSecret('RAZORPAY_WEBHOOK_SECRET');
+  if (!webhookSecret) {
+    throw new Error(
+      'Server-side Razorpay webhook secret (RAZORPAY_WEBHOOK_SECRET) is missing or not configured.'
+    );
+  }
+  return webhookSecret;
 }
 
 /**

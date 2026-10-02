@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { verifyRazorpayWebhookSignature } from '@/lib/server/razorpay';
+import {
+  verifyRazorpayWebhookSignature,
+  getRazorpayWebhookSecret,
+} from '@/lib/server/razorpay';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,9 +20,10 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request) {
   try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-
-    if (!webhookSecret) {
+    let webhookSecret: string;
+    try {
+      webhookSecret = getRazorpayWebhookSecret();
+    } catch {
       console.error('RAZORPAY_WEBHOOK_SECRET is not configured on the server.');
       return NextResponse.json(
         { error: 'Webhook secret is not configured on server' },

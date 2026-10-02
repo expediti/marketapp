@@ -1085,12 +1085,12 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   };
 
   // --------------------------------------------------------------------------
-  // Realtime messages subscription for the active conversation
+  // Realtime subscriptions for active conversation (messages, deal_proposals, conversation)
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (!isSupabaseConfigured || !activeConversationId) return;
 
-    const channel = supabase
+    const convChannel = supabase
       .channel(`realtime_conv_${activeConversationId}`)
       .on(
         'postgres_changes',
@@ -1126,14 +1126,272 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
               [activeConversationId]: [...currentList, mapped],
             };
           });
+
+          // If message links to order, link conversation to order
+          if (newRow.order_id) {
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === activeConversationId && !c.order_id
+                  ? { ...c, order_id: newRow.order_id }
+                  : c
+              )
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'deal_proposals',
+          filter: `conversation_id=eq.${activeConversationId}`,
+        },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+          if (!row || !row.id) return;
+
+          if (payload.eventType === 'DELETE') {
+            setDealProposals((prev) => ({
+              ...prev,
+              [activeConversationId]: (prev[activeConversationId] || []).filter((p) => p.id !== row.id),
+            }));
+            return;
+          }
+
+          setConversations((prev) => {
+            const conv = prev.find((c) => c.id === activeConversationId);
+            const isBiz = row.proposed_by === conv?.business_user_id;
+            const mappedProposal: DealProposal = {
+              id: row.id,
+              request_id: row.request_id,
+              conversation_id: row.conversation_id,
+              order_id: row.order_id,
+              proposed_by: row.proposed_by,
+              proposer_name: isBiz
+                ? conv?.business?.business_name || 'Business'
+                : conv?.creator?.display_name || 'Creator',
+              proposer_role: isBiz ? 'business' : 'creator',
+              deliverable: row.deliverable,
+              price: Number(row.price) || 0,
+              deadline: row.deadline,
+              revisions_included: row.revisions_included ?? 1,
+              key_requirements: row.key_requirements,
+              status: row.status as DealProposalStatus,
+              version: row.version || 1,
+              supersedes_proposal_id: row.supersedes_proposal_id,
+              accepted_by: row.accepted_by,
+              accepted_at: row.accepted_at,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+            };
+
+            setDealProposals((propPrev) => {
+              const list = propPrev[activeConversationId] || [];
+              const exists = list.some((p) => p.id === mappedProposal.id);
+              const updated = exists
+                ? list.map((p) => (p.id === mappedProposal.id ? mappedProposal : p))
+                : [...list, mappedProposal];
+              return {
+                ...propPrev,
+                [activeConversationId]: updated,
+              };
+            });
+
+            return prev.map((c) => {
+              if (c.id === activeConversationId) {
+                const list = c.proposals || [];
+                const exists = list.some((p) => p.id === mappedProposal.id);
+                const updated = exists
+                  ? list.map((p) => (p.id === mappedProposal.id ? mappedProposal : p))
+                  : [...list, mappedProposal];
+                const activeP =
+                  updated.slice().reverse().find((p) => p.status === 'ACTIVE') ||
+                  (mappedProposal.status === 'ACCEPTED' ? mappedProposal : updated[updated.length - 1]);
+                return {
+                  ...c,
+                  proposals: updated,
+                  active_proposal: activeP,
+                  order_id: row.order_id || c.order_id,
+                };
+              }
+              return c;
+            });
+          });
+
+          if (row.status === 'ACCEPTED' && currentUser?.id) {
+            fetchUserData(currentUser.id, activeRole).catch(console.error);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          filter: `id=eq.${activeConversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row || !row.id) return;
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === row.id
+                ? {
+                    ...c,
+                    order_id: row.order_id || c.order_id,
+                    updated_at: row.updated_at,
+                  }
+                : c
+            )
+          );
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(convChannel);
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, currentUser?.id, activeRole, fetchUserData]);
+
+  // --------------------------------------------------------------------------
+  // Realtime subscription for user-level entities (orders, requests, notifications)
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentUser?.id) return;
+
+    const userChannel = supabase
+      .channel(`realtime_user_${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+        },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+          if (!row || !row.id) return;
+
+          if (payload.eventType === 'DELETE') {
+            setOrders((prev) => prev.filter((o) => o.id !== row.id));
+            return;
+          }
+
+          setOrders((prev) => {
+            const existing = prev.find((o) => o.id === row.id);
+            if (existing) {
+              return prev.map((o) =>
+                o.id === row.id
+                  ? {
+                      ...o,
+                      order_status: row.order_status || o.order_status,
+                      payment_status: row.payment_status || o.payment_status,
+                      payout_status: row.payout_status || o.payout_status,
+                      total_amount: row.total_amount ? Number(row.total_amount) : o.total_amount,
+                      included_revisions: row.included_revisions ?? o.included_revisions,
+                      revisions_used: row.revisions_used ?? o.revisions_used,
+                      work_started_at: row.work_started_at || o.work_started_at,
+                      delivered_at: row.delivered_at || o.delivered_at,
+                      updated_at: row.updated_at || new Date().toISOString(),
+                    }
+                  : o
+              );
+            } else {
+              const bUserId = row.business_user_id || row.business_id;
+              const cUserId = row.creator_user_id || row.creator_id;
+              const synthesized: Order = {
+                id: row.id,
+                order_number: row.order_number,
+                campaign_id: row.campaign_id,
+                request_id: row.request_id,
+                business_id: bUserId,
+                business_user_id: bUserId,
+                creator_id: cUserId,
+                creator_user_id: cUserId,
+                package_id: row.package_id,
+                order_status: row.order_status,
+                payment_status: row.payment_status,
+                payout_status: row.payout_status || 'UNRELEASED',
+                subtotal: Number(row.subtotal) || Number(row.agreed_price) || 0,
+                platform_fee: Number(row.platform_fee) || 0,
+                total_amount: Number(row.total_amount) || 0,
+                deadline: row.deadline,
+                included_revisions: row.included_revisions ?? 1,
+                revisions_used: row.revisions_used ?? 0,
+                work_started_at: row.work_started_at || null,
+                agreed_price: Number(row.agreed_price) || Number(row.subtotal) || 0,
+                agreed_deadline: row.agreed_deadline || row.deadline,
+                requirements: row.requirements,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+              };
+              return [synthesized, ...prev];
+            }
+          });
+
+          // Ensure active conversation links to this order if applicable
+          if (row.request_id || row.id) {
+            setConversations((prev) =>
+              prev.map((c) =>
+                (c.request_id === row.request_id || c.order_id === row.id) && !c.order_id
+                  ? { ...c, order_id: row.id }
+                  : c
+              )
+            );
+          }
+
+          fetchUserData(currentUser.id, activeRole).catch(console.error);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'collaboration_requests',
+        },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+          if (!row || !row.id) return;
+
+          setCollaborationRequests((prev) =>
+            prev.map((r) =>
+              r.id === row.id
+                ? {
+                    ...r,
+                    status: row.status || r.status,
+                    responded_at: row.responded_at || r.responded_at,
+                    updated_at: row.updated_at || r.updated_at,
+                  }
+                : r
+            )
+          );
+
+          if (payload.eventType === 'INSERT') {
+            fetchUserData(currentUser.id, activeRole).catch(console.error);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        () => {
+          fetchUserData(currentUser.id, activeRole).catch(console.error);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(userChannel);
+    };
+  }, [currentUser?.id, activeRole, fetchUserData]);
 
   // --------------------------------------------------------------------------
   // COLLABORATION REQUESTS
@@ -1784,12 +2042,101 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         throw new Error('Failed to create order from proposal');
       }
 
-      if (currentUser?.id) {
-        await fetchUserData(currentUser.id, activeRole);
+      // Find the accepted proposal across conversations
+      let convId: string | undefined;
+      let targetProposal: DealProposal | undefined;
+      for (const [cId, plist] of Object.entries(dealProposals)) {
+        const found = plist.find((p) => p.id === proposalId);
+        if (found) {
+          convId = cId;
+          targetProposal = found;
+          break;
+        }
       }
 
-      const updatedOrder = orders.find((o) => o.id === res.order_id);
-      return updatedOrder || ({} as Order);
+      const now = new Date().toISOString();
+
+      // 1. Immediately update dealProposals state synchronously
+      if (convId) {
+        setDealProposals((prev) => {
+          const list = prev[convId!] || [];
+          return {
+            ...prev,
+            [convId!]: list.map((p) =>
+              p.id === proposalId
+                ? {
+                    ...p,
+                    status: 'ACCEPTED' as DealProposalStatus,
+                    accepted_at: now,
+                    accepted_by: currentUser.id,
+                    order_id: res.order_id,
+                  }
+                : p.status === 'ACTIVE'
+                ? { ...p, status: 'SUPERSEDED' as DealProposalStatus }
+                : p
+            ),
+          };
+        });
+
+        // 2. Immediately update conversations state synchronously
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  order_id: res.order_id,
+                  active_proposal: targetProposal
+                    ? {
+                        ...targetProposal,
+                        status: 'ACCEPTED' as DealProposalStatus,
+                        order_id: res.order_id,
+                      }
+                    : c.active_proposal,
+                }
+              : c
+          )
+        );
+      }
+
+      // 3. Immediately synthesize and add the new order into orders state
+      const targetConv = conversations.find((c) => c.id === convId);
+      const targetReqId = targetProposal?.request_id || targetConv?.request_id;
+      const targetRequest = collaborationRequests.find((r) => r.id === targetReqId);
+
+      const newOrder: Order = {
+        id: res.order_id,
+        order_number: res.order_number,
+        business_id: targetConv?.business_user_id || currentUser.id,
+        business_user_id: targetConv?.business_user_id || currentUser.id,
+        business: targetConv?.business,
+        creator_id: targetConv?.creator_user_id || currentUser.id,
+        creator_user_id: targetConv?.creator_user_id || currentUser.id,
+        creator: targetConv?.creator,
+        request_id: targetReqId || null,
+        campaign_id: targetRequest?.campaign_id || null,
+        package_id: targetRequest?.package_id || '00000000-0000-0000-0000-000000000000',
+        order_status: 'DEAL_CONFIRMED',
+        payment_status: 'PENDING',
+        payout_status: 'UNRELEASED',
+        subtotal: targetProposal?.price || Number(res.total_amount) || 0,
+        platform_fee: Math.round((targetProposal?.price || 0) * 0.05),
+        total_amount: Number(res.total_amount) || (targetProposal?.price || 0) * 1.05,
+        deadline: targetProposal?.deadline || now,
+        included_revisions: res.included_revisions ?? targetProposal?.revisions_included ?? 1,
+        revisions_used: 0,
+        requirements: targetProposal?.key_requirements,
+        created_at: now,
+        updated_at: now,
+      };
+
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
+
+      // 4. Background refresh full user data
+      if (currentUser?.id) {
+        fetchUserData(currentUser.id, activeRole).catch(console.error);
+      }
+
+      return newOrder;
     }
 
     throw new Error('Supabase required');
@@ -1874,8 +2221,24 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       customerEmail: customerEmail || currentUser.email,
     });
 
-    if (result.success && currentUser?.id) {
-      await fetchUserData(currentUser.id, activeRole);
+    if (result.success) {
+      // Synchronously transition local order to PAID so UI updates instantaneously
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                order_status: 'PAID',
+                payment_status: 'PAID',
+                updated_at: new Date().toISOString(),
+              }
+            : o
+        )
+      );
+
+      if (currentUser?.id) {
+        fetchUserData(currentUser.id, activeRole).catch(console.error);
+      }
     }
 
     return result;
@@ -1894,8 +2257,22 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         throw new Error(error.message);
       }
 
+      // Synchronously transition local order to WORK_STARTED
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                order_status: 'WORK_STARTED',
+                work_started_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }
+            : o
+        )
+      );
+
       if (currentUser?.id) {
-        await fetchUserData(currentUser.id, activeRole);
+        fetchUserData(currentUser.id, activeRole).catch(console.error);
       }
     }
   };

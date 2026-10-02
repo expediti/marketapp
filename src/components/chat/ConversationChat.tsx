@@ -143,12 +143,25 @@ export function ConversationChat({
     activeConversation?.proposals ||
     [];
 
+  // Active proposal (the latest ACTIVE one)
+  const activeProposal = convProposals
+    .slice()
+    .reverse()
+    .find((p) => p.status === 'ACTIVE');
+
+  // Accepted proposal (the latest ACCEPTED one)
+  const acceptedProposal = convProposals
+    .slice()
+    .reverse()
+    .find((p) => p.status === 'ACCEPTED');
+
   // Find linked order for active conversation
-  const activeOrder = activeConversation?.order_id
-    ? orders.find((o) => o.id === activeConversation.order_id)
+  const targetOrderId = activeConversation?.order_id || acceptedProposal?.order_id || activeProposal?.order_id;
+  const activeOrder = targetOrderId
+    ? orders.find((o) => o.id === targetOrderId)
     : orders.find(
         (o) =>
-          o.request_id === activeConversation?.request_id ||
+          (activeConversation?.request_id && o.request_id === activeConversation.request_id) ||
           (o.creator_user_id === activeConversation?.creator_user_id &&
             o.business_user_id === activeConversation?.business_user_id)
       );
@@ -157,12 +170,6 @@ export function ConversationChat({
   const linkedRequest = collaborationRequests.find(
     (r) => r.id === activeConversation?.request_id
   );
-
-  // Active proposal (the latest ACTIVE one)
-  const activeProposal = convProposals
-    .slice()
-    .reverse()
-    .find((p) => p.status === 'ACTIVE');
 
   // Check if conversation is ended
   const isEnded =
@@ -712,6 +719,27 @@ export function ConversationChat({
               feedItems.map((item) => {
                 if (item.type === 'message') {
                   const msg = item.data;
+                  const bodyText = msg.body || msg.message || '';
+                  const isDealConfirmedMsg = bodyText.startsWith('✓ Deal confirmed!');
+
+                  if (isDealConfirmedMsg) {
+                    return (
+                      <div key={`msg_${msg.id}`} className="w-full my-2 flex justify-center">
+                        <div className="max-w-lg w-full p-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200 shadow-sm flex items-start gap-2.5">
+                          <CheckCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                          <div className="space-y-1 flex-1">
+                            <span className="font-bold block text-xs text-purple-950 dark:text-purple-100">
+                              Deal Confirmed
+                            </span>
+                            <p className="text-[11px] leading-relaxed text-purple-800 dark:text-purple-300">
+                              {bodyText}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const isMe =
                     msg.sender_id === currentUser?.id ||
                     msg.sender_user_id === currentUser?.id;
@@ -894,9 +922,107 @@ export function ConversationChat({
                       )}
 
                       {prop.status === 'ACCEPTED' && (
-                        <div className="text-[11px] text-[#047857] dark:text-emerald-400 font-bold flex items-center gap-1 pt-1 border-t border-[#A7F3D0] dark:border-emerald-800">
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>Terms locked & deal confirmed.</span>
+                        <div className="space-y-3 pt-2 border-t border-[#A7F3D0] dark:border-emerald-800">
+                          <div className="text-[11px] text-[#047857] dark:text-emerald-400 font-bold flex items-center gap-1.5">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Terms locked & deal confirmed.</span>
+                          </div>
+
+                          {/* PAYMENT REQUIRED ACTION (Business) OR WAITING STATUS (Creator) */}
+                          {(!activeOrder || ((activeOrder.order_status === 'DEAL_CONFIRMED' || activeOrder.order_status === 'PAYMENT_PENDING') && activeOrder.payment_status !== 'PAID')) && (
+                            <div className="p-3.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 space-y-3">
+                              <div className="flex items-start gap-2">
+                                <CheckCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                <div>
+                                  <h5 className="font-bold text-xs text-purple-950 dark:text-purple-200">
+                                    {isMeBusiness
+                                      ? 'Deal Confirmed — Payment Required'
+                                      : 'Deal Confirmed — Waiting for Business Payment'}
+                                  </h5>
+                                  <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5">
+                                    {isMeBusiness
+                                      ? 'Deal confirmed. Payment is required before the creator can start working.'
+                                      : 'Deal confirmed. Waiting for business payment. You can start working once payment is completed.'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Agreed Terms Breakdown */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2 border-y border-purple-200 dark:border-purple-900/60 text-[11px]">
+                                <div>
+                                  <span className="text-purple-700 dark:text-purple-400 block text-[10px]">Agreed Deliverable</span>
+                                  <span className="font-semibold text-purple-950 dark:text-purple-100 truncate block">{prop.deliverable}</span>
+                                </div>
+                                <div>
+                                  <span className="text-purple-700 dark:text-purple-400 block text-[10px]">Agreed Price</span>
+                                  <span className="font-bold text-purple-950 dark:text-purple-100 block">₹{prop.price.toLocaleString('en-IN')}</span>
+                                </div>
+                                <div>
+                                  <span className="text-purple-700 dark:text-purple-400 block text-[10px]">Deadline</span>
+                                  <span className="font-semibold text-purple-950 dark:text-purple-100 block">{new Date(prop.deadline).toLocaleDateString('en-IN')}</span>
+                                </div>
+                                <div>
+                                  <span className="text-purple-700 dark:text-purple-400 block text-[10px]">Included Revisions</span>
+                                  <span className="font-semibold text-purple-950 dark:text-purple-100 block">{prop.revisions_included} included</span>
+                                </div>
+                              </div>
+
+                              {/* Business Pay Now Button */}
+                              {isMeBusiness ? (
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-xs font-bold text-purple-950 dark:text-purple-200">
+                                    Total: ₹{(activeOrder?.total_amount || Math.round(prop.price * 1.05)).toLocaleString('en-IN')}
+                                  </span>
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    disabled={isPaying}
+                                    onClick={handleConfirmPayment}
+                                    className="bg-[#FF5416] hover:bg-[#E0450C] text-white font-bold shadow-sm text-xs"
+                                  >
+                                    <CreditCard className="w-3.5 h-3.5 mr-1" />
+                                    <span>
+                                      {isPaying
+                                        ? 'Opening Checkout...'
+                                        : `Pay Now — ₹${(activeOrder?.total_amount || Math.round(prop.price * 1.05)).toLocaleString('en-IN')}`}
+                                    </span>
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-purple-800 dark:text-purple-300 font-medium">
+                                  You can start working once payment is completed.
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* PAYMENT RECEIVED / START WORK */}
+                          {activeOrder && (activeOrder.order_status === 'PAID' || activeOrder.payment_status === 'PAID') && (
+                            <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="w-4 h-4 text-[#047857] shrink-0" />
+                                  <span className="font-bold text-xs text-emerald-900 dark:text-emerald-200">
+                                    {isMeCreator
+                                      ? 'Payment received. You can now start working.'
+                                      : 'Payment confirmed! Order is funded.'}
+                                  </span>
+                                </div>
+
+                                {isMeCreator && activeOrder.order_status === 'PAID' && (
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => markWorkStarted(activeOrder.id)}
+                                    className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white font-bold"
+                                  >
+                                    <PlayCircle className="w-3.5 h-3.5 mr-1" />
+                                    <span>Mark as Started</span>
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
