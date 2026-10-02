@@ -36,6 +36,25 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
+import { parseInstagramUrl } from '@/lib/utils/instagram';
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
 
 type TabKey =
   | 'overview'
@@ -63,6 +82,10 @@ interface DbCreatorState {
   engagement_rate?: number | null;
   creator_packages?: CreatorPackage[];
   payout_upi_id?: string | null;
+  instagram_connected?: boolean | null;
+  instagram_verified?: boolean | null;
+  instagram_username?: string | null;
+  metrics_source?: string | null;
 }
 
 function generatePackageId(): string {
@@ -510,6 +533,77 @@ export default function CreatorDashboardPage() {
     );
   };
 
+  // Instagram Reel URL input state
+  const [instagramReelUrl, setInstagramReelUrl] = useState('');
+  const [reelUrlError, setReelUrlError] = useState<string | null>(null);
+  const [isAddingReelUrl, setIsAddingReelUrl] = useState(false);
+  const [isSavingReelUrl, setIsSavingReelUrl] = useState(false);
+
+  const handleAddInstagramReel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReelUrlError(null);
+    const parsed = parseInstagramUrl(instagramReelUrl);
+    if (!parsed.isValid || !parsed.canonicalUrl) {
+      setReelUrlError(
+        parsed.error || 'Please enter a valid Instagram Reel URL (e.g. https://www.instagram.com/reel/...)'
+      );
+      return;
+    }
+
+    setIsSavingReelUrl(true);
+    const reelPayload = {
+      creator_id: creatorId,
+      title: newReelTitle.trim() || 'Instagram Reel',
+      video_url: parsed.canonicalUrl,
+      reel_url: parsed.canonicalUrl,
+      instagram_media_id: parsed.shortcode || undefined,
+      type: newReelType,
+      sort_order: reels.length + 1,
+      is_featured: reels.length === 0,
+      is_visible: true,
+    };
+
+    try {
+      if (isSupabaseConfigured) {
+        const { data, error } = await supabase
+          .from('creator_reels')
+          .insert(reelPayload)
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          setReels((prev) => [data as unknown as CreatorReel, ...prev]);
+        } else {
+          setReels((prev) => [
+            {
+              ...reelPayload,
+              id: `reel_ig_${Date.now()}`,
+              created_at: new Date().toISOString(),
+            },
+            ...prev,
+          ]);
+        }
+      } else {
+        setReels((prev) => [
+          {
+            ...reelPayload,
+            id: `reel_ig_${Date.now()}`,
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+      }
+
+      setInstagramReelUrl('');
+      setNewReelTitle('');
+      setIsAddingReelUrl(false);
+    } catch (err: any) {
+      setReelUrlError(err.message || 'Failed to save Instagram Reel');
+    } finally {
+      setIsSavingReelUrl(false);
+    }
+  };
+
   const handleCreatePackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPkgName.trim()) return;
@@ -873,8 +967,53 @@ export default function CreatorDashboardPage() {
             <div>
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Audience Reach</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount} Followers
+                {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount}{' '}
+                {dbCreator?.instagram_connected ? 'Verified Followers' : 'Followers'}
               </p>
+            </div>
+
+            {/* Instagram Account Connection */}
+            <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                    <InstagramIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">
+                        {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified'
+                          ? `@${dbCreator?.instagram_username || 'connected'}`
+                          : 'Instagram Account'}
+                      </h4>
+                      {(dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified') && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
+                      )}
+                    </div>
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                      {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified'
+                        ? 'Meta Graph API Connected & Verified'
+                        : 'Connect your creator account to verify followers automatically.'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified' ? (
+                    <span className="text-[11px] px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
+                      Connected ✓
+                    </span>
+                  ) : (
+                    <a
+                      href="/api/auth/instagram/authorize?returnTo=/dashboard/creator?tab=profile"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
+                    >
+                      <InstagramIcon className="w-3.5 h-3.5" />
+                      <span>Connect Instagram</span>
+                    </a>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="sm:col-span-2">
@@ -931,6 +1070,14 @@ export default function CreatorDashboardPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAddingReelUrl(!isAddingReelUrl)}
+              >
+                <InstagramIcon className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
+                <span>{isAddingReelUrl ? 'Cancel' : 'Add Instagram Reel'}</span>
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -946,10 +1093,92 @@ export default function CreatorDashboardPage() {
                 disabled={isUploading}
               >
                 <Upload className="w-3.5 h-3.5 mr-1" />
-                <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload New Reel'}</span>
+                <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload MP4'}</span>
               </Button>
             </div>
           </div>
+
+          {/* Add Instagram Reel URL Form */}
+          {isAddingReelUrl && (
+            <form
+              onSubmit={handleAddInstagramReel}
+              className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4 font-mono text-xs"
+            >
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-2">
+                <span className="font-bold text-[#121214] dark:text-white flex items-center gap-1.5">
+                  <InstagramIcon className="w-4 h-4 text-[#FF5416]" />
+                  <span>Add Instagram Reel Work Sample</span>
+                </span>
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
+                  Embeds via Instagram player without video upload
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Reel Title</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Fintech App UI Walkthrough"
+                    value={newReelTitle}
+                    onChange={(e) => setNewReelTitle(e.target.value)}
+                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Sample Type</label>
+                  <select
+                    value={newReelType}
+                    onChange={(e) => setNewReelType(e.target.value as ReelType)}
+                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white"
+                  >
+                    <option value="client_work">Promotional Campaign</option>
+                    <option value="demo">Sample / Demo Reel</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-[#121214] dark:text-white block mb-1">
+                  Instagram Reel URL <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://www.instagram.com/reel/..."
+                  value={instagramReelUrl}
+                  onChange={(e) => {
+                    setInstagramReelUrl(e.target.value);
+                    if (reelUrlError) setReelUrlError(null);
+                  }}
+                  className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              {reelUrlError && (
+                <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{reelUrlError}</span>
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingReelUrl(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isSavingReelUrl}
+                  disabled={!instagramReelUrl.trim()}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  <span>Save Reel Sample</span>
+                </Button>
+              </div>
+            </form>
+          )}
 
           {uploadError && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300 rounded-lg text-xs font-mono flex items-center gap-2">

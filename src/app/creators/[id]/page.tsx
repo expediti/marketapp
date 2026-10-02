@@ -26,6 +26,24 @@ import {
   Check,
 } from 'lucide-react';
 
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
+
 export default function CreatorDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -62,7 +80,7 @@ export default function CreatorDetailPage() {
         supabase
           .from('creator_profiles')
           .select(
-            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
           )
           .eq('user_id', creatorId)
           .maybeSingle(),
@@ -107,6 +125,8 @@ export default function CreatorDetailPage() {
               engagement_rate: Number(cp.engagement_rate) || 0,
               instagram_connected: cp.instagram_connected || false,
               instagram_verified: cp.instagram_verified || false,
+              instagram_username: cp.instagram_username || null,
+              metrics_source: cp.metrics_source || 'platform_manual',
               verification_status: cp.verification_status as any,
               packages: pkgs.map((p) => ({
                 id: p.id,
@@ -128,6 +148,8 @@ export default function CreatorDetailPage() {
                 title: r.title,
                 description: r.description || undefined,
                 video_url: r.video_url,
+                reel_url: r.reel_url || undefined,
+                instagram_media_id: r.instagram_media_id || undefined,
                 thumbnail_url: r.thumbnail_url || undefined,
                 type: r.type as any,
                 sort_order: r.sort_order || 0,
@@ -287,10 +309,17 @@ export default function CreatorDetailPage() {
                     ? `${creator.city || creator.profile?.city}, ${creator.state}`
                     : (creator.city || creator.profile?.city || 'India')}
                 </span>
-                <div className="flex items-center gap-1 text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Platform Metrics</span>
-                </div>
+                {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified' ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                    <InstagramIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                    <span>Instagram Verified {creator.instagram_username ? `@${creator.instagram_username}` : ''}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Self-Declared Metrics</span>
+                  </div>
+                )}
               </div>
 
               <h1 className="font-mono text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#121214] dark:text-white tracking-tight">
@@ -345,10 +374,19 @@ export default function CreatorDetailPage() {
         {/* 4 CORE METRICS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
-            <div className="font-mono text-xl sm:text-2xl font-bold text-[#121214] dark:text-white">
-              {formatNumber(creator.follower_count)}
+            <div className="font-mono text-xl sm:text-2xl font-bold text-[#121214] dark:text-white flex items-center justify-center gap-1">
+              <span>{formatNumber(creator.follower_count)}</span>
+              {(creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified') && (
+                <span title="Meta Graph API Verified" className="inline-flex items-center">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
+                </span>
+              )}
             </div>
-            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">Followers</div>
+            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
+              {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified'
+                ? 'Verified Followers'
+                : 'Followers'}
+            </div>
           </div>
 
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
@@ -377,7 +415,7 @@ export default function CreatorDetailPage() {
       {/* TABS NAVIGATION */}
       <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-[#27272A] pb-2 font-mono text-xs overflow-x-auto">
         {[
-          { key: 'work', label: `Work & Reels (${reels.length})`, icon: Film },
+          { key: 'work', label: `Work Samples & Reels (${reels.length})`, icon: Film },
           { key: 'packages', label: `Packages (${creator.packages?.length || 0})`, icon: Package },
           { key: 'audience', label: 'Audience Demographics', icon: Users },
           { key: 'about', label: 'About & Details', icon: Info },

@@ -54,10 +54,17 @@ export function CreatorCard({ creator }: CreatorCardProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-1 text-[10px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>Platform</span>
-          </div>
+          {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified' ? (
+            <div className="flex items-center gap-1 text-[10px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+              <CheckCircle2 className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+              <span>IG Verified</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Platform</span>
+            </div>
+          )}
         </div>
 
         {/* WORK SAMPLE PREVIEW (Prominent Reels / Videos) */}
@@ -113,7 +120,9 @@ export function CreatorCard({ creator }: CreatorCardProps) {
         <div className="flex items-center justify-between py-2 border-y border-[#ECECE6] dark:border-[#27272A] text-xs font-mono text-[#71717A] dark:text-[#A1A1AA] mb-4">
           <div>
             <span className="font-bold text-[#121214] dark:text-white">{formatFollowers(creator.follower_count)}</span>
-            <span className="text-[10px] ml-1 uppercase">Followers</span>
+            <span className="text-[10px] ml-1 uppercase">
+              {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified' ? 'Verified' : 'Followers'}
+            </span>
           </div>
           <div className="text-center">
             <span className="font-bold text-[#121214] dark:text-white">{(creator.average_reach / 1000).toFixed(0)}K</span>

@@ -68,6 +68,10 @@ export interface Database {
           metrics_verified_at: string | null;
           verification_status: string;
           payout_upi_id: string | null;
+          instagram_username: string | null;
+          instagram_profile_data: Json | null;
+          instagram_connected_at: string | null;
+          instagram_access_token: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -96,6 +100,10 @@ export interface Database {
           metrics_verified_at?: string | null;
           verification_status?: string;
           payout_upi_id?: string | null;
+          instagram_username?: string | null;
+          instagram_profile_data?: Json | null;
+          instagram_connected_at?: string | null;
+          instagram_access_token?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -124,6 +132,10 @@ export interface Database {
           metrics_verified_at?: string | null;
           verification_status?: string;
           payout_upi_id?: string | null;
+          instagram_username?: string | null;
+          instagram_profile_data?: Json | null;
+          instagram_connected_at?: string | null;
+          instagram_access_token?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -317,6 +329,8 @@ export interface Database {
           sort_order: number;
           is_featured: boolean;
           is_visible: boolean;
+          instagram_media_id: string | null;
+          reel_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -336,6 +350,8 @@ export interface Database {
           sort_order?: number;
           is_featured?: boolean;
           is_visible?: boolean;
+          instagram_media_id?: string | null;
+          reel_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -355,6 +371,8 @@ export interface Database {
           sort_order?: number;
           is_featured?: boolean;
           is_visible?: boolean;
+          instagram_media_id?: string | null;
+          reel_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -949,6 +967,17 @@ export interface Database {
       };
       update_my_payout_upi_id: {
         Args: { p_upi_id: string };
+        Returns: Json;
+      };
+      save_creator_instagram_connection: {
+        Args: {
+          p_user_id: string;
+          p_instagram_user_id: string;
+          p_instagram_username: string;
+          p_follower_count: number;
+          p_profile_data: Json;
+          p_access_token?: string;
+        };
         Returns: Json;
       };
     };

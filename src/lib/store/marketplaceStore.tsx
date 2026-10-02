@@ -214,7 +214,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         supabase
           .from('creator_profiles')
           .select(
-            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
           ),
         supabase.from('profiles').select('*'),
         supabase.from('creator_packages').select('*'),
@@ -268,6 +268,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           engagement_rate: Number(cp.engagement_rate) || 0,
           instagram_connected: cp.instagram_connected || false,
           instagram_verified: cp.instagram_verified || false,
+          instagram_username: cp.instagram_username || null,
+          metrics_source: (cp.metrics_source as any) || 'platform_manual',
           verification_status: (cp.verification_status as any) || 'unverified',
           packages: pkgs.map((p) => ({
             id: p.id,
@@ -289,6 +291,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
             title: r.title,
             description: r.description || undefined,
             video_url: r.video_url,
+            reel_url: r.reel_url || undefined,
+            instagram_media_id: r.instagram_media_id || undefined,
             thumbnail_url: r.thumbnail_url || undefined,
             type: (r.type as 'client_work' | 'demo') || 'demo',
             sort_order: r.sort_order || 0,

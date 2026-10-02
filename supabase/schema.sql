@@ -133,12 +133,21 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
     metrics_verified_at TIMESTAMPTZ,
     verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified', 'pending', 'verified', 'rejected')),
     payout_upi_id TEXT,
+    instagram_username TEXT,
+    instagram_profile_data JSONB DEFAULT '{}'::jsonb,
+    instagram_connected_at TIMESTAMPTZ,
+    instagram_access_token TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS payout_upi_id TEXT;
 COMMENT ON COLUMN public.creator_profiles.payout_upi_id IS 'Creator payout UPI ID (VPA) for manual payouts initiated via RazorpayX Dashboard. Strictly private to creator and platform owner.';
+
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS instagram_username TEXT;
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS instagram_profile_data JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS instagram_connected_at TIMESTAMPTZ;
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS instagram_access_token TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_niche ON public.creator_profiles(niche);
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_follower_count ON public.creator_profiles(follower_count);
@@ -246,9 +255,14 @@ CREATE TABLE IF NOT EXISTS public.creator_reels (
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_featured BOOLEAN NOT NULL DEFAULT false,
     is_visible BOOLEAN NOT NULL DEFAULT true,
+    instagram_media_id TEXT,
+    reel_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.creator_reels ADD COLUMN IF NOT EXISTS instagram_media_id TEXT;
+ALTER TABLE public.creator_reels ADD COLUMN IF NOT EXISTS reel_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_creator_reels_creator_id ON public.creator_reels(creator_id);
 CREATE INDEX IF NOT EXISTS idx_creator_reels_is_visible ON public.creator_reels(is_visible);
@@ -1582,6 +1596,80 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_my_payout_upi_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_my_payout_upi_id(TEXT) TO authenticated;
+
+-- Helper RPC for creator to connect or update their Instagram profile data
+CREATE OR REPLACE FUNCTION public.save_creator_instagram_connection(
+    p_user_id UUID,
+    p_instagram_user_id TEXT,
+    p_instagram_username TEXT,
+    p_follower_count INTEGER,
+    p_profile_data JSONB,
+    p_access_token TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_now TIMESTAMPTZ := timezone('utc'::text, now());
+BEGIN
+    INSERT INTO public.creator_profiles (
+        user_id,
+        instagram_connected,
+        instagram_verified,
+        instagram_user_id,
+        instagram_username,
+        follower_count,
+        metrics_source,
+        metrics_verified_at,
+        instagram_connected_at,
+        instagram_profile_data,
+        instagram_access_token,
+        updated_at
+    )
+    VALUES (
+        p_user_id,
+        true,
+        true,
+        p_instagram_user_id,
+        p_instagram_username,
+        COALESCE(p_follower_count, 0),
+        'instagram_meta_verified',
+        v_now,
+        v_now,
+        COALESCE(p_profile_data, '{}'::jsonb),
+        p_access_token,
+        v_now
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+        instagram_connected = true,
+        instagram_verified = true,
+        instagram_user_id = EXCLUDED.instagram_user_id,
+        instagram_username = EXCLUDED.instagram_username,
+        follower_count = CASE 
+            WHEN p_follower_count IS NOT NULL AND p_follower_count > 0 THEN p_follower_count 
+            ELSE public.creator_profiles.follower_count 
+        END,
+        metrics_source = 'instagram_meta_verified',
+        metrics_verified_at = v_now,
+        instagram_connected_at = v_now,
+        instagram_profile_data = EXCLUDED.instagram_profile_data,
+        instagram_access_token = COALESCE(EXCLUDED.instagram_access_token, public.creator_profiles.instagram_access_token),
+        updated_at = v_now;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'user_id', p_user_id,
+        'instagram_username', p_instagram_username,
+        'follower_count', p_follower_count,
+        'connected_at', v_now
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_creator_instagram_connection TO authenticated;
+GRANT EXECUTE ON FUNCTION public.save_creator_instagram_connection TO service_role;
 
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

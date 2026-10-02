@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Order } from '@/types/marketplace';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
+import { parseInstagramUrl } from '@/lib/utils/instagram';
 import {
   CheckCircle,
   AlertTriangle,
@@ -157,8 +158,11 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
       return;
     }
 
-    if (!instagramPostUrl.trim()) {
-      setSubmissionError('Please provide the live Instagram post URL for verification.');
+    const parsedIg = parseInstagramUrl(instagramPostUrl.trim());
+    if (!parsedIg.isValid || !parsedIg.canonicalUrl) {
+      setSubmissionError(
+        parsedIg.error || 'Please provide a valid Instagram Reel or Post URL (e.g. https://www.instagram.com/reel/...)'
+      );
       return;
     }
 
@@ -641,10 +645,10 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                 </p>
               </div>
 
-              {/* 2. Instagram Post URL */}
+              {/* 2. Instagram Reel / Post URL */}
               <div>
                 <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  2. Instagram Post URL <span className="text-red-500">*</span>
+                  2. Final Instagram Reel URL <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <InstagramIcon className="w-4 h-4 absolute left-3 top-2.5 text-[#FF5416]" />
@@ -653,10 +657,13 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                     required
                     value={instagramPostUrl}
                     onChange={(e) => setInstagramPostUrl(e.target.value)}
-                    placeholder="https://www.instagram.com/p/..."
+                    placeholder="https://www.instagram.com/reel/... or https://www.instagram.com/p/..."
                     className="w-full text-xs py-2 pl-9 pr-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
                   />
                 </div>
+                <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                  Submit the live Instagram Reel link. This attaches directly to this order delivery record (NOT chat).
+                </p>
               </div>
 
               {/* 3. Optional Notes */}
@@ -768,7 +775,7 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                 <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded border border-[#ECECE6] dark:border-zinc-800 space-y-1">
                   <span className="text-[10px] text-[#71717A] dark:text-zinc-400 uppercase font-bold flex items-center gap-1">
                     <InstagramIcon className="w-3 h-3 text-[#FF5416]" />
-                    Live Instagram Post
+                    Live Instagram Reel / Post
                   </span>
                   {order.delivery.instagram_post_url ? (
                     <a

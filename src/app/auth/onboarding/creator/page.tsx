@@ -23,8 +23,28 @@ import {
   AlertCircle,
   MapPin,
   Loader2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
+import { parseInstagramUrl } from '@/lib/utils/instagram';
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
 
 const POPULAR_CATEGORIES = [
   'Technology',
@@ -71,7 +91,43 @@ export default function CreatorOnboardingPage() {
   const [payoutUpiId, setPayoutUpiId] = useState('');
   const [upiError, setUpiError] = useState<string | null>(null);
 
-  // Prefill Google authenticated user data
+  // Step 4: Verified Instagram Connection (Manual follower input removed)
+  const [isInstagramConnected, setIsInstagramConnected] = useState<boolean>(false);
+  const [instagramUsername, setInstagramUsername] = useState<string>('');
+  const [followerCount, setFollowerCount] = useState<number>(0);
+  const [averageReach, setAverageReach] = useState<number>(0);
+  const [engagementRate, setEngagementRate] = useState<number>(0);
+  const [igError, setIgError] = useState<string | null>(null);
+
+  // Step 6: Reel link / upload state
+  const [instagramReelUrl, setInstagramReelUrl] = useState('');
+  const [reelUrlError, setReelUrlError] = useState<string | null>(null);
+
+  // Handle URL query parameters from Instagram OAuth callback
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const stepParam = params.get('step');
+    const igConnected = params.get('ig_connected');
+    const igUser = params.get('ig_username');
+    const igFollowers = params.get('ig_followers');
+    const igErr = params.get('ig_error');
+
+    if (igErr) {
+      setIgError(decodeURIComponent(igErr));
+      setStep(4);
+    }
+    if (igConnected === 'true') {
+      setIsInstagramConnected(true);
+      if (igUser) setInstagramUsername(igUser);
+      if (igFollowers) setFollowerCount(Number(igFollowers));
+      setStep(4);
+    } else if (stepParam && ['1', '2', '3', '4', '5', '6'].includes(stepParam)) {
+      setStep(Number(stepParam) as any);
+    }
+  }, []);
+
+  // Prefill Google authenticated user data & check existing Instagram connection
   useEffect(() => {
     async function loadAuth() {
       if (!isSupabaseConfigured) return;
@@ -100,6 +156,34 @@ export default function CreatorOnboardingPage() {
           if (profile?.city) {
             setCity(profile.city);
           }
+
+          // Check if creator_profiles exists to prefill verified Instagram connection
+          const { data: creatorProf } = await supabase
+            .from('creator_profiles')
+            .select('instagram_connected, instagram_username, follower_count, average_reach, engagement_rate, payout_upi_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (creatorProf) {
+            if (creatorProf.instagram_connected) {
+              setIsInstagramConnected(true);
+              if (creatorProf.instagram_username) {
+                setInstagramUsername(creatorProf.instagram_username);
+              }
+              if (creatorProf.follower_count) {
+                setFollowerCount(creatorProf.follower_count);
+              }
+              if (creatorProf.average_reach) {
+                setAverageReach(creatorProf.average_reach);
+              }
+              if (creatorProf.engagement_rate) {
+                setEngagementRate(Number(creatorProf.engagement_rate));
+              }
+            }
+            if (creatorProf.payout_upi_id) {
+              setPayoutUpiId(creatorProf.payout_upi_id);
+            }
+          }
         }
       } catch (err) {
         console.error('Error fetching user for onboarding:', err);
@@ -116,12 +200,6 @@ export default function CreatorOnboardingPage() {
   const [audienceAge, setAudienceAge] = useState('18-24 (54%), 25-34 (36%)');
   const [audienceGender, setAudienceGender] = useState('65% Male / 35% Female');
   const [audienceInterests, setAudienceInterests] = useState('Mobile Apps, SaaS, Gadgets, Productivity');
-
-  // Step 4: Social / Platform Metrics
-  const [followerCount, setFollowerCount] = useState<number>(45000);
-  const [averageReach, setAverageReach] = useState<number>(32000);
-  const [engagementRate, setEngagementRate] = useState<number>(4.8);
-  const [monthlyViews, setMonthlyViews] = useState<number>(120000);
 
   // Step 5: Packages
   const [packages, setPackages] = useState<CreatorPackage[]>([
@@ -255,6 +333,35 @@ export default function CreatorOnboardingPage() {
     setPackages([...packages, newPkg]);
   };
 
+  const handleAddInstagramReel = () => {
+    setReelUrlError(null);
+    const parsed = parseInstagramUrl(instagramReelUrl);
+    if (!parsed.isValid || !parsed.canonicalUrl) {
+      setReelUrlError(
+        parsed.error || 'Please enter a valid Instagram Reel URL (e.g. https://www.instagram.com/reel/...)'
+      );
+      return;
+    }
+
+    const newReel: CreatorReel = {
+      id: `reel_ig_${Date.now()}`,
+      creator_id: 'temp',
+      title: newReelTitle.trim() || 'Instagram Reel',
+      video_url: parsed.canonicalUrl,
+      reel_url: parsed.canonicalUrl,
+      instagram_media_id: parsed.shortcode || undefined,
+      type: newReelType,
+      sort_order: reels.length + 1,
+      is_featured: reels.length === 0,
+      is_visible: true,
+      created_at: new Date().toISOString(),
+    };
+
+    setReels([...reels, newReel]);
+    setInstagramReelUrl('');
+    setNewReelTitle('');
+  };
+
   const handleFinishOnboarding = async () => {
     setIsSaving(true);
     setOnboardingError(null);
@@ -288,7 +395,7 @@ export default function CreatorOnboardingPage() {
           console.warn('Profile update note:', profileError.message);
         }
 
-        // 2. Upsert creator_profiles
+        // 2. Upsert creator_profiles with verified Instagram metrics
         const { error: creatorError } = await supabase
           .from('creator_profiles')
           .upsert(
@@ -306,8 +413,11 @@ export default function CreatorOnboardingPage() {
               follower_count: followerCount,
               average_reach: averageReach,
               engagement_rate: engagementRate,
-              verification_status: 'unverified',
-              metrics_source: 'platform_manual',
+              instagram_connected: isInstagramConnected,
+              instagram_username: instagramUsername || null,
+              instagram_verified: isInstagramConnected,
+              verification_status: isInstagramConnected ? 'verified' : 'unverified',
+              metrics_source: isInstagramConnected ? 'instagram_meta_verified' : 'platform_manual',
               payout_upi_id: payoutUpiId.trim()
                 ? validateAndNormalizeUpiId(payoutUpiId).value
                 : null,
@@ -336,6 +446,25 @@ export default function CreatorOnboardingPage() {
           }));
           await supabase.from('creator_packages').insert(pkgRows);
         }
+
+        // 4. Upsert reels (stores reel_url and instagram_media_id without storage download)
+        if (reels.length > 0) {
+          const reelRows = reels.map((r, idx) => ({
+            creator_id: uid,
+            title: r.title,
+            video_url: r.video_url,
+            reel_url: r.reel_url || (r.video_url.includes('instagram.com') ? r.video_url : null),
+            instagram_media_id: r.instagram_media_id || null,
+            storage_path: r.storage_path || null,
+            mime_type: r.mime_type || undefined,
+            file_size_bytes: r.file_size_bytes || null,
+            type: r.type || 'client_work',
+            sort_order: idx + 1,
+            is_featured: r.is_featured ?? idx === 0,
+            is_visible: true,
+          }));
+          await supabase.from('creator_reels').insert(reelRows);
+        }
       }
 
       onboardCreator({
@@ -359,6 +488,10 @@ export default function CreatorOnboardingPage() {
         follower_count: followerCount,
         average_reach: averageReach,
         engagement_rate: engagementRate,
+        instagram_connected: isInstagramConnected,
+        instagram_verified: isInstagramConnected,
+        instagram_username: instagramUsername || undefined,
+        metrics_source: isInstagramConnected ? 'instagram_meta_verified' : 'platform_manual',
         packages,
         reels: reels || [],
         payout_upi_id: payoutUpiId.trim()
@@ -793,80 +926,99 @@ export default function CreatorOnboardingPage() {
               Back
             </Button>
             <Button variant="primary" size="md" onClick={() => setStep(4)}>
-              <span>Next: Social & Platform Metrics</span>
+              <span>Next: Connect Instagram</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 4: SOCIAL / PLATFORM METRICS */}
+      {/* STEP 4: CONNECT INSTAGRAM */}
       {step === 4 && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Platform Metrics</h2>
+            <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Connect Instagram</h2>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-              Provide your current stats. Metrics are stored as platform metrics and can be verified via Instagram later.
+              Connect your creator Instagram account to verify your profile and automatically import your verified follower count.
             </p>
           </div>
 
-          <div className="p-3.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800 dark:text-amber-300">
-              <strong>Transparency Note:</strong> Metrics are labeled as creator-declared platform metrics until the official Meta Graph API connection is authorized.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Total Followers
-              </label>
-              <input
-                type="number"
-                value={followerCount}
-                onChange={(e) => setFollowerCount(Number(e.target.value))}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-[#121214] dark:text-white"
-              />
+          {igError && (
+            <div className="p-3.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-800 dark:text-red-300">{igError}</p>
             </div>
+          )}
 
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Average 30-Day Reach
-              </label>
-              <input
-                type="number"
-                value={averageReach}
-                onChange={(e) => setAverageReach(Number(e.target.value))}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-[#121214] dark:text-white"
-              />
-            </div>
+          {isInstagramConnected ? (
+            <div className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white">
+                    <InstagramIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-sm font-bold text-[#121214] dark:text-white font-mono">
+                        @{instagramUsername || 'connected'}
+                      </h4>
+                      <CheckCircle2 className="w-4 h-4 text-[#FF5416]" />
+                    </div>
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                      Instagram Account Connected & Verified
+                    </span>
+                  </div>
+                </div>
 
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Engagement Rate (%)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={engagementRate}
-                onChange={(e) => setEngagementRate(Number(e.target.value))}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-[#121214] dark:text-white"
-              />
-            </div>
+                <span className="text-xs px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
+                  Verified
+                </span>
+              </div>
 
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Avg Reel Views
-              </label>
-              <input
-                type="number"
-                value={monthlyViews}
-                onChange={(e) => setMonthlyViews(Number(e.target.value))}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-[#121214] dark:text-white"
-              />
+              <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <span className="text-[11px] font-semibold text-[#71717A] dark:text-zinc-400 block mb-0.5">
+                    Verified Followers
+                  </span>
+                  <span className="text-lg font-mono font-bold text-[#121214] dark:text-white">
+                    {followerCount > 0 ? followerCount.toLocaleString('en-IN') : 'Verified via API'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold text-[#71717A] dark:text-zinc-400 block mb-0.5">
+                    Data Source
+                  </span>
+                  <span className="text-xs font-mono text-[#FF5416]">
+                    Meta Graph API (Verified)
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-6 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white mx-auto shadow-sm">
+                <InstagramIcon className="w-6 h-6" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-sm font-bold text-[#121214] dark:text-white">
+                  Connect your Instagram Account
+                </h3>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400">
+                  Connect your Instagram account to automatically verify your identity and import your follower statistics. No manual follower entry required.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <a
+                  href="/api/auth/instagram/authorize?returnTo=/auth/onboarding/creator"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold shadow-sm transition-all"
+                >
+                  <InstagramIcon className="w-4 h-4" />
+                  <span>Connect Instagram</span>
+                </a>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
             <Button variant="outline" size="sm" onClick={() => setStep(3)}>
@@ -1115,6 +1267,39 @@ export default function CreatorOnboardingPage() {
                   <span>{uploadError}</span>
                 </p>
               )}
+
+              {/* Or Add Instagram Reel Link directly without video file upload */}
+              <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 space-y-2">
+                <span className="text-xs font-semibold text-[#121214] dark:text-white flex items-center gap-1.5">
+                  <InstagramIcon className="w-3.5 h-3.5 text-[#FF5416]" />
+                  <span>Or Add Instagram Reel Link</span>
+                </span>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="https://www.instagram.com/reel/..."
+                    value={instagramReelUrl}
+                    onChange={(e) => {
+                      setInstagramReelUrl(e.target.value);
+                      if (reelUrlError) setReelUrlError(null);
+                    }}
+                    className="flex-1 py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddInstagramReel}
+                    disabled={!instagramReelUrl.trim()}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    <span>Add Reel</span>
+                  </Button>
+                </div>
+                {reelUrlError && (
+                  <p className="text-xs text-red-600 dark:text-red-400 font-mono">{reelUrlError}</p>
+                )}
+              </div>
               {onboardingError && (
                 <div className="p-3.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />

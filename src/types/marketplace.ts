@@ -98,6 +98,8 @@ export interface CreatorReel {
   sort_order: number;
   is_featured: boolean;
   is_visible: boolean;
+  instagram_media_id?: string | null;
+  reel_url?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -146,11 +148,13 @@ export interface CreatorProfile {
   instagram_connected: boolean;
   instagram_verified: boolean;
   instagram_user_id?: string | null;
+  instagram_username?: string | null;
+  instagram_connected_at?: string | null;
   follower_count: number;
   followers_count?: number;
   average_reach: number;
   engagement_rate: number;
-  metrics_source?: 'instagram_api' | 'platform_metrics' | 'manual';
+  metrics_source?: 'platform_manual' | 'instagram_meta_verified' | 'instagram_api' | string;
   metrics_verified_at?: string | null;
   audience_gender: { female: number; male: number };
   audience_age: { '18-24': number; '25-34': number; '35+': number };

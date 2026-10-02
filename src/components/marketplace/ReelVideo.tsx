@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { reelStorageService } from '@/lib/services/reelStorageService';
+import { parseInstagramUrl } from '@/lib/utils/instagram';
 
 export interface ReelVideoProps {
   /** Video URL or Supabase Storage relative path */
@@ -37,8 +38,8 @@ export interface ReelVideoProps {
 
 /**
  * Reusable production ReelVideo component.
- * Ensures consistent automatic muted playback, playsInline, and continuous looping
- * across mobile browsers and desktop without controls or play buttons.
+ * Supports both direct HTML5 videos and Instagram Reel/Post embeds.
+ * Ensures consistent automatic playback and responsive sizing.
  */
 export function ReelVideo({
   src,
@@ -54,6 +55,26 @@ export function ReelVideo({
   onPlay,
   onError,
 }: ReelVideoProps) {
+  // If this is an Instagram Reel/Post URL, render the official Instagram iframe embed
+  const parsedIg = parseInstagramUrl(src);
+  if (parsedIg.isValid && parsedIg.embedUrl) {
+    return (
+      <div
+        className={`relative w-full h-full overflow-hidden bg-black select-none ${className}`}
+        title={title || 'Instagram Reel'}
+      >
+        <iframe
+          src={parsedIg.embedUrl}
+          className={`w-full h-full border-0 ${videoClassName}`}
+          title={title || 'Instagram Reel'}
+          allowFullScreen
+          scrolling="no"
+          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+        />
+      </div>
+    );
+  }
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
