@@ -58,6 +58,7 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
     requestDeadlineExtension,
     respondDeadlineExtension,
     markWorkStarted,
+    payOrderWithRazorpay,
     simulatePaymentSuccess,
     cancelConfirmedDeal,
     uploadDeliveryProofFile,
@@ -227,14 +228,24 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
     }
   };
 
-  const handleSimulatePayment = async () => {
+  const handleStartPayment = async () => {
     setIsProcessingPayment(true);
     setPaymentError(null);
     try {
-      await simulatePaymentSuccess(order.id);
-      setIsPayNowModalOpen(false);
+      const res = await payOrderWithRazorpay(
+        order.id,
+        currentUser?.display_name,
+        currentUser?.email
+      );
+      if (!res.success) {
+        if (res.status !== 'CANCELLED') {
+          setPaymentError(res.error || 'Payment failed. You can retry payment.');
+        }
+      } else {
+        setIsPayNowModalOpen(false);
+      }
     } catch (err: any) {
-      setPaymentError(err.message || 'Payment simulation failed');
+      setPaymentError(err.message || 'Payment failed. You can retry payment.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -338,9 +349,15 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
             </span>
           </div>
 
-          <p className="text-purple-800 dark:text-purple-300 leading-relaxed">
-            The agreed package terms, price, and deadline are locked. Payment is required before the creator begins work.
+          <p className="text-purple-800 dark:text-purple-300 leading-relaxed font-semibold">
+            Payment required to start this collaboration.
           </p>
+
+          {paymentError && (
+            <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
+              {paymentError}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {isMeBusiness && (
@@ -348,16 +365,23 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => setIsPayNowModalOpen(true)}
+                  onClick={handleStartPayment}
+                  isLoading={isProcessingPayment}
+                  disabled={isProcessingPayment}
                   className="bg-[#047857] hover:bg-[#065F46] font-mono text-xs text-white"
                 >
                   <CreditCard className="w-3.5 h-3.5 mr-1" />
-                  <span>Pay Now (₹{order.total_amount.toLocaleString('en-IN')})</span>
+                  <span>
+                    {isProcessingPayment
+                      ? 'Processing payment...'
+                      : `Pay Now — ₹${order.total_amount.toLocaleString('en-IN')}`}
+                  </span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setIsCancelDealModalOpen(true)}
+                  disabled={isProcessingPayment}
                   className="text-red-600 border-red-200 hover:bg-red-50 font-mono text-xs"
                 >
                   <XCircle className="w-3.5 h-3.5 mr-1" />
@@ -382,15 +406,17 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
           <div className="flex items-center justify-between">
             <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-sm">
               <CheckCircle className="w-4 h-4 text-emerald-600" />
-              Payment Confirmed ✓
+              Payment received.
             </span>
             <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
               Status: PAID
             </span>
           </div>
 
-          <p className="text-emerald-800 dark:text-emerald-300 leading-relaxed">
-            Payment has been successfully confirmed. The creator can now begin production on the agreed deliverable.
+          <p className="text-emerald-800 dark:text-emerald-300 leading-relaxed font-semibold">
+            {isMeCreator
+              ? 'Payment received. You can now start the work.'
+              : 'Payment received. Creator has been notified that payment is confirmed and will mark work as started shortly.'}
           </p>
 
           {isMeCreator && (
@@ -972,10 +998,13 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                 variant="primary"
                 size="sm"
                 isLoading={isProcessingPayment}
-                onClick={handleSimulatePayment}
+                disabled={isProcessingPayment}
+                onClick={handleStartPayment}
                 className="bg-[#047857] hover:bg-[#065F46] text-white"
               >
-                Confirm Payment (₹{order.total_amount.toLocaleString('en-IN')})
+                {isProcessingPayment
+                  ? 'Processing payment...'
+                  : `Pay Now — ₹${order.total_amount.toLocaleString('en-IN')}`}
               </Button>
             </div>
           </div>

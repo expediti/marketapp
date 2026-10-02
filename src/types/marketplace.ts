@@ -380,6 +380,26 @@ export interface Order {
   system_review_reason?: string | null;
   system_review_description?: string | null;
   system_review_evidence_url?: string | null;
+  payment?: Payment;
+}
+
+export interface Payment {
+  id: string;
+  order_id: string;
+  payer_user_id?: string | null;
+  provider: string;
+  provider_payment_id?: string | null;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  razorpay_order_id?: string | null;
+  razorpay_payment_id?: string | null;
+  razorpay_signature?: string | null;
+  failure_reason?: string | null;
+  paid_at?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface AdminAction {

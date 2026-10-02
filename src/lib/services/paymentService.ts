@@ -1,40 +1,45 @@
 /**
- * Payment Service Abstraction Layer (Razorpay-Ready Architecture)
+ * Payment Service Abstraction Layer (Razorpay Integration)
  * 
  * Flow:
- * Deal confirmed -> Payment Pending -> Business checkout via Razorpay
- * -> Server webhook/verification -> Order & payment state updated to PAID
- * -> Creator notified to start work.
+ * Deal confirmed (DEAL_CONFIRMED) -> Business clicks Pay Now ->
+ * Backend creates Razorpay order (/api/payments/create-order) ->
+ * Razorpay Standard Checkout opens -> Business pays ->
+ * Server verifies signature & status (/api/payments/verify) ->
+ * Supabase payment and order become PAID ->
+ * Creator notified -> Creator can "Mark as Started".
  * 
- * Note: Payment integration is intentionally prepared for Razorpay without fake client-side success.
+ * Note: The frontend NEVER decides payment succeeded.
+ * Backend verification is the authoritative source of truth.
  */
 
 export interface CreatePaymentOrderParams {
   orderId: string;
-  subtotal: number;
+  subtotal?: number;
   currency?: string;
   notes?: Record<string, string>;
 }
 
 export interface PaymentOrderResult {
-  providerOrderId: string;
-  amount: number;
-  currency: string;
-  platformFee: number;
-  totalAmount: number;
+  success: boolean;
   keyId: string;
-  provider: 'razorpay' | 'cashfree' | 'pending_integration';
+  orderId: string; // Razorpay order id
+  amount: number; // in paise
+  currency: string;
+  orderNumber: string;
+}
+
+export interface VerifyPaymentParams {
+  orderId: string;
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
 }
 
 export interface IPaymentService {
   calculatePlatformFee(subtotal: number): number;
   createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult>;
-  createEscrowPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult>;
-  verifyPaymentSignature(params: {
-    orderId: string;
-    paymentId: string;
-    signature: string;
-  }): Promise<boolean>;
+  verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string }>;
   initiateRefund(params: {
     orderId: string;
     amount: number;
@@ -49,53 +54,57 @@ class PaymentService implements IPaymentService {
     return Math.round(subtotal * this.platformFeePercentage * 100) / 100;
   }
 
+  /**
+   * Request server-side creation of a Razorpay Order.
+   * The server authenticates caller, verifies ownership, and reads the locked total amount from Supabase.
+   */
   async createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
-    const platformFee = this.calculatePlatformFee(params.subtotal);
-    const totalAmount = params.subtotal + platformFee;
+    const response = await fetch('/api/payments/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: params.orderId }),
+    });
 
-    // When Razorpay keys are configured in environment
-    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-      return {
-        providerOrderId: `order_rzp_${Date.now()}`,
-        amount: params.subtotal,
-        currency: params.currency || 'INR',
-        platformFee,
-        totalAmount,
-        keyId: process.env.RAZORPAY_KEY_ID,
-        provider: 'razorpay',
-      };
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to initialize payment order on server.');
     }
 
-    // Architecture stub awaiting Razorpay integration credentials
     return {
-      providerOrderId: `pay_order_${Date.now()}_${params.orderId.slice(0, 8)}`,
-      amount: params.subtotal,
-      currency: params.currency || 'INR',
-      platformFee,
-      totalAmount,
-      keyId: 'pending_razorpay_key',
-      provider: 'pending_integration',
+      success: true,
+      keyId: data.key_id,
+      orderId: data.order_id,
+      amount: data.amount,
+      currency: data.currency,
+      orderNumber: data.order_number,
     };
   }
 
-  // Alias for backward compatibility
-  async createEscrowPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
-    return this.createPaymentOrder(params);
+  /**
+   * Server-side signature verification.
+   * Client-side code sends the Razorpay payment credentials for HMAC-SHA256 signature verification.
+   */
+  async verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string }> {
+    const response = await fetch('/api/payments/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Payment signature verification failed.');
+    }
+
+    return {
+      success: true,
+      status: data.status || 'PAID',
+    };
   }
 
   /**
-   * Server-side signature verification endpoint interface.
-   * Client-side code should not authorize payments directly.
+   * Refund handling stub for dispute resolutions
    */
-  async verifyPaymentSignature(params: {
-    orderId: string;
-    paymentId: string;
-    signature: string;
-  }): Promise<boolean> {
-    // In production, HMAC SHA256 signature verification occurs in trusted API route
-    return Boolean(params.orderId && params.paymentId && params.signature);
-  }
-
   async initiateRefund(params: {
     orderId: string;
     amount: number;

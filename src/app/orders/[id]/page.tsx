@@ -168,14 +168,22 @@ export default function OrderWorkspacePage() {
         {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
           <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 px-3 py-1.5 rounded-lg text-xs text-purple-700 dark:text-purple-300">
             <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
-            <span className="font-semibold">Deal Confirmed ✓ {activeRole === 'business' ? '— Payment Required' : '— Awaiting Business Payment'}</span>
+            <span className="font-semibold">
+              {activeRole === 'business'
+                ? 'Payment required to start this collaboration.'
+                : 'Deal Confirmed ✓ — Awaiting Business Payment'}
+            </span>
           </div>
         )}
 
         {order.order_status === 'PAID' && (
           <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-1.5 rounded-lg text-xs text-emerald-700 dark:text-emerald-300">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="font-semibold">Payment Confirmed {activeRole === 'creator' ? '— Mark as Started Below' : '— Creator Notified'}</span>
+            <span className="font-semibold">
+              {activeRole === 'creator'
+                ? 'Payment received. You can now start the work.'
+                : 'Payment received.'}
+            </span>
           </div>
         )}
       </div>
@@ -208,8 +216,8 @@ export default function OrderWorkspacePage() {
         {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
           <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 p-3.5 rounded-lg text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
             <Info className="w-4 h-4 shrink-0 text-purple-600" />
-            <p>
-              Deal terms are locked and confirmed. Business payment is required before production begins.
+            <p className="font-semibold">
+              Payment required to start this collaboration.
             </p>
           </div>
         )}
@@ -217,8 +225,10 @@ export default function OrderWorkspacePage() {
         {order.order_status === 'PAID' && (
           <div className="bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800 p-3.5 rounded-lg text-xs text-[#047857] dark:text-emerald-400 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 shrink-0 text-[#047857]" />
-            <p>
-              Payment confirmed! Creator can now mark work as started and begin preparation.
+            <p className="font-semibold">
+              {activeRole === 'creator'
+                ? 'Payment received. You can now start the work.'
+                : 'Payment received.'}
             </p>
           </div>
         )}

@@ -30,6 +30,7 @@ import {
   Edit3,
   Ban,
   CreditCard,
+  PlayCircle,
 } from 'lucide-react';
 
 interface ConversationChatProps {
@@ -58,6 +59,8 @@ export function ConversationChat({
     endCollaboration,
     cancelConfirmedDeal,
     simulatePaymentSuccess,
+    payOrderWithRazorpay,
+    markWorkStarted,
     creators,
     businesses,
   } = useMarketplace();
@@ -167,8 +170,9 @@ export function ConversationChat({
     linkedRequest?.status === 'DECLINED' ||
     activeOrder?.order_status === 'CANCELLED';
 
-  // Check if current user is business in this conversation
-  const isMeBusiness = activeConversation?.business_user_id === currentUser?.id;
+  // Check if current user is business or creator in this conversation
+  const isMeBusiness = activeConversation?.business_user_id === currentUser?.id || role === 'business';
+  const isMeCreator = activeConversation?.creator_user_id === currentUser?.id || (!isMeBusiness && role === 'creator');
   const otherPartyName = isMeBusiness
     ? activeConversation?.creator?.display_name || 'Creator'
     : activeConversation?.business?.business_name || 'Advertiser';
@@ -309,13 +313,21 @@ export function ConversationChat({
     }
   };
 
-  // Confirm simulated platform payment
+  // Confirm platform payment via Razorpay Standard Checkout
   const handleConfirmPayment = async () => {
     if (!activeOrder) return;
     setIsPaying(true);
     try {
-      await simulatePaymentSuccess(activeOrder.id);
-      setIsPayNowModalOpen(false);
+      const res = await payOrderWithRazorpay(
+        activeOrder.id,
+        currentUser?.display_name,
+        currentUser?.email
+      );
+      if (res.success) {
+        setIsPayNowModalOpen(false);
+      } else if (res.status !== 'CANCELLED') {
+        alert(res.error || 'Payment failed. You can retry payment.');
+      }
     } catch (err: any) {
       console.error('Failed to process payment:', err);
       alert(err.message || 'Failed to process payment');
@@ -494,11 +506,11 @@ export function ConversationChat({
             {/* Contextual Action Bar */}
             <div className="flex items-center flex-wrap gap-2">
               {/* DEAL CONFIRMED STATE */}
-              {activeOrder && activeOrder.order_status === 'DEAL_CONFIRMED' ? (
+              {activeOrder && (activeOrder.order_status === 'DEAL_CONFIRMED' || activeOrder.order_status === 'PAYMENT_PENDING') && activeOrder.payment_status !== 'PAID' ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[#047857] flex items-center gap-1 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Deal Confirmed ✓</span>
+                  <span className="text-[11px] text-purple-700 dark:text-purple-300 flex items-center gap-1 bg-purple-50 dark:bg-purple-950/40 px-2 py-1 rounded border border-purple-200 dark:border-purple-800">
+                    <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Payment required to start this collaboration.</span>
                   </span>
 
                   {isMeBusiness && (
@@ -506,15 +518,21 @@ export function ConversationChat({
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => setIsPayNowModalOpen(true)}
+                        disabled={isPaying}
+                        onClick={handleConfirmPayment}
                         className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white"
                       >
                         <CreditCard className="w-3.5 h-3.5 mr-1" />
-                        <span>Pay Now</span>
+                        <span>
+                          {isPaying
+                            ? 'Processing payment...'
+                            : `Pay Now — ₹${activeOrder.total_amount.toLocaleString('en-IN')}`}
+                        </span>
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
+                        disabled={isPaying}
                         onClick={() => setIsCancelDealModalOpen(true)}
                         className="text-xs text-red-600 border-red-200 hover:bg-red-50"
                       >
@@ -529,6 +547,37 @@ export function ConversationChat({
                       size="sm"
                       className="text-xs"
                     >
+                      <FileCheck2 className="w-3.5 h-3.5 mr-1 text-[#047857]" />
+                      <span>Order #{activeOrder.order_number}</span>
+                      <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+              ) : activeOrder && (activeOrder.order_status === 'PAID' || activeOrder.payment_status === 'PAID') && activeOrder.order_status !== 'WORK_STARTED' && activeOrder.order_status !== 'DELIVERED' && activeOrder.order_status !== 'COMPLETED' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#047857] flex items-center gap-1 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>
+                      {isMeCreator
+                        ? 'Payment received. You can now start the work.'
+                        : 'Payment received.'}
+                    </span>
+                  </span>
+
+                  {isMeCreator && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => markWorkStarted(activeOrder.id)}
+                      className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5 mr-1" />
+                      <span>Mark as Started</span>
+                    </Button>
+                  )}
+
+                  <Link href={`/orders/${activeOrder.id}`}>
+                    <Button variant="outline" size="sm" className="text-xs">
                       <FileCheck2 className="w-3.5 h-3.5 mr-1 text-[#047857]" />
                       <span>Order #{activeOrder.order_number}</span>
                       <ArrowRight className="w-3 h-3 ml-1" />
@@ -1240,7 +1289,9 @@ export function ConversationChat({
                 onClick={handleConfirmPayment}
                 className="bg-[#047857] hover:bg-[#065F46] text-white"
               >
-                {isPaying ? 'Processing...' : 'Confirm Platform Payment'}
+                {isPaying
+                  ? 'Processing payment...'
+                  : `Pay Now — ₹${activeOrder.total_amount.toLocaleString('en-IN')}`}
               </Button>
             </div>
           </div>

@@ -495,6 +495,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      payments: {
+        Row: {
+          id: string;
+          order_id: string;
+          payer_user_id: string | null;
+          provider: string;
+          provider_payment_id: string | null;
+          amount: number;
+          currency: string;
+          status: string;
+          razorpay_order_id: string | null;
+          razorpay_payment_id: string | null;
+          razorpay_signature: string | null;
+          failure_reason: string | null;
+          paid_at: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          payer_user_id?: string | null;
+          provider?: string;
+          provider_payment_id?: string | null;
+          amount: number;
+          currency?: string;
+          status?: string;
+          razorpay_order_id?: string | null;
+          razorpay_payment_id?: string | null;
+          razorpay_signature?: string | null;
+          failure_reason?: string | null;
+          paid_at?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          payer_user_id?: string | null;
+          provider?: string;
+          provider_payment_id?: string | null;
+          amount?: number;
+          currency?: string;
+          status?: string;
+          razorpay_order_id?: string | null;
+          razorpay_payment_id?: string | null;
+          razorpay_signature?: string | null;
+          failure_reason?: string | null;
+          paid_at?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       deliveries: {
         Row: {
           id: string;

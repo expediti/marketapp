@@ -22,6 +22,7 @@ import {
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
 import { paymentService } from '@/lib/services/paymentService';
+import { startRazorpayPayment } from '@/lib/services/razorpayClient';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface MarketplaceContextType {
@@ -70,6 +71,11 @@ interface MarketplaceContextType {
   endCollaboration: (conversationId: string, reason?: string) => Promise<void>;
   cancelConfirmedDeal: (orderId: string, reason?: string) => Promise<void>;
   simulatePaymentSuccess: (orderId: string) => Promise<void>;
+  payOrderWithRazorpay: (
+    orderId: string,
+    customerName?: string,
+    customerEmail?: string
+  ) => Promise<{ success: boolean; status: string; error?: string }>;
   markWorkStarted: (orderId: string) => Promise<void>;
   uploadDeliveryProofFile: (file: File) => Promise<{ publicUrl: string; storagePath: string }>;
   createOrderFromCollaboration: (params: {
@@ -1791,6 +1797,26 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const payOrderWithRazorpay = async (
+    orderId: string,
+    customerName?: string,
+    customerEmail?: string
+  ): Promise<{ success: boolean; status: string; error?: string }> => {
+    if (!currentUser) throw new Error('Must be logged in to pay for an order');
+
+    const result = await startRazorpayPayment({
+      orderId,
+      customerName: customerName || currentUser.display_name,
+      customerEmail: customerEmail || currentUser.email,
+    });
+
+    if (result.success && currentUser?.id) {
+      await fetchUserData(currentUser.id, activeRole);
+    }
+
+    return result;
+  };
+
   const markWorkStarted = async (orderId: string): Promise<void> => {
     if (!currentUser) throw new Error('Must be logged in to mark work started');
 
@@ -2895,6 +2921,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         endCollaboration,
         cancelConfirmedDeal,
         simulatePaymentSuccess,
+        payOrderWithRazorpay,
         markWorkStarted,
         uploadDeliveryProofFile,
         createOrderFromCollaboration,
