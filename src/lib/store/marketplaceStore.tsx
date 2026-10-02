@@ -211,7 +211,11 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (!isSupabaseConfigured) return;
     try {
       const [creatorsRes, profilesRes, packagesRes, reelsRes] = await Promise.all([
-        supabase.from('creator_profiles').select('*'),
+        supabase
+          .from('creator_profiles')
+          .select(
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+          ),
         supabase.from('profiles').select('*'),
         supabase.from('creator_packages').select('*'),
         supabase.from('creator_reels').select('*').eq('is_visible', true),
@@ -1053,6 +1057,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (data.average_reach !== undefined) updates.average_reach = data.average_reach;
     if (data.engagement_rate !== undefined) updates.engagement_rate = data.engagement_rate;
     if (data.profile_image_path !== undefined) updates.profile_image_path = data.profile_image_path;
+    if (data.payout_upi_id !== undefined) updates.payout_upi_id = data.payout_upi_id;
 
     if (isSupabaseConfigured) {
       const { error } = await supabase

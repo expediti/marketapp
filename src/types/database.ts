@@ -67,6 +67,7 @@ export interface Database {
           metrics_source: string;
           metrics_verified_at: string | null;
           verification_status: string;
+          payout_upi_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -94,6 +95,7 @@ export interface Database {
           metrics_source?: string;
           metrics_verified_at?: string | null;
           verification_status?: string;
+          payout_upi_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -121,6 +123,7 @@ export interface Database {
           metrics_source?: string;
           metrics_verified_at?: string | null;
           verification_status?: string;
+          payout_upi_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -938,6 +941,14 @@ export interface Database {
       };
       request_order_revision: {
         Args: { p_order_id: string; p_notes: string };
+        Returns: Json;
+      };
+      get_my_payout_upi_id: {
+        Args: Record<PropertyKey, never>;
+        Returns: string | null;
+      };
+      update_my_payout_upi_id: {
+        Args: { p_upi_id: string };
         Returns: Json;
       };
     };

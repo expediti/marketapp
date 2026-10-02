@@ -132,9 +132,13 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
     metrics_source TEXT NOT NULL DEFAULT 'platform_manual' CHECK (metrics_source IN ('platform_manual', 'instagram_meta_verified')),
     metrics_verified_at TIMESTAMPTZ,
     verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified', 'pending', 'verified', 'rejected')),
+    payout_upi_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.creator_profiles ADD COLUMN IF NOT EXISTS payout_upi_id TEXT;
+COMMENT ON COLUMN public.creator_profiles.payout_upi_id IS 'Creator payout UPI ID (VPA) for manual payouts initiated via RazorpayX Dashboard. Strictly private to creator and platform owner.';
 
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_niche ON public.creator_profiles(niche);
 CREATE INDEX IF NOT EXISTS idx_creator_profiles_follower_count ON public.creator_profiles(follower_count);
@@ -1528,6 +1532,56 @@ BEGIN
     EXCEPTION WHEN duplicate_object THEN NULL;
     END;
 END $$;
+
+-- Secure helper RPC for authenticated creator to fetch their own payout UPI ID
+CREATE OR REPLACE FUNCTION public.get_my_payout_upi_id()
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_upi TEXT;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT payout_upi_id INTO v_upi
+    FROM public.creator_profiles
+    WHERE user_id = auth.uid();
+
+    RETURN v_upi;
+END;
+$$;
+
+-- Secure helper RPC for authenticated creator to update their own payout UPI ID
+CREATE OR REPLACE FUNCTION public.update_my_payout_upi_id(p_upi_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_clean_upi TEXT;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Authentication required';
+    END IF;
+
+    v_clean_upi := NULLIF(lower(trim(p_upi_id)), '');
+
+    UPDATE public.creator_profiles
+    SET payout_upi_id = v_clean_upi,
+        updated_at = timezone('utc'::text, now())
+    WHERE user_id = auth.uid();
+
+    RETURN jsonb_build_object('success', true, 'payout_upi_id', v_clean_upi);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_my_payout_upi_id() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_my_payout_upi_id(TEXT) TO authenticated;
 
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

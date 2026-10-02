@@ -24,6 +24,7 @@ import {
   MapPin,
   Loader2,
 } from 'lucide-react';
+import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
 
 const POPULAR_CATEGORIES = [
   'Technology',
@@ -67,6 +68,8 @@ export default function CreatorOnboardingPage() {
   const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState<string>('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [payoutUpiId, setPayoutUpiId] = useState('');
+  const [upiError, setUpiError] = useState<string | null>(null);
 
   // Prefill Google authenticated user data
   useEffect(() => {
@@ -305,6 +308,9 @@ export default function CreatorOnboardingPage() {
               engagement_rate: engagementRate,
               verification_status: 'unverified',
               metrics_source: 'platform_manual',
+              payout_upi_id: payoutUpiId.trim()
+                ? validateAndNormalizeUpiId(payoutUpiId).value
+                : null,
             },
             { onConflict: 'user_id' }
           );
@@ -355,6 +361,9 @@ export default function CreatorOnboardingPage() {
         engagement_rate: engagementRate,
         packages,
         reels: reels || [],
+        payout_upi_id: payoutUpiId.trim()
+          ? validateAndNormalizeUpiId(payoutUpiId).value
+          : undefined,
       });
 
       await refreshData();
@@ -583,6 +592,64 @@ export default function CreatorOnboardingPage() {
                 className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
               />
             </div>
+
+            {/* Payment Details Section (Optional) */}
+            <div className="pt-4 border-t border-[#ECECE6] dark:border-[#27272A] space-y-3">
+              <div>
+                <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white uppercase tracking-wider">
+                  Payment Details
+                </h3>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                  This is used only for creator payouts. It is never shown to businesses.
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-[#121214] dark:text-white">
+                    UPI ID <span className="text-[11px] font-normal text-[#71717A] dark:text-zinc-400">(Optional)</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                    Example: name@upi
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={payoutUpiId}
+                  onChange={(e) => {
+                    setPayoutUpiId(e.target.value);
+                    if (upiError) setUpiError(null);
+                  }}
+                  onBlur={() => {
+                    if (payoutUpiId.trim()) {
+                      const res = validateAndNormalizeUpiId(payoutUpiId);
+                      if (!res.isValid) {
+                        setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+                      } else {
+                        setPayoutUpiId(res.value);
+                        setUpiError(null);
+                      }
+                    } else {
+                      setUpiError(null);
+                    }
+                  }}
+                  placeholder="name@upi"
+                  className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
+                    upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                  } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono`}
+                />
+                {upiError ? (
+                  <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{upiError}</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1">
+                    This is used only for creator payouts. It is never shown to businesses.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
@@ -590,7 +657,18 @@ export default function CreatorOnboardingPage() {
               variant="primary"
               size="md"
               disabled={!displayName.trim()}
-              onClick={() => setStep(2)}
+              onClick={() => {
+                if (payoutUpiId.trim()) {
+                  const res = validateAndNormalizeUpiId(payoutUpiId);
+                  if (!res.isValid) {
+                    setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+                    return;
+                  }
+                  setPayoutUpiId(res.value);
+                  setUpiError(null);
+                }
+                setStep(2);
+              }}
             >
               <span>Next: Categories & Niches</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />

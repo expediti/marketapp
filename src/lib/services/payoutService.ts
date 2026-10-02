@@ -1,6 +1,28 @@
 /**
- * Payout Service Abstraction Layer
- * Handles creator fund release via UPI VPA or Bank IMPS transfers upon approval.
+ * ============================================================================
+ * MANUAL CREATOR PAYOUT WORKFLOW SPECIFICATION
+ * ============================================================================
+ * 
+ * IMPORTANT ARCHITECTURAL RULES:
+ * - Creator payouts in Market My App are strictly MANUAL.
+ * - DO NOT implement automatic payouts.
+ * - DO NOT implement RazorpayX API payouts.
+ * - DO NOT implement escrow.
+ * - DO NOT implement Razorpay Route / Linked Accounts.
+ * - DO NOT trigger any payout automatically when an order becomes COMPLETED.
+ * 
+ * The actual payout is manually initiated by the Market My App platform owner:
+ * 
+ * Flow:
+ * Order completed
+ *   → Market My App owner decides payout amount
+ *   → Owner manually creates payout in RazorpayX Dashboard
+ *   → Owner uses creator's stored UPI ID (payout_upi_id)
+ *   → Owner authorizes the payout
+ * 
+ * The application must NOT automatically transfer money.
+ * Businesses must NEVER see the creator's payout UPI ID.
+ * ============================================================================
  */
 
 export interface InitiatePayoutParams {

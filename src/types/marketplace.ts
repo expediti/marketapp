@@ -161,6 +161,8 @@ export interface CreatorProfile {
   reels?: CreatorReel[];
   starting_price?: number;
   local_reach_percentage?: number;
+  /** Private payout UPI ID (VPA) for manual payouts; never exposed to businesses or public discovery */
+  payout_upi_id?: string | null;
 }
 
 export interface BusinessProfile {

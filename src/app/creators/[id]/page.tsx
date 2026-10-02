@@ -59,7 +59,13 @@ export default function CreatorDetailPage() {
     if (!storeCreator && isSupabaseConfigured && creatorId) {
       setIsFetchingDirect(true);
       Promise.all([
-        supabase.from('creator_profiles').select('*').eq('user_id', creatorId).maybeSingle(),
+        supabase
+          .from('creator_profiles')
+          .select(
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+          )
+          .eq('user_id', creatorId)
+          .maybeSingle(),
         supabase.from('profiles').select('*').eq('id', creatorId).maybeSingle(),
         supabase.from('creator_packages').select('*').eq('creator_id', creatorId),
         supabase.from('creator_reels').select('*').eq('creator_id', creatorId).eq('is_visible', true),

@@ -33,7 +33,9 @@ import {
   Settings,
   AlertCircle,
   Camera,
+  CheckCircle2,
 } from 'lucide-react';
+import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
 
 type TabKey =
   | 'overview'
@@ -60,6 +62,7 @@ interface DbCreatorState {
   average_reach?: number | null;
   engagement_rate?: number | null;
   creator_packages?: CreatorPackage[];
+  payout_upi_id?: string | null;
 }
 
 function generatePackageId(): string {
@@ -104,6 +107,12 @@ export default function CreatorDashboardPage() {
   const [newPkgDesc, setNewPkgDesc] = useState('');
   const [isSavingPkg, setIsSavingPkg] = useState(false);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
+  // Payment Details (Payout UPI ID)
+  const [payoutUpiId, setPayoutUpiId] = useState('');
+  const [isSavingUpi, setIsSavingUpi] = useState(false);
+  const [upiError, setUpiError] = useState<string | null>(null);
+  const [upiSuccessMessage, setUpiSuccessMessage] = useState<string | null>(null);
 
   const loadDbCreator = async () => {
     setIsLoadingAuth(true);
@@ -163,6 +172,7 @@ export default function CreatorDashboardPage() {
           ...cpRes.data,
           creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
         });
+        setPayoutUpiId(cpRes.data.payout_upi_id || '');
         setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
       } else {
         // Safe recovery if creator profile does not exist yet (matches business dashboard pattern)
@@ -222,6 +232,50 @@ export default function CreatorDashboardPage() {
   useEffect(() => {
     loadDbCreator();
   }, [router]);
+
+  const handleSavePayoutUpi = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setUpiError(null);
+    setUpiSuccessMessage(null);
+
+    const validation = validateAndNormalizeUpiId(payoutUpiId);
+    if (!validation.isValid) {
+      setUpiError(validation.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+      return;
+    }
+
+    const cleanedValue = validation.value || null;
+    setIsSavingUpi(true);
+
+    try {
+      if (isSupabaseConfigured && currentUser) {
+        const { error } = await supabase
+          .from('creator_profiles')
+          .update({
+            payout_upi_id: cleanedValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', currentUser.id);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+      }
+
+      setPayoutUpiId(cleanedValue || '');
+      setDbCreator((prev) => (prev ? { ...prev, payout_upi_id: cleanedValue } : null));
+      setUpiSuccessMessage(
+        cleanedValue
+          ? 'Payment details saved successfully. Payouts will be manually transferred to this UPI ID upon order completion.'
+          : 'Payment details cleared.'
+      );
+    } catch (err) {
+      console.error('Error saving payout UPI ID:', err);
+      setUpiError(err instanceof Error ? err.message : 'Failed to save payment details.');
+    } finally {
+      setIsSavingUpi(false);
+    }
+  };
 
   const creatorId = dbCreator?.user_id || currentUser?.id || '';
 
@@ -596,6 +650,33 @@ export default function CreatorDashboardPage() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-8">
+          {/* Missing UPI Notice for Completed Orders (Manual Payout) */}
+          {!dbCreator?.payout_upi_id &&
+            orders.some(
+              (o) =>
+                (o.order_status === 'COMPLETED' || o.payout_status === 'PAYOUT_PENDING') &&
+                o.creator_user_id === currentUser?.id
+            ) && (
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-start justify-between gap-3 text-xs">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Payment Details needed for completed orders</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                      You have orders awaiting manual payout. Please add your UPI ID in Settings so the Market My App owner can manually process your payout in RazorpayX.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className="px-2.5 py-1 text-xs font-semibold bg-amber-600 text-white rounded hover:bg-amber-700 shrink-0"
+                >
+                  Add UPI ID
+                </button>
+              </div>
+            )}
+
           {/* Pending Requests Preview */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -800,6 +881,26 @@ export default function CreatorDashboardPage() {
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Bio</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#52525B] dark:text-zinc-300 leading-relaxed">
                 {dbCreator.bio || 'Content creator helping brands reach target audiences.'}
+              </p>
+            </div>
+
+            {/* Payout UPI ID (Private & Confidential) */}
+            <div className="sm:col-span-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+              <span className="font-semibold text-[#121214] dark:text-white block mb-1">
+                Payout UPI ID <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400">(Private & Confidential)</span>
+              </span>
+              <div className="flex items-center justify-between p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-xs text-[#121214] dark:text-white">
+                <span>{dbCreator?.payout_upi_id ? dbCreator.payout_upi_id : 'Not configured yet (Optional)'}</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className="text-[11px] text-[#FF5416] hover:underline font-sans font-medium"
+                >
+                  {dbCreator?.payout_upi_id ? 'Change' : 'Add UPI ID'}
+                </button>
+              </div>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1">
+                This is used only for creator payouts. It is never shown to businesses.
               </p>
             </div>
           </div>
@@ -1350,25 +1451,71 @@ export default function CreatorDashboardPage() {
               </p>
             </div>
 
-            {/* Payout Information */}
-            <div className="space-y-3">
-              <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Bank / UPI Payout Account</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            {/* Payment Details Section */}
+            <div className="space-y-4 pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
+              <div>
+                <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Payment Details</h4>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+                  This is used only for creator payouts. It is never shown to businesses.
+                </p>
+              </div>
+
+              <div className="max-w-md space-y-3 text-xs">
                 <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">UPI ID for Settlements</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-[#121214] dark:text-white block">UPI ID</label>
+                    <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">Example: name@upi</span>
+                  </div>
                   <input
                     type="text"
-                    placeholder="yourhandle@okhdfcbank"
-                    className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
+                    value={payoutUpiId}
+                    onChange={(e) => {
+                      setPayoutUpiId(e.target.value);
+                      if (upiError) setUpiError(null);
+                      if (upiSuccessMessage) setUpiSuccessMessage(null);
+                    }}
+                    onBlur={() => {
+                      if (payoutUpiId.trim()) {
+                        const res = validateAndNormalizeUpiId(payoutUpiId);
+                        if (!res.isValid) {
+                          setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+                        } else {
+                          setPayoutUpiId(res.value);
+                          setUpiError(null);
+                        }
+                      }
+                    }}
+                    placeholder="name@upi"
+                    className={`w-full py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
+                      upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                    } rounded font-mono text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
                   />
+                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1">
+                    This is used only for creator payouts. It is never shown to businesses.
+                  </p>
+                  {upiError && (
+                    <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1 font-sans">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{upiError}</span>
+                    </p>
+                  )}
+                  {upiSuccessMessage && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-sans">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      <span>{upiSuccessMessage}</span>
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">PAN Verification</label>
-                  <input
-                    type="text"
-                    placeholder="ABCDE1234F"
-                    className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                  />
+
+                <div className="pt-1">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={isSavingUpi}
+                    onClick={handleSavePayoutUpi}
+                  >
+                    <span>{isSavingUpi ? 'Saving...' : 'Save Payment Details'}</span>
+                  </Button>
                 </div>
               </div>
             </div>
