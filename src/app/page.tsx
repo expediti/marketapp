@@ -54,7 +54,13 @@ export default function HomePage() {
 
                 <Link href="/auth/signup?role=creator">
                   <Button variant="secondary" size="lg" className="px-6 py-3 text-base dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
-                    <span>Join as an Influencer</span>
+                    <span>Join as Influencer</span>
+                  </Button>
+                </Link>
+
+                <Link href="/auth/signup?role=business">
+                  <Button variant="outline" size="lg" className="px-6 py-3 text-base dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
+                    <span>Join as Owner</span>
                   </Button>
                 </Link>
               </div>
@@ -309,9 +315,9 @@ export default function HomePage() {
                   <h4 className="font-mono text-base font-bold text-white mt-1">Have an app or product?</h4>
                   <p className="text-xs text-[#71717A] mt-1 mb-4">Discover influencers with proven reach.</p>
                 </div>
-                <Link href="/discover">
+                <Link href="/auth/signup?role=business">
                   <Button variant="primary" size="sm" className="w-full">
-                    <span>Find Influencers</span>
+                    <span>Join as Owner</span>
                   </Button>
                 </Link>
               </div>
@@ -325,7 +331,7 @@ export default function HomePage() {
                 </div>
                 <Link href="/auth/signup?role=creator">
                   <Button variant="outline" size="sm" className="w-full text-white border-[#3F3F46] hover:bg-[#27272A]">
-                    <span>Join as an Influencer</span>
+                    <span>Join as Influencer</span>
                   </Button>
                 </Link>
               </div>

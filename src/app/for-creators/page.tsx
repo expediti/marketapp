@@ -15,9 +15,9 @@ export default function ForCreatorsPage() {
           Show your portfolio reels, define your audience, set transparent package pricing, and work with genuine applications, websites, and products.
         </p>
         <div className="pt-2 flex flex-wrap gap-3">
-          <Link href="/auth/signup?role=influencer">
+          <Link href="/auth/signup?role=creator">
             <Button variant="primary" size="lg">
-              <span>Join as an Influencer</span>
+              <span>Join as Influencer</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </Link>

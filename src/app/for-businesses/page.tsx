@@ -31,9 +31,9 @@ export default function ForBusinessesPage() {
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </Link>
-          <Link href="/auth/onboarding/business">
+          <Link href="/auth/signup?role=business">
             <Button variant="outline" size="lg">
-              <span>Register Your App</span>
+              <span>Join as Owner</span>
             </Button>
           </Link>
         </div>

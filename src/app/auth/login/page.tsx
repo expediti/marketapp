@@ -111,8 +111,30 @@ function LoginForm() {
         await refreshData();
         const role = profile.role.toLowerCase();
         if (role === 'creator' || role === 'influencer') {
-          router.replace('/dashboard/creator');
-        } else if (role === 'business' || role === 'advertiser' || role === 'admin') {
+          const { data: creatorProfile } = await supabase
+            .from('creator_profiles')
+            .select('user_id')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+
+          if (creatorProfile) {
+            router.replace('/dashboard/creator');
+          } else {
+            router.replace('/auth/onboarding/creator');
+          }
+        } else if (role === 'business' || role === 'advertiser' || role === 'owner') {
+          const { data: businessProfile } = await supabase
+            .from('business_profiles')
+            .select('user_id')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+
+          if (businessProfile) {
+            router.replace('/dashboard/business');
+          } else {
+            router.replace('/auth/onboarding/business');
+          }
+        } else if (role === 'admin') {
           router.replace('/dashboard/business');
         } else {
           router.replace('/auth/role-select');
