@@ -32,6 +32,7 @@ import {
   ShoppingBag,
   ExternalLink,
   Edit2,
+  X,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
 import { parseInstagramUrl } from '@/lib/utils/instagram';
@@ -117,7 +118,9 @@ function CreatorDashboardContent() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // Synchronize URL tab parameter
+  const [igNotice, setIgNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Synchronize URL tab parameter and Instagram OAuth status
   useEffect(() => {
     if (tabParam) {
       if (tabParam === 'overview') setActiveTab('home');
@@ -125,7 +128,27 @@ function CreatorDashboardContent() {
         setActiveTab(tabParam as TabKey);
       }
     }
-  }, [tabParam]);
+
+    const igErr = searchParams.get('ig_error');
+    const igConnected = searchParams.get('ig_connected');
+    const igUsername = searchParams.get('ig_username');
+
+    if (igErr) {
+      setIgNotice({
+        type: 'error',
+        message: decodeURIComponent(igErr),
+      });
+      setActiveTab('profile');
+    } else if (igConnected === 'true') {
+      setIgNotice({
+        type: 'success',
+        message: igUsername
+          ? `Instagram account @${igUsername} connected and verified successfully!`
+          : 'Instagram account connected successfully!',
+      });
+      setActiveTab('profile');
+    }
+  }, [tabParam, searchParams]);
 
   // Reels management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1247,6 +1270,36 @@ function CreatorDashboardContent() {
       {/* 5. PROFILE TAB */}
       {activeTab === 'profile' && (
         <div className="space-y-6">
+          {igNotice && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-mono flex items-start gap-2.5 ${
+                igNotice.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                  : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+              }`}
+            >
+              {igNotice.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <span className="font-bold block">
+                  {igNotice.type === 'success' ? 'Instagram Connected' : 'Instagram Connection Notice'}
+                </span>
+                <p className="text-[11px] mt-0.5 leading-relaxed">{igNotice.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIgNotice(null)}
+                className="text-xs text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Section A: Profile Information */}
           <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
             <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">

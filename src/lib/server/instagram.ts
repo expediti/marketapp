@@ -44,10 +44,15 @@ export function getInstagramCredentials(): InstagramCredentials {
     process.env.INSTAGRAM_CLIENT_SECRET ||
     '';
 
+  const redirectUri =
+    getServerRuntimeSecret('INSTAGRAM_REDIRECT_URI') ||
+    process.env.INSTAGRAM_REDIRECT_URI ||
+    INSTAGRAM_PRODUCTION_REDIRECT_URI;
+
   return {
     appId,
     appSecret,
-    redirectUri: INSTAGRAM_PRODUCTION_REDIRECT_URI,
+    redirectUri,
   };
 }
 
