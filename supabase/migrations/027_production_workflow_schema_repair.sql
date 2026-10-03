@@ -739,8 +739,8 @@ BEGIN
         v_caller_id,
         v_caller_id,
         CASE WHEN v_caller_id = v_conv.business_user_id THEN 'business' ELSE 'creator' END,
-        '✓ Deal confirmed! Agreed deliverable: ' || v_proposal.deliverable || ' for ₹' || v_proposal.price || '. Order #' || v_order_number || ' created (Status: Deal Confirmed - Payment Pending).',
-        '✓ Deal confirmed! Agreed deliverable: ' || v_proposal.deliverable || ' for ₹' || v_proposal.price || '. Order #' || v_order_number || ' created (Status: Deal Confirmed - Payment Pending).',
+        '✓ Deal confirmed! Agreed deliverable: ' || v_proposal.deliverable || ' for ₹' || v_proposal.price || '. Order #' || v_order_number || ' created.',
+        '✓ Deal confirmed! Agreed deliverable: ' || v_proposal.deliverable || ' for ₹' || v_proposal.price || '. Order #' || v_order_number || ' created.',
         'clean',
         v_now
     );
