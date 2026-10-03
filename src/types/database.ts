@@ -72,6 +72,9 @@ export interface Database {
           instagram_profile_data: Json | null;
           instagram_connected_at: string | null;
           instagram_access_token: string | null;
+          instagram_last_synced_at: string | null;
+          instagram_sync_status: string | null;
+          instagram_webhook_received_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -104,6 +107,9 @@ export interface Database {
           instagram_profile_data?: Json | null;
           instagram_connected_at?: string | null;
           instagram_access_token?: string | null;
+          instagram_last_synced_at?: string | null;
+          instagram_sync_status?: string | null;
+          instagram_webhook_received_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -136,6 +142,9 @@ export interface Database {
           instagram_profile_data?: Json | null;
           instagram_connected_at?: string | null;
           instagram_access_token?: string | null;
+          instagram_last_synced_at?: string | null;
+          instagram_sync_status?: string | null;
+          instagram_webhook_received_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -915,6 +924,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      instagram_webhook_events: {
+        Row: {
+          id: string;
+          event_id: string | null;
+          object_type: string;
+          instagram_account_id: string | null;
+          field_name: string | null;
+          payload_summary: Json;
+          status: string;
+          error_message: string | null;
+          processed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id?: string | null;
+          object_type?: string;
+          instagram_account_id?: string | null;
+          field_name?: string | null;
+          payload_summary?: Json;
+          status?: string;
+          error_message?: string | null;
+          processed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string | null;
+          object_type?: string;
+          instagram_account_id?: string | null;
+          field_name?: string | null;
+          payload_summary?: Json;
+          status?: string;
+          error_message?: string | null;
+          processed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -977,6 +1025,18 @@ export interface Database {
           p_follower_count: number;
           p_profile_data: Json;
           p_access_token?: string;
+        };
+        Returns: Json;
+      };
+      record_instagram_webhook_event: {
+        Args: {
+          p_event_id: string;
+          p_object_type?: string;
+          p_account_id?: string | null;
+          p_field_name?: string | null;
+          p_summary?: Json;
+          p_status?: string;
+          p_error?: string | null;
         };
         Returns: Json;
       };

@@ -177,3 +177,57 @@ export async function fetchInstagramProfile(accessToken: string): Promise<Instag
     rawData: fallbackData,
   };
 }
+
+/**
+ * Retrieves the server-side Instagram Webhook Verification Token.
+ * Cloudflare Production Secret: INSTAGRAM_WEBHOOK_VERIFY_TOKEN
+ * NEVER expose this secret to the client.
+ */
+export function getInstagramWebhookVerifyToken(): string {
+  const token =
+    getServerRuntimeSecret('INSTAGRAM_WEBHOOK_VERIFY_TOKEN') ||
+    process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN ||
+    '';
+  return token;
+}
+
+/**
+ * Validates Meta's Webhook verification challenge (GET request).
+ * Meta sends hub.mode, hub.verify_token, and hub.challenge.
+ */
+export function verifyInstagramWebhookChallenge(
+  mode: string | null,
+  verifyToken: string | null,
+  challenge: string | null
+): { isValid: boolean; challenge?: string } {
+  const configuredToken = getInstagramWebhookVerifyToken();
+
+  if (!configuredToken) {
+    console.warn(
+      'INSTAGRAM_WEBHOOK_VERIFY_TOKEN is not configured in server secrets. Webhook verification will fail.'
+    );
+    return { isValid: false };
+  }
+
+  if (mode === 'subscribe' && verifyToken && challenge && verifyToken === configuredToken) {
+    return { isValid: true, challenge };
+  }
+
+  return { isValid: false };
+}
+
+export interface InstagramWebhookEventEntry {
+  id: string;
+  time: number;
+  changes?: Array<{
+    field: string;
+    value: Record<string, any>;
+  }>;
+  messaging?: Array<Record<string, any>>;
+  standby?: Array<Record<string, any>>;
+}
+
+export interface InstagramWebhookPayload {
+  object: string;
+  entry?: InstagramWebhookEventEntry[];
+}

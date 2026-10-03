@@ -3186,15 +3186,24 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   };
 
   const onboardCreator = (profileData: Partial<CreatorProfile>) => {
-    if (!currentUser) return;
+    const targetUserId = profileData.user_id || profileData.id || currentUser?.id;
+    if (!targetUserId) return;
     const newCreator: CreatorProfile = {
-      id: currentUser.id,
-      user_id: currentUser.id,
-      profile: currentUser,
-      display_name: profileData.display_name || currentUser.display_name || 'Creator',
+      id: targetUserId,
+      user_id: targetUserId,
+      profile: currentUser || {
+        id: targetUserId,
+        role: 'creator',
+        display_name: profileData.display_name || 'Creator',
+        email: '',
+        city: profileData.city || 'India',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      display_name: profileData.display_name || currentUser?.display_name || 'Creator',
       country: profileData.country || 'India',
       state: profileData.state,
-      city: profileData.city || currentUser.city || 'India',
+      city: profileData.city || currentUser?.city || 'India',
       niche: profileData.niche || 'Technology',
       categories: profileData.categories || ['Technology'],
       languages: profileData.languages || ['Hindi', 'English'],
@@ -3204,17 +3213,19 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       engagement_rate: profileData.engagement_rate || 0,
       instagram_connected: profileData.instagram_connected || false,
       instagram_verified: profileData.instagram_verified || false,
+      instagram_username: profileData.instagram_username || null,
+      metrics_source: profileData.metrics_source || (profileData.instagram_connected ? 'instagram_meta_verified' : 'platform_manual'),
       audience_age: profileData.audience_age || { '18-24': 50, '25-34': 35, '35+': 15 },
       audience_gender: profileData.audience_gender || { female: 45, male: 55 },
       audience_locations: profileData.audience_locations || [],
-      verification_status: 'unverified',
+      verification_status: profileData.instagram_verified ? 'verified' : 'unverified',
       packages: profileData.packages || [],
       samples: profileData.samples || [],
       reels: profileData.reels || [],
     };
 
     setCreators((prev) => {
-      const filtered = prev.filter((c) => c.user_id !== currentUser.id);
+      const filtered = prev.filter((c) => c.user_id !== targetUserId);
       return [newCreator, ...filtered];
     });
     setActiveRole('creator');

@@ -85,26 +85,26 @@ export default function OrderWorkspacePage() {
               updated_at: o.updated_at,
               brief: b
                 ? {
-                    id: b.id,
-                    order_id: b.order_id,
-                    objective: b.objective || '',
-                    requirements: b.requirements || '',
-                    dos: b.dos || '',
-                    donts: b.donts || '',
-                    deadline: b.deadline || o.deadline || o.created_at,
-                    additional_notes: b.additional_notes || undefined,
-                  }
+                  id: b.id,
+                  order_id: b.order_id,
+                  objective: b.objective || '',
+                  requirements: b.requirements || '',
+                  dos: b.dos || '',
+                  donts: b.donts || '',
+                  deadline: b.deadline || o.deadline || o.created_at,
+                  additional_notes: b.additional_notes || undefined,
+                }
                 : undefined,
               delivery: lastDeliv
                 ? {
-                    id: lastDeliv.id,
-                    order_id: o.id,
-                    submitted_by: lastDeliv.submitted_by || o.creator_id,
-                    proof_url: lastDeliv.proof_url,
-                    notes: lastDeliv.notes || '',
-                    submitted_at: lastDeliv.submitted_at || o.delivered_at || o.updated_at,
-                    status: (lastDeliv.status as any) || 'pending_review',
-                  }
+                  id: lastDeliv.id,
+                  order_id: o.id,
+                  submitted_by: lastDeliv.submitted_by || o.creator_id,
+                  proof_url: lastDeliv.proof_url,
+                  notes: lastDeliv.notes || '',
+                  submitted_at: lastDeliv.submitted_at || o.delivered_at || o.updated_at,
+                  status: (lastDeliv.status as any) || 'pending_review',
+                }
                 : undefined,
               events: (evs as any[]).map((ev) => ({
                 id: ev.id,
@@ -299,11 +299,10 @@ export default function OrderWorkspacePage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
-            className={`px-3 py-1.5 rounded transition-colors ${
-              activeTab === tab.key
+            className={`px-3 py-1.5 rounded transition-colors ${activeTab === tab.key
                 ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-bold'
                 : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
-            }`}
+              }`}
           >
             {tab.label}
           </button>

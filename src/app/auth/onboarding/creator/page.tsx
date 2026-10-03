@@ -368,16 +368,22 @@ export default function CreatorOnboardingPage() {
     const finalCity = customCity.trim() || city || 'Varanasi';
 
     try {
-      let uid = currentUser?.id || 'new_influencer';
+      let activeUser = currentUser;
+      if (!activeUser && isSupabaseConfigured) {
+        const { data: authData } = await supabase.auth.getUser();
+        activeUser = authData?.user || null;
+      }
+
+      let uid = activeUser?.id || 'new_influencer';
       let userEmail =
-        currentUser?.email ||
+        activeUser?.email ||
         `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyapp.in`;
 
-      if (isSupabaseConfigured && currentUser) {
-        uid = currentUser.id;
-        userEmail = currentUser.email || userEmail;
+      if (isSupabaseConfigured && activeUser) {
+        uid = activeUser.id;
+        userEmail = activeUser.email || userEmail;
 
-        // 1. Update profiles table
+        // 1. Update profiles table with creator role
         const { error: profileError } = await supabase
           .from('profiles')
           .upsert(
@@ -395,88 +401,102 @@ export default function CreatorOnboardingPage() {
           console.warn('Profile update note:', profileError.message);
         }
 
-        // 2. Upsert creator_profiles with verified Instagram metrics
+        // 2. Upsert creator_profiles (supports both Instagram connected & disconnected states)
+        const isVerifiedIg = Boolean(isInstagramConnected && instagramUsername);
+        const creatorProfilePayload = {
+          user_id: uid,
+          display_name: displayName || 'Creator',
+          bio: bio || 'Indian content creator helping apps reach targeted users.',
+          profile_image_path: profileImage || null,
+          country: country || 'India',
+          state: stateName || 'Uttar Pradesh',
+          city: finalCity,
+          niche: selectedCategories[0] || 'Technology',
+          categories: selectedCategories.length > 0 ? selectedCategories : ['Technology'],
+          languages: languages.length > 0 ? languages : ['Hindi', 'English'],
+          follower_count: isVerifiedIg ? followerCount : 0,
+          average_reach: isVerifiedIg ? averageReach : 0,
+          engagement_rate: isVerifiedIg ? engagementRate : 0,
+          instagram_connected: isVerifiedIg,
+          instagram_username: isVerifiedIg ? instagramUsername : null,
+          instagram_verified: isVerifiedIg,
+          verification_status: isVerifiedIg ? 'verified' : 'unverified',
+          metrics_source: isVerifiedIg ? 'instagram_meta_verified' : 'platform_manual',
+          payout_upi_id: payoutUpiId.trim()
+            ? validateAndNormalizeUpiId(payoutUpiId).value
+            : null,
+          updated_at: new Date().toISOString(),
+        };
+
         const { error: creatorError } = await supabase
           .from('creator_profiles')
-          .upsert(
-            {
-              user_id: uid,
-              display_name: displayName || 'Creator',
-              bio: bio || 'Indian content creator helping apps reach targeted users.',
-              profile_image_path: profileImage || null,
-              country: country || 'India',
-              state: stateName || 'Uttar Pradesh',
-              city: finalCity,
-              niche: selectedCategories[0] || 'Technology',
-              categories: selectedCategories,
-              languages: languages,
-              follower_count: followerCount,
-              average_reach: averageReach,
-              engagement_rate: engagementRate,
-              instagram_connected: isInstagramConnected,
-              instagram_username: instagramUsername || null,
-              instagram_verified: isInstagramConnected,
-              verification_status: isInstagramConnected ? 'verified' : 'unverified',
-              metrics_source: isInstagramConnected ? 'instagram_meta_verified' : 'platform_manual',
-              payout_upi_id: payoutUpiId.trim()
-                ? validateAndNormalizeUpiId(payoutUpiId).value
-                : null,
-            },
-            { onConflict: 'user_id' }
-          );
+          .upsert(creatorProfilePayload, { onConflict: 'user_id' });
 
         if (creatorError) {
+          console.error('creator_profiles upsert failed:', creatorError);
           throw new Error(`Failed to save creator profile: ${creatorError.message}`);
         }
 
         // 3. Upsert packages
         if (packages.length > 0) {
+          await supabase.from('creator_packages').delete().eq('creator_id', uid);
           const pkgRows = packages.map((pkg) => ({
             creator_id: uid,
-            name: pkg.name,
+            name: pkg.name || 'Custom Package',
             platform: pkg.platform || 'Instagram',
             content_type: pkg.content_type || 'Reel',
-            description: pkg.description,
-            price: pkg.price,
+            description: pkg.description || '',
+            price: Number(pkg.price) || 0,
             currency: 'INR',
-            delivery_days: pkg.delivery_days,
-            revision_count: pkg.revisions || 1,
+            delivery_days: Number(pkg.delivery_days) || 3,
+            revision_count: Number(pkg.revisions) || 1,
             deliverables: Array.isArray(pkg.deliverables) ? pkg.deliverables : [pkg.deliverables || ''],
             active: true,
           }));
-          await supabase.from('creator_packages').insert(pkgRows);
+          const { error: pkgError } = await supabase.from('creator_packages').insert(pkgRows);
+          if (pkgError) {
+            console.warn('creator_packages insert note:', pkgError.message);
+          }
         }
 
-        // 4. Upsert reels (stores reel_url and instagram_media_id without storage download)
+        // 4. Upsert reels (supports manual Instagram reel URLs & uploaded video samples)
         if (reels.length > 0) {
+          await supabase.from('creator_reels').delete().eq('creator_id', uid);
           const reelRows = reels.map((r, idx) => ({
             creator_id: uid,
-            title: r.title,
+            title: r.title || 'Instagram Reel Work Sample',
             video_url: r.video_url,
-            reel_url: r.reel_url || (r.video_url.includes('instagram.com') ? r.video_url : null),
+            reel_url: r.reel_url || (r.video_url && r.video_url.includes('instagram.com') ? r.video_url : null),
             instagram_media_id: r.instagram_media_id || null,
             storage_path: r.storage_path || null,
-            mime_type: r.mime_type || undefined,
+            mime_type: r.mime_type || 'video/mp4',
             file_size_bytes: r.file_size_bytes || null,
-            type: r.type || 'client_work',
+            type: (r.type === 'client_work' || r.type === 'demo') ? r.type : 'client_work',
             sort_order: idx + 1,
             is_featured: r.is_featured ?? idx === 0,
             is_visible: true,
           }));
-          await supabase.from('creator_reels').insert(reelRows);
+          const { error: reelError } = await supabase.from('creator_reels').insert(reelRows);
+          if (reelError) {
+            console.error('creator_reels insert error:', reelError);
+            throw new Error(`Failed to save reel work samples: ${reelError.message}`);
+          }
         }
       }
 
       onboardCreator({
+        id: uid,
+        user_id: uid,
         profile: {
           id: uid,
           role: 'creator',
           display_name: displayName || 'Creator',
           email: userEmail,
-          avatar_url: profileImage,
+          avatar_url: profileImage || null,
           city: finalCity,
           created_at: new Date().toISOString(),
         },
+        display_name: displayName || 'Creator',
         country: country || 'India',
         state: stateName || '',
         city: finalCity,
@@ -484,13 +504,13 @@ export default function CreatorOnboardingPage() {
         categories: selectedCategories,
         languages: languages,
         bio: bio || '',
-        profile_image_path: profileImage,
-        follower_count: followerCount,
-        average_reach: averageReach,
-        engagement_rate: engagementRate,
-        instagram_connected: isInstagramConnected,
-        instagram_verified: isInstagramConnected,
-        instagram_username: instagramUsername || undefined,
+        profile_image_path: profileImage || undefined,
+        follower_count: isInstagramConnected ? followerCount : 0,
+        average_reach: isInstagramConnected ? averageReach : 0,
+        engagement_rate: isInstagramConnected ? engagementRate : 0,
+        instagram_connected: Boolean(isInstagramConnected),
+        instagram_verified: Boolean(isInstagramConnected),
+        instagram_username: isInstagramConnected && instagramUsername ? instagramUsername : null,
         metrics_source: isInstagramConnected ? 'instagram_meta_verified' : 'platform_manual',
         packages,
         reels: reels || [],
@@ -499,7 +519,12 @@ export default function CreatorOnboardingPage() {
           : undefined,
       });
 
-      await refreshData();
+      try {
+        await refreshData();
+      } catch (refErr) {
+        console.warn('refreshData note after onboarding:', refErr);
+      }
+
       router.push('/dashboard/creator');
     } catch (err: unknown) {
       console.error('Creator onboarding failed:', err);

@@ -1019,7 +1019,7 @@ export default function CreatorDashboardPage() {
             <div className="sm:col-span-2">
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">Bio</span>
               <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#52525B] dark:text-zinc-300 leading-relaxed">
-                {dbCreator.bio || 'Content creator helping brands reach target audiences.'}
+                {dbCreator?.bio || 'Content creator helping brands reach target audiences.'}
               </p>
             </div>
 
