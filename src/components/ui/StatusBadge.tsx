@@ -8,7 +8,8 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
-  const getBadgeStyle = (val: string) => {
+  const getBadgeStyle = (val?: string | null) => {
+    if (!val) return 'bg-[#F4F4F5] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 border-[#E4E4E7] dark:border-zinc-700';
     switch (val) {
       case 'FUNDED':
         return 'bg-[#FFF2EC] dark:bg-orange-950/40 text-[#FF5416] border-[#FFD2C1] dark:border-orange-900';
@@ -48,9 +49,10 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
     }
   };
 
-  const formatLabel = (val: string) => {
+  const formatLabel = (val?: string | null) => {
+    if (!val) return 'Pending';
     if (val === 'DISPUTED' || val === 'ADMIN_REVIEW') return 'System Review';
-    return val.replace(/_/g, ' ');
+    return String(val).replace(/_/g, ' ');
   };
 
   const sizeClasses =

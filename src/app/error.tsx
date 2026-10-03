@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { AlertCircle, RotateCcw, Home } from 'lucide-react';
+import { AlertCircle, RotateCcw, Home, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function GlobalError({
   error,
@@ -12,9 +12,16 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
+
   useEffect(() => {
-    // Log error safely without exposing credentials
-    console.error('App runtime error caught by boundary:', error.message || error);
+    // Log complete error safely to browser console for diagnostics
+    console.error('App runtime error caught by GlobalError boundary:', {
+      name: error?.name,
+      message: error?.message,
+      digest: error?.digest,
+      stack: error?.stack,
+    });
   }, [error]);
 
   return (
@@ -33,6 +40,25 @@ export default function GlobalError({
             The page encountered an unexpected issue while loading data. Please try again or return to the main catalog.
           </p>
         </div>
+
+        {error?.message && (
+          <div className="text-left font-mono text-[11px] bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-900/60 rounded-lg p-3 text-red-700 dark:text-red-400">
+            <button
+              type="button"
+              onClick={() => setShowDetails(!showDetails)}
+              className="flex items-center justify-between w-full font-bold cursor-pointer"
+            >
+              <span>Diagnostic Details</span>
+              {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            {showDetails && (
+              <div className="mt-2 space-y-1 pt-2 border-t border-red-200 dark:border-red-900">
+                <p className="break-all"><strong>Message:</strong> {error.message}</p>
+                {error.digest && <p className="break-all"><strong>Digest:</strong> {error.digest}</p>}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Button

@@ -109,7 +109,7 @@ export function ConversationChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Filter conversations where the current user is a participant
-  const userConversations = conversations.filter(
+  const userConversations = (conversations || []).filter(
     (c) =>
       c.business_user_id === currentUser?.id ||
       c.creator_user_id === currentUser?.id
@@ -137,9 +137,9 @@ export function ConversationChat({
     }
   }, [selectedConvId]);
 
-  const convMessages = (selectedConvId ? messages[selectedConvId] : []) || [];
+  const convMessages = (selectedConvId && messages ? messages[selectedConvId] : []) || [];
   const convProposals =
-    (selectedConvId ? dealProposals[selectedConvId] : []) ||
+    (selectedConvId && dealProposals ? dealProposals[selectedConvId] : []) ||
     activeConversation?.proposals ||
     [];
 
@@ -158,8 +158,8 @@ export function ConversationChat({
   // Find linked order for active conversation
   const targetOrderId = activeConversation?.order_id || acceptedProposal?.order_id || activeProposal?.order_id;
   const activeOrder = targetOrderId
-    ? orders.find((o) => o.id === targetOrderId)
-    : orders.find(
+    ? (orders || []).find((o) => o.id === targetOrderId)
+    : (orders || []).find(
         (o) =>
           (activeConversation?.request_id && o.request_id === activeConversation.request_id) ||
           (o.creator_user_id === activeConversation?.creator_user_id &&
@@ -167,7 +167,7 @@ export function ConversationChat({
       );
 
   // Linked request
-  const linkedRequest = collaborationRequests.find(
+  const linkedRequest = (collaborationRequests || []).find(
     (r) => r.id === activeConversation?.request_id
   );
 

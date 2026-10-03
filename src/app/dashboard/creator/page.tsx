@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -14,12 +14,7 @@ import { CreatorReel, ReelType, CreatorPackage } from '@/types/marketplace';
 import { ConversationChat } from '@/components/chat/ConversationChat';
 import {
   ArrowRight,
-  CheckCircle,
-  XCircle,
-  Clock,
   Package,
-  Layers,
-  Sparkles,
   Film,
   Upload,
   Trash2,
@@ -27,10 +22,8 @@ import {
   Eye,
   EyeOff,
   User,
-  Edit2,
   Plus,
   MessageSquare,
-  Settings,
   AlertCircle,
   Camera,
   CheckCircle2,
@@ -92,19 +85,30 @@ function generatePackageId(): string {
   return `pkg_${Date.now()}`;
 }
 
+function safeFormatDate(dateStr?: string | null): string {
+  if (!dateStr) return 'Recent';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Recent';
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return 'Recent';
+  }
+}
+
 export const dynamic = 'force-dynamic';
 
 export default function CreatorDashboardPage() {
   const router = useRouter();
   const {
-    orders,
+    orders = [],
     acceptOrder,
     declineOrder,
     currentUser,
-    collaborationRequests,
+    collaborationRequests = [],
     acceptCollaborationRequest,
     declineCollaborationRequest,
-    conversations,
+    conversations = [],
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
@@ -137,7 +141,17 @@ export default function CreatorDashboardPage() {
   const [upiError, setUpiError] = useState<string | null>(null);
   const [upiSuccessMessage, setUpiSuccessMessage] = useState<string | null>(null);
 
-  const loadDbCreator = async () => {
+  // Instagram Reel URL input state
+  const [instagramReelUrl, setInstagramReelUrl] = useState('');
+  const [reelUrlError, setReelUrlError] = useState<string | null>(null);
+  const [isAddingReelUrl, setIsAddingReelUrl] = useState(false);
+  const [isSavingReelUrl, setIsSavingReelUrl] = useState(false);
+
+  /**
+   * Isolated stage data loader for the creator dashboard.
+   * Ensures an optional stage failure does NOT crash the entire studio.
+   */
+  const loadDbCreator = useCallback(async () => {
     setIsLoadingAuth(true);
     setPageError(null);
 
@@ -146,6 +160,11 @@ export default function CreatorDashboardPage() {
       return;
     }
 
+    let authUserId: string | null = null;
+    let authUserEmail: string | null = null;
+    let authUserMeta: any = {};
+
+    // ── STAGE 1: Authenticated Supabase User ──
     try {
       const {
         data: { user },
@@ -153,71 +172,103 @@ export default function CreatorDashboardPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
+        console.warn('[Dashboard Stage 1: Auth Session] No active user session:', userError?.message);
         router.replace('/auth/login');
         return;
       }
 
-      // 1. Verify profile and role
+      authUserId = user.id;
+      authUserEmail = user.email || '';
+      authUserMeta = user.user_metadata || {};
+    } catch (authErr) {
+      console.error('[Dashboard Stage 1: Auth Session Exception]:', authErr);
+      router.replace('/auth/login');
+      return;
+    }
+
+    // ── STAGE 2: Profiles Table Verification ──
+    let userRole: string | null = null;
+    let profileDisplayName: string = authUserMeta.full_name || authUserMeta.name || 'Creator';
+    let profileCity: string = 'India';
+    let profileAvatar: string | null = authUserMeta.avatar_url || authUserMeta.picture || null;
+
+    try {
       const { data: profile, error: profError } = await supabase
         .from('profiles')
         .select('id, role, display_name, city, avatar_url')
-        .eq('id', user.id)
+        .eq('id', authUserId)
         .maybeSingle();
 
       if (profError) {
-        console.error('Error loading profile in creator dashboard:', profError);
+        console.error('[Dashboard Stage 2: profiles Query Error]:', {
+          code: profError.code,
+          message: profError.message,
+          details: profError.details,
+          hint: profError.hint,
+        });
       }
 
-      if (!profile?.role) {
+      if (profile) {
+        userRole = profile.role ? profile.role.toLowerCase() : null;
+        if (profile.display_name) profileDisplayName = profile.display_name;
+        if (profile.city) profileCity = profile.city;
+        if (profile.avatar_url) profileAvatar = profile.avatar_url;
+      }
+
+      if (!userRole) {
+        console.info('[Dashboard Stage 2: Missing Role] Redirecting to role selection');
         router.replace('/auth/role-select');
         return;
       }
 
-      const normalizedRole = profile.role.toLowerCase();
-      if (normalizedRole === 'business' || normalizedRole === 'advertiser') {
+      if (userRole === 'business' || userRole === 'advertiser') {
+        console.info('[Dashboard Stage 2: Business Role] Redirecting to business dashboard');
         router.replace('/dashboard/business');
         return;
       }
+    } catch (profErr) {
+      console.error('[Dashboard Stage 2: profiles Exception]:', profErr);
+    }
 
-      // 2. Query creator data using exact auth UUID
-      const [cpRes, pkgsRes, reelsRes] = await Promise.all([
-        supabase.from('creator_profiles').select('*').eq('user_id', user.id).maybeSingle(),
-        supabase.from('creator_packages').select('*').eq('creator_id', user.id),
-        supabase.from('creator_reels').select('*').eq('creator_id', user.id).order('sort_order', { ascending: true }),
-      ]);
+    // ── STAGE 3: Creator Profile Data ──
+    let loadedCreatorProfile: any = null;
+    try {
+      const { data: cp, error: cpError } = await supabase
+        .from('creator_profiles')
+        .select('*')
+        .eq('user_id', authUserId)
+        .maybeSingle();
 
-      if (cpRes.error) {
-        console.error('Error loading creator profile:', cpRes.error);
+      if (cpError) {
+        console.error('[Dashboard Stage 3: creator_profiles Query Error]:', {
+          code: cpError.code,
+          message: cpError.message,
+          details: cpError.details,
+          hint: cpError.hint,
+        });
       }
 
-      if (cpRes.data) {
-        setDbCreator({
-          ...cpRes.data,
-          creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
-        });
-        setPayoutUpiId(cpRes.data.payout_upi_id || '');
-        setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
+      if (cp) {
+        loadedCreatorProfile = cp;
       } else {
-        // Safe recovery if creator profile does not exist yet (matches business dashboard pattern)
-        const meta = user.user_metadata || {};
-        const fallbackName = meta.full_name || meta.name || profile.display_name || 'Creator';
-        const fallbackAvatar = meta.avatar_url || meta.picture || profile.avatar_url || null;
-        const { data: newCp, error: newCpErr } = await supabase
+        // Idempotently create/recover default creator profile if not yet inserted
+        console.info('[Dashboard Stage 3: Auto-Recovery] Creating default creator_profiles row');
+        const { data: recoveredCp, error: recoverErr } = await supabase
           .from('creator_profiles')
           .upsert(
             {
-              user_id: user.id,
-              display_name: fallbackName,
-              bio: 'Content creator helping apps reach targeted users.',
-              profile_image_path: fallbackAvatar,
+              user_id: authUserId,
+              display_name: profileDisplayName,
+              bio: 'Content creator helping apps and websites reach targeted users.',
+              profile_image_path: profileAvatar,
               country: 'India',
-              city: profile.city || 'India',
+              city: profileCity || 'India',
               niche: 'Technology',
               categories: ['Technology'],
               languages: ['Hindi', 'English'],
               follower_count: 0,
               average_reach: 0,
-              engagement_rate: 0,
+              engagement_rate: 0.0,
               verification_status: 'unverified',
               metrics_source: 'platform_manual',
             },
@@ -226,35 +277,97 @@ export default function CreatorDashboardPage() {
           .select('*')
           .maybeSingle();
 
-        if (newCp) {
-          setDbCreator({
-            ...newCp,
-            creator_packages: (pkgsRes.data as unknown as CreatorPackage[]) || [],
+        if (recoverErr) {
+          console.error('[Dashboard Stage 3: Auto-Recovery Failed]:', {
+            code: recoverErr.code,
+            message: recoverErr.message,
+            details: recoverErr.details,
+            hint: recoverErr.hint,
           });
-          setPackages((pkgsRes.data as unknown as CreatorPackage[]) || []);
-        } else {
-          console.error('Failed to auto-recover creator profile:', newCpErr);
-          router.replace('/auth/onboarding/creator');
-          return;
+        } else if (recoveredCp) {
+          loadedCreatorProfile = recoveredCp;
         }
       }
-
-      if (reelsRes.data) {
-        setReels(reelsRes.data as unknown as CreatorReel[]);
-      } else {
-        setReels([]);
-      }
-    } catch (err) {
-      console.error('Error loading creator dashboard:', err);
-      setPageError('Unable to load influencer studio. Please try again.');
-    } finally {
-      setIsLoadingAuth(false);
+    } catch (cpExc) {
+      console.error('[Dashboard Stage 3: creator_profiles Exception]:', cpExc);
     }
-  };
+
+    // ── STAGE 4: Creator Packages ──
+    let loadedPackages: CreatorPackage[] = [];
+    try {
+      const { data: pkgs, error: pkgsError } = await supabase
+        .from('creator_packages')
+        .select('*')
+        .eq('creator_id', authUserId);
+
+      if (pkgsError) {
+        console.error('[Dashboard Stage 4: creator_packages Query Error]:', {
+          code: pkgsError.code,
+          message: pkgsError.message,
+          details: pkgsError.details,
+          hint: pkgsError.hint,
+        });
+      } else if (pkgs) {
+        loadedPackages = pkgs as unknown as CreatorPackage[];
+      }
+    } catch (pkgExc) {
+      console.error('[Dashboard Stage 4: creator_packages Exception]:', pkgExc);
+    }
+
+    // ── STAGE 5: Creator Reels / Work Samples ──
+    let loadedReels: CreatorReel[] = [];
+    try {
+      const { data: reelsData, error: reelsError } = await supabase
+        .from('creator_reels')
+        .select('*')
+        .eq('creator_id', authUserId)
+        .order('sort_order', { ascending: true });
+
+      if (reelsError) {
+        console.error('[Dashboard Stage 5: creator_reels Query Error]:', {
+          code: reelsError.code,
+          message: reelsError.message,
+          details: reelsError.details,
+          hint: reelsError.hint,
+        });
+      } else if (reelsData) {
+        loadedReels = reelsData as unknown as CreatorReel[];
+      }
+    } catch (reelsExc) {
+      console.error('[Dashboard Stage 5: creator_reels Exception]:', reelsExc);
+    }
+
+    // ── APPLY STATE ──
+    if (loadedCreatorProfile) {
+      setDbCreator({
+        ...loadedCreatorProfile,
+        creator_packages: loadedPackages,
+      });
+      setPayoutUpiId(loadedCreatorProfile.payout_upi_id || '');
+    } else {
+      // Fallback empty creator state so studio still renders rather than crashing
+      setDbCreator({
+        user_id: authUserId || 'unknown',
+        display_name: profileDisplayName,
+        bio: '',
+        country: 'India',
+        city: profileCity,
+        niche: 'Technology',
+        follower_count: 0,
+        average_reach: 0,
+        engagement_rate: 0,
+        creator_packages: loadedPackages,
+      });
+    }
+
+    setPackages(loadedPackages);
+    setReels(loadedReels);
+    setIsLoadingAuth(false);
+  }, [router]);
 
   useEffect(() => {
     loadDbCreator();
-  }, [router]);
+  }, [loadDbCreator]);
 
   const handleSavePayoutUpi = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -271,7 +384,7 @@ export default function CreatorDashboardPage() {
     setIsSavingUpi(true);
 
     try {
-      if (isSupabaseConfigured && currentUser) {
+      if (isSupabaseConfigured && currentUser?.id) {
         const { error } = await supabase
           .from('creator_profiles')
           .update({
@@ -289,7 +402,7 @@ export default function CreatorDashboardPage() {
       setDbCreator((prev) => (prev ? { ...prev, payout_upi_id: cleanedValue } : null));
       setUpiSuccessMessage(
         cleanedValue
-          ? 'Payment details saved successfully. Payouts will be manually transferred to this UPI ID upon order completion.'
+          ? 'Payment details saved successfully. Payouts will be transferred to this UPI ID upon order approval.'
           : 'Payment details cleared.'
       );
     } catch (err) {
@@ -325,37 +438,40 @@ export default function CreatorDashboardPage() {
     }
   };
 
-  // Real orders for this creator (query by creator_id OR creator_user_id)
+  // Safe data pipelines
   const creatorOrders = (orders || []).filter(
     (o) =>
-      o.creator_id === creatorId ||
-      o.creator_user_id === creatorId ||
-      o.creator?.user_id === creatorId
+      o &&
+      (o.creator_id === creatorId ||
+        o.creator_user_id === creatorId ||
+        o.creator?.user_id === creatorId)
   );
 
-  // Incoming collaboration requests where creator_user_id = auth.uid()
   const incomingRequests = (collaborationRequests || []).filter(
-    (r) => r.creator_user_id === creatorId
+    (r) => r && r.creator_user_id === creatorId
   );
   const pendingRequests = incomingRequests.filter(
-    (r) => r.status === 'REQUESTED' || r.status === 'PENDING'
+    (r) => r && (r.status === 'REQUESTED' || r.status === 'PENDING')
   );
-  const userConversations = (conversations || []).filter(
-    (c) => c.creator_user_id === creatorId || c.business_user_id === creatorId
-  );
-
   const activeOrders = creatorOrders.filter(
     (o) =>
+      o &&
       o.order_status !== 'COMPLETED' &&
       o.order_status !== 'CANCELLED'
   );
   const completedOrders = creatorOrders.filter(
-    (o) => o.order_status === 'COMPLETED' || o.order_status === 'APPROVED'
+    (o) => o && (o.order_status === 'COMPLETED' || o.order_status === 'APPROVED')
   );
 
-  // Real financial calculations from actual orders
-  const totalEarnings = completedOrders.reduce((sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0), 0);
-  const pendingEarnings = activeOrders.reduce((sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0), 0);
+  // Financial calculations
+  const totalEarnings = completedOrders.reduce(
+    (sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0),
+    0
+  );
+  const pendingEarnings = activeOrders.reduce(
+    (sum, o) => sum + (Number(o.subtotal) || Number(o.total_amount) || 0),
+    0
+  );
 
   const creatorDisplayName = dbCreator?.display_name || currentUser?.display_name || 'Creator';
   const creatorNiche = dbCreator?.niche || 'Technology';
@@ -389,30 +505,6 @@ export default function CreatorDashboardPage() {
             </Button>
           </Link>
         </div>
-      </div>
-    );
-  }
-
-  // If creator profile doesn't exist in Supabase, show onboarding CTA
-  if (!dbCreator) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-20 text-center space-y-6">
-        <div className="w-16 h-16 rounded-2xl bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] flex items-center justify-center mx-auto border border-[#FFD2C1] dark:border-[#4D1F0E]">
-          <Camera className="w-8 h-8" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
-            Complete Your Influencer Profile
-          </h2>
-          <p className="text-sm text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
-            You haven&apos;t set up your creator profile yet. Complete onboarding to showcase your packages, upload portfolio reels, and start earning from app campaigns.
-          </p>
-        </div>
-        <Link href="/auth/onboarding/creator">
-          <Button variant="primary" size="lg">
-            Complete Influencer Onboarding
-          </Button>
-        </Link>
       </div>
     );
   }
@@ -532,12 +624,6 @@ export default function CreatorDashboardPage() {
       prev.map((r) => (r.id === reelId ? { ...r, is_visible: nextVisible } : r))
     );
   };
-
-  // Instagram Reel URL input state
-  const [instagramReelUrl, setInstagramReelUrl] = useState('');
-  const [reelUrlError, setReelUrlError] = useState<string | null>(null);
-  const [isAddingReelUrl, setIsAddingReelUrl] = useState(false);
-  const [isSavingReelUrl, setIsSavingReelUrl] = useState(false);
 
   const handleAddInstagramReel = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -744,10 +830,11 @@ export default function CreatorDashboardPage() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-8">
-          {/* Missing UPI Notice for Completed Orders (Manual Payout) */}
+          {/* Missing UPI Notice for Completed Orders */}
           {!dbCreator?.payout_upi_id &&
-            orders.some(
+            (orders || []).some(
               (o) =>
+                o &&
                 (o.order_status === 'COMPLETED' || o.payout_status === 'PAYOUT_PENDING') &&
                 o.creator_user_id === currentUser?.id
             ) && (
@@ -757,7 +844,7 @@ export default function CreatorDashboardPage() {
                   <div>
                     <p className="font-semibold">Payment Details needed for completed orders</p>
                     <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                      You have orders awaiting manual payout. Please add your UPI ID in Settings so the Market My App owner can manually process your payout in RazorpayX.
+                      You have orders awaiting payout. Please add your UPI ID in Settings so your payout can be transferred.
                     </p>
                   </div>
                 </div>
@@ -817,14 +904,14 @@ export default function CreatorDashboardPage() {
                             {req.campaign?.campaign_name || req.campaign?.product_name || 'App Collaboration'}
                           </h4>
                           <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                            Package: {req.package?.name || 'Custom Package'} • {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Recent'}
+                            Package: {req.package?.name || 'Custom Package'} • {safeFormatDate(req.created_at)}
                           </p>
                         </div>
                       </div>
 
                       <div className="text-right">
                         <span className="font-mono text-base font-bold text-[#121214] dark:text-white block">
-                          {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price).toLocaleString('en-IN')}` : 'Budget Open')}
+                          {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price || 0).toLocaleString('en-IN')}` : 'Budget Open')}
                         </span>
                         <span className="editorial-label text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded text-[9px]">
                           {req.status}
@@ -972,7 +1059,7 @@ export default function CreatorDashboardPage() {
               </p>
             </div>
 
-            {/* Instagram Account Connection */}
+            {/* Instagram Account Connection Status (Local DB only, decoupled from network) */}
             <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -1023,7 +1110,7 @@ export default function CreatorDashboardPage() {
               </p>
             </div>
 
-            {/* Payout UPI ID (Private & Confidential) */}
+            {/* Payout UPI ID */}
             <div className="sm:col-span-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
               <span className="font-semibold text-[#121214] dark:text-white block mb-1">
                 Payout UPI ID <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400">(Private & Confidential)</span>
@@ -1033,7 +1120,7 @@ export default function CreatorDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('settings')}
-                  className="text-[11px] text-[#FF5416] hover:underline font-sans font-medium"
+                  className="text-[11px] text-[#FF5416] hover:underline font-sans font-medium cursor-pointer"
                 >
                   {dbCreator?.payout_upi_id ? 'Change' : 'Add UPI ID'}
                 </button>
@@ -1055,7 +1142,7 @@ export default function CreatorDashboardPage() {
         </div>
       )}
 
-      {/* TAB 3: MY REELS (19MB REEL UPLOAD) */}
+      {/* TAB 3: MY REELS (19MB REEL UPLOAD & INSTAGRAM REEL URL) */}
       {activeTab === 'reels' && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
@@ -1065,7 +1152,7 @@ export default function CreatorDashboardPage() {
                 Promotional Showcase Reels
               </h3>
               <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                Upload short vertical reels (max 19 MB) demonstrating your app review style and video quality.
+                Upload vertical video reels (max 19 MB) or add Instagram Reel links to showcase your review format.
               </p>
             </div>
 
@@ -1110,7 +1197,7 @@ export default function CreatorDashboardPage() {
                   <span>Add Instagram Reel Work Sample</span>
                 </span>
                 <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
-                  Embeds via Instagram player without video upload
+                  Embeds via Instagram player
                 </span>
               </div>
 
@@ -1203,97 +1290,100 @@ export default function CreatorDashboardPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reels.map((reel) => (
-                <div
-                  key={reel.id}
-                  className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4 bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col justify-between space-y-3"
-                >
-                  <div className="flex gap-3">
-                    <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
-                      <ReelVideo
-                        src={reel.video_url || reel.reel_url || ''}
-                        poster={reel.thumbnail_url}
-                        autoPlay={true}
-                        loop={true}
-                        muted={true}
-                        playsInline={true}
-                        className="w-full h-full"
-                      />
-                    </div>
+              {reels.map((reel) => {
+                const reelSrc = reel.video_url || reel.reel_url || '';
+                const fileSizeMb = reel.file_size_bytes ? (Number(reel.file_size_bytes) / (1024 * 1024)).toFixed(1) : null;
 
-                    <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {reel.is_featured && (
-                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FFF2EC] dark:bg-[#FF5416]/10 border border-[#FFD2C1] dark:border-[#FF5416]/30 text-[#FF5416] font-bold flex items-center gap-1">
-                            <Star className="w-2.5 h-2.5 fill-[#FF5416]" />
-                            Featured
-                          </span>
-                        )}
-                        {!reel.is_visible && (
-                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                            Hidden
-                          </span>
-                        )}
+                return (
+                  <div
+                    key={reel.id}
+                    className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4 bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col justify-between space-y-3"
+                  >
+                    <div className="flex gap-3">
+                      <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
+                        <ReelVideo
+                          src={reelSrc}
+                          poster={reel.thumbnail_url}
+                          autoPlay={true}
+                          loop={true}
+                          muted={true}
+                          playsInline={true}
+                          className="w-full h-full"
+                        />
                       </div>
 
-                      <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white truncate">
-                        {reel.title}
-                      </h4>
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {reel.is_featured && (
+                            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FFF2EC] dark:bg-[#FF5416]/10 border border-[#FFD2C1] dark:border-[#FF5416]/30 text-[#FF5416] font-bold flex items-center gap-1">
+                              <Star className="w-2.5 h-2.5 fill-[#FF5416]" />
+                              Featured
+                            </span>
+                          )}
+                          {!reel.is_visible && (
+                            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
 
-                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                        {reel.file_size_bytes
-                          ? `${(reel.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`
-                          : '19MB limit compliant'}
-                      </p>
-                    </div>
-                  </div>
+                        <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white truncate">
+                          {reel.title || 'Untitled Reel'}
+                        </h4>
 
-                  {/* Controls */}
-                  <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFeatured(reel.id)}
-                        className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 transition-colors cursor-pointer ${
-                          reel.is_featured
-                            ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
-                            : 'border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300'
-                        }`}
-                      >
-                        <Star className="w-3 h-3" />
-                        <span>{reel.is_featured ? 'Featured' : 'Make Featured'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleToggleVisibility(reel.id)}
-                        className="px-2 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] text-[#71717A] dark:text-zinc-300 flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        {reel.is_visible ? (
-                          <>
-                            <Eye className="w-3 h-3" />
-                            <span>Visible</span>
-                          </>
-                        ) : (
-                          <>
-                            <EyeOff className="w-3 h-3" />
-                            <span>Hidden</span>
-                          </>
-                        )}
-                      </button>
+                        <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
+                          {fileSizeMb ? `${fileSizeMb} MB` : 'Compliant format'}
+                        </p>
+                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteReel(reel.id)}
-                      className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors cursor-pointer"
-                      aria-label="Delete reel"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Controls */}
+                    <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFeatured(reel.id)}
+                          className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 transition-colors cursor-pointer ${
+                            reel.is_featured
+                              ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
+                              : 'border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300'
+                          }`}
+                        >
+                          <Star className="w-3 h-3" />
+                          <span>{reel.is_featured ? 'Featured' : 'Make Featured'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleToggleVisibility(reel.id)}
+                          className="px-2 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] text-[#71717A] dark:text-zinc-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          {reel.is_visible ? (
+                            <>
+                              <Eye className="w-3 h-3" />
+                              <span>Visible</span>
+                            </>
+                          ) : (
+                            <>
+                              <EyeOff className="w-3 h-3" />
+                              <span>Hidden</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReel(reel.id)}
+                        className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors cursor-pointer"
+                        aria-label="Delete reel"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1461,7 +1551,7 @@ export default function CreatorDashboardPage() {
                           {req.campaign?.campaign_name || req.campaign?.product_name || 'App Promotion'}
                         </h4>
                         <p className="text-xs text-[#71717A] dark:text-zinc-400 font-mono">
-                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
+                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {safeFormatDate(req.created_at)}
                         </p>
                       </div>
                     </div>
@@ -1469,7 +1559,7 @@ export default function CreatorDashboardPage() {
                     <div className="sm:text-right">
                       <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 block">Proposed Budget:</span>
                       <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                        {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price).toLocaleString('en-IN')}` : 'Budget Open')}
+                        {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price || 0).toLocaleString('en-IN')}` : 'Budget Open')}
                       </span>
                     </div>
                   </div>
@@ -1511,7 +1601,7 @@ export default function CreatorDashboardPage() {
                       </Button>
                     ) : (
                       <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                        Request {req.status.toLowerCase()}
+                        Request {String(req.status || '').toLowerCase()}
                       </span>
                     )}
                   </div>
@@ -1560,7 +1650,7 @@ export default function CreatorDashboardPage() {
                         Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Campaign: {ord.campaign?.campaign_name || ord.brief?.objective || 'App Promotion'}
                       </p>
                       <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                        Package: {ord.package?.name || 'Custom Package'} • Created {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
+                        Package: {ord.package?.name || 'Custom Package'} • Created {safeFormatDate(ord.created_at)}
                       </p>
                     </div>
 
@@ -1609,7 +1699,7 @@ export default function CreatorDashboardPage() {
                       Brand: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
                     </p>
                     <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                      Completed {ord.created_at ? new Date(ord.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
+                      Completed {safeFormatDate(ord.created_at)}
                     </p>
                   </div>
 
