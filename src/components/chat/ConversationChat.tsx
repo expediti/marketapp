@@ -401,10 +401,24 @@ export function ConversationChat({
     })),
   ].sort((a, b) => a.timestamp - b.timestamp);
 
+  const isOrderPaid = Boolean(
+    activeOrder && (
+      activeOrder.payment_status === 'PAID' ||
+      activeOrder.order_status === 'PAID' ||
+      activeOrder.order_status === 'WORK_STARTED' ||
+      activeOrder.order_status === 'IN_PROGRESS' ||
+      activeOrder.order_status === 'DELIVERED' ||
+      activeOrder.order_status === 'REVISION_REQUESTED' ||
+      activeOrder.order_status === 'APPROVED' ||
+      activeOrder.order_status === 'AUTO_APPROVED' ||
+      activeOrder.order_status === 'COMPLETED'
+    )
+  );
+
   return (
-    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-[660px] font-mono">
-      {/* SIDEBAR: Conversation List */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-[#E5E5DE] dark:border-zinc-800 flex flex-col shrink-0">
+    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-[700px] md:h-[660px] font-mono">
+      {/* SIDEBAR: Conversation List (hidden on mobile when a chat is open) */}
+      <div className={`w-full md:w-80 border-b md:border-b-0 md:border-r border-[#E5E5DE] dark:border-zinc-800 flex flex-col shrink-0 ${selectedConvId ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-3.5 border-b border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/50 flex items-center justify-between">
           <span className="text-xs font-bold text-[#121214] dark:text-white">
             Conversations ({userConversations.length})
@@ -485,12 +499,21 @@ export function ConversationChat({
 
       {/* CHAT & PROPOSAL PANE */}
       {activeConversation ? (
-        <div className="flex-1 flex flex-col bg-white dark:bg-[#18181B] overflow-hidden">
+        <div className={`flex-1 flex flex-col bg-white dark:bg-[#18181B] overflow-hidden ${!selectedConvId ? 'hidden md:flex' : 'flex'}`}>
           {/* Header */}
-          <div className="px-5 py-3.5 border-b border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+          <div className="px-4 sm:px-5 py-3 border-b border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              {/* Mobile back button to return to conversation list */}
+              <button
+                type="button"
+                onClick={() => setSelectedConvId(null)}
+                className="md:hidden p-1.5 -ml-1 text-[#71717A] hover:text-[#121214] dark:hover:text-white rounded-lg hover:bg-[#ECECE6] dark:hover:bg-zinc-800"
+                aria-label="Back to conversations"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" />
+              </button>
               <div
-                className={`w-2.5 h-2.5 rounded-full ${
+                className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                   isEnded ? 'bg-zinc-400' : 'bg-[#047857]'
                 }`}
               />
@@ -513,12 +536,12 @@ export function ConversationChat({
 
             {/* Contextual Action Bar */}
             <div className="flex items-center flex-wrap gap-2">
-              {/* DEAL CONFIRMED STATE */}
-              {activeOrder && (activeOrder.order_status === 'DEAL_CONFIRMED' || activeOrder.order_status === 'PAYMENT_PENDING') && activeOrder.payment_status !== 'PAID' ? (
+              {/* UNPAID DEAL CONFIRMED STATE */}
+              {!isOrderPaid && activeOrder && (activeOrder.order_status === 'DEAL_CONFIRMED' || activeOrder.order_status === 'PAYMENT_PENDING') ? (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-purple-700 dark:text-purple-300 flex items-center gap-1 bg-purple-50 dark:bg-purple-950/40 px-2 py-1 rounded border border-purple-200 dark:border-purple-800">
                     <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Payment required to start this collaboration.</span>
+                    <span>{isMeBusiness ? 'Payment required to start' : 'Waiting for payment'}</span>
                   </span>
 
                   {isMeBusiness && (
@@ -533,8 +556,8 @@ export function ConversationChat({
                         <CreditCard className="w-3.5 h-3.5 mr-1" />
                         <span>
                           {isPaying
-                            ? 'Processing payment...'
-                            : `Pay Now — ₹${activeOrder.total_amount.toLocaleString('en-IN')}`}
+                            ? 'Processing...'
+                            : `Pay ₹${activeOrder.total_amount.toLocaleString('en-IN')}`}
                         </span>
                       </Button>
                       <Button
@@ -544,7 +567,7 @@ export function ConversationChat({
                         onClick={() => setIsCancelDealModalOpen(true)}
                         className="text-xs text-red-600 border-red-200 hover:bg-red-50"
                       >
-                        <span>Cancel Deal</span>
+                        <span>Cancel</span>
                       </Button>
                     </>
                   )}
@@ -561,18 +584,18 @@ export function ConversationChat({
                     </Button>
                   </Link>
                 </div>
-              ) : activeOrder && (activeOrder.order_status === 'PAID' || activeOrder.payment_status === 'PAID') && activeOrder.order_status !== 'WORK_STARTED' && activeOrder.order_status !== 'DELIVERED' && activeOrder.order_status !== 'COMPLETED' ? (
+              ) : isOrderPaid && activeOrder ? (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-[#047857] flex items-center gap-1 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold">
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span>
                       {isMeCreator
-                        ? 'Payment received. You can now start the work.'
-                        : 'Payment received.'}
+                        ? 'Payment received'
+                        : 'Payment completed'}
                     </span>
                   </span>
 
-                  {isMeCreator && (
+                  {isMeCreator && activeOrder.order_status === 'PAID' && (
                     <Button
                       variant="primary"
                       size="sm"
@@ -580,7 +603,7 @@ export function ConversationChat({
                       className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white"
                     >
                       <PlayCircle className="w-3.5 h-3.5 mr-1" />
-                      <span>Mark as Started</span>
+                      <span>Start Working</span>
                     </Button>
                   )}
 
@@ -593,7 +616,6 @@ export function ConversationChat({
                   </Link>
                 </div>
               ) : activeOrder && activeOrder.order_status !== 'CANCELLED' ? (
-                // Order already created and past confirmation
                 <Link href={`/orders/${activeOrder.id}`}>
                   <Button variant="outline" size="sm" className="text-xs">
                     <FileCheck2 className="w-3.5 h-3.5 mr-1 text-[#047857]" />
@@ -602,7 +624,6 @@ export function ConversationChat({
                   </Button>
                 </Link>
               ) : !isEnded ? (
-                // NEGOTIATING STATE: Both can make proposals or end collaboration
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
@@ -929,7 +950,7 @@ export function ConversationChat({
                           </div>
 
                           {/* PAYMENT REQUIRED ACTION (Business) OR WAITING STATUS (Creator) */}
-                          {(!activeOrder || ((activeOrder.order_status === 'DEAL_CONFIRMED' || activeOrder.order_status === 'PAYMENT_PENDING') && activeOrder.payment_status !== 'PAID')) && (
+                          {!isOrderPaid && (
                             <div className="p-3.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 space-y-3">
                               <div className="flex items-start gap-2">
                                 <CheckCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
@@ -941,8 +962,8 @@ export function ConversationChat({
                                   </h5>
                                   <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5">
                                     {isMeBusiness
-                                      ? 'Deal confirmed. Payment is required before the creator can start working.'
-                                      : 'Deal confirmed. Waiting for business payment. You can start working once payment is completed.'}
+                                      ? 'Complete payment to start the collaboration.'
+                                      : 'Waiting for the business to complete payment. You can start working once payment is completed.'}
                                   </p>
                                 </div>
                               </div>
@@ -997,19 +1018,19 @@ export function ConversationChat({
                           )}
 
                           {/* PAYMENT RECEIVED / START WORK */}
-                          {activeOrder && (activeOrder.order_status === 'PAID' || activeOrder.payment_status === 'PAID') && (
+                          {isOrderPaid && (
                             <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <CheckCircle className="w-4 h-4 text-[#047857] shrink-0" />
                                   <span className="font-bold text-xs text-emerald-900 dark:text-emerald-200">
                                     {isMeCreator
-                                      ? 'Payment received. You can now start working.'
-                                      : 'Payment confirmed! Order is funded.'}
+                                      ? 'Payment received. You can start working.'
+                                      : 'Payment completed. Creator can now start working.'}
                                   </span>
                                 </div>
 
-                                {isMeCreator && activeOrder.order_status === 'PAID' && (
+                                {isMeCreator && activeOrder && activeOrder.order_status === 'PAID' && (
                                   <Button
                                     variant="primary"
                                     size="sm"
@@ -1017,7 +1038,7 @@ export function ConversationChat({
                                     className="text-xs bg-[#FF5416] hover:bg-[#E0450C] text-white font-bold"
                                   >
                                     <PlayCircle className="w-3.5 h-3.5 mr-1" />
-                                    <span>Mark as Started</span>
+                                    <span>Start Working</span>
                                   </Button>
                                 )}
                               </div>

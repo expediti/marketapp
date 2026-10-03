@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
-import { CreatorReel, ReelType, CreatorPackage } from '@/types/marketplace';
+import { CreatorReel, ReelType, CreatorPackage, Campaign } from '@/types/marketplace';
 import { ConversationChat } from '@/components/chat/ConversationChat';
 import {
   ArrowRight,
@@ -27,6 +27,11 @@ import {
   AlertCircle,
   Camera,
   CheckCircle2,
+  Briefcase,
+  Compass,
+  ShoppingBag,
+  ExternalLink,
+  Edit2,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
 import { parseInstagramUrl } from '@/lib/utils/instagram';
@@ -49,16 +54,8 @@ function InstagramIcon({ className }: { className?: string }) {
   );
 }
 
-type TabKey =
-  | 'overview'
-  | 'profile'
-  | 'reels'
-  | 'packages'
-  | 'requests'
-  | 'active'
-  | 'completed'
-  | 'messages'
-  | 'settings';
+type TabKey = 'home' | 'discover' | 'orders' | 'messages' | 'profile' | 'settings';
+type OrderFilter = 'all' | 'ongoing' | 'completed';
 
 interface DbCreatorState {
   user_id: string;
@@ -98,25 +95,37 @@ function safeFormatDate(dateStr?: string | null): string {
 
 export const dynamic = 'force-dynamic';
 
-export default function CreatorDashboardPage() {
+function CreatorDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+
   const {
     orders = [],
-    acceptOrder,
-    declineOrder,
     currentUser,
     collaborationRequests = [],
     acceptCollaborationRequest,
     declineCollaborationRequest,
-    conversations = [],
+    campaigns = [],
   } = useMarketplace();
 
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>('home');
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
   const [dbCreator, setDbCreator] = useState<DbCreatorState | null>(null);
   const [packages, setPackages] = useState<CreatorPackage[]>([]);
   const [reels, setReels] = useState<CreatorReel[]>([]);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+
+  // Synchronize URL tab parameter
+  useEffect(() => {
+    if (tabParam) {
+      if (tabParam === 'overview') setActiveTab('home');
+      else if (['home', 'discover', 'orders', 'messages', 'profile', 'settings'].includes(tabParam)) {
+        setActiveTab(tabParam as TabKey);
+      }
+    }
+  }, [tabParam]);
 
   // Reels management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -126,8 +135,9 @@ export default function CreatorDashboardPage() {
   const [newReelTitle, setNewReelTitle] = useState('');
   const [newReelType, setNewReelType] = useState<ReelType>('client_work');
 
-  // Package creation modal/state
+  // Package creation/editing modal/state
   const [isAddingPkg, setIsAddingPkg] = useState(false);
+  const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
   const [newPkgName, setNewPkgName] = useState('');
   const [newPkgPrice, setNewPkgPrice] = useState(3000);
   const [newPkgDelivery, setNewPkgDelivery] = useState(4);
@@ -147,10 +157,7 @@ export default function CreatorDashboardPage() {
   const [isAddingReelUrl, setIsAddingReelUrl] = useState(false);
   const [isSavingReelUrl, setIsSavingReelUrl] = useState(false);
 
-  /**
-   * Isolated stage data loader for the creator dashboard.
-   * Ensures an optional stage failure does NOT crash the entire studio.
-   */
+  // Isolated stage data loader for the creator dashboard
   const loadDbCreator = useCallback(async () => {
     setIsLoadingAuth(true);
     setPageError(null);
@@ -164,7 +171,6 @@ export default function CreatorDashboardPage() {
     let authUserEmail: string | null = null;
     let authUserMeta: any = {};
 
-    // ── STAGE 1: Authenticated Supabase User ──
     try {
       const {
         data: { user },
@@ -172,7 +178,6 @@ export default function CreatorDashboardPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        console.warn('[Dashboard Stage 1: Auth Session] No active user session:', userError?.message);
         router.replace('/auth/login');
         return;
       }
@@ -181,12 +186,10 @@ export default function CreatorDashboardPage() {
       authUserEmail = user.email || '';
       authUserMeta = user.user_metadata || {};
     } catch (authErr) {
-      console.error('[Dashboard Stage 1: Auth Session Exception]:', authErr);
       router.replace('/auth/login');
       return;
     }
 
-    // ── STAGE 2: Profiles Table Verification ──
     let userRole: string | null = null;
     let profileDisplayName: string = authUserMeta.full_name || authUserMeta.name || 'Creator';
     let profileCity: string = 'India';
@@ -199,15 +202,6 @@ export default function CreatorDashboardPage() {
         .eq('id', authUserId)
         .maybeSingle();
 
-      if (profError) {
-        console.error('[Dashboard Stage 2: profiles Query Error]:', {
-          code: profError.code,
-          message: profError.message,
-          details: profError.details,
-          hint: profError.hint,
-        });
-      }
-
       if (profile) {
         userRole = profile.role ? profile.role.toLowerCase() : null;
         if (profile.display_name) profileDisplayName = profile.display_name;
@@ -216,44 +210,30 @@ export default function CreatorDashboardPage() {
       }
 
       if (!userRole) {
-        console.info('[Dashboard Stage 2: Missing Role] Redirecting to role selection');
         router.replace('/auth/role-select');
         return;
       }
 
       if (userRole === 'business' || userRole === 'advertiser') {
-        console.info('[Dashboard Stage 2: Business Role] Redirecting to business dashboard');
         router.replace('/dashboard/business');
         return;
       }
     } catch (profErr) {
-      console.error('[Dashboard Stage 2: profiles Exception]:', profErr);
+      console.error('Profile fetch error:', profErr);
     }
 
-    // ── STAGE 3: Creator Profile Data ──
     let loadedCreatorProfile: any = null;
     try {
-      const { data: cp, error: cpError } = await supabase
+      const { data: cp } = await supabase
         .from('creator_profiles')
         .select('*')
         .eq('user_id', authUserId)
         .maybeSingle();
 
-      if (cpError) {
-        console.error('[Dashboard Stage 3: creator_profiles Query Error]:', {
-          code: cpError.code,
-          message: cpError.message,
-          details: cpError.details,
-          hint: cpError.hint,
-        });
-      }
-
       if (cp) {
         loadedCreatorProfile = cp;
       } else {
-        // Idempotently create/recover default creator profile if not yet inserted
-        console.info('[Dashboard Stage 3: Auto-Recovery] Creating default creator_profiles row');
-        const { data: recoveredCp, error: recoverErr } = await supabase
+        const { data: recoveredCp } = await supabase
           .from('creator_profiles')
           .upsert(
             {
@@ -277,67 +257,43 @@ export default function CreatorDashboardPage() {
           .select('*')
           .maybeSingle();
 
-        if (recoverErr) {
-          console.error('[Dashboard Stage 3: Auto-Recovery Failed]:', {
-            code: recoverErr.code,
-            message: recoverErr.message,
-            details: recoverErr.details,
-            hint: recoverErr.hint,
-          });
-        } else if (recoveredCp) {
+        if (recoveredCp) {
           loadedCreatorProfile = recoveredCp;
         }
       }
     } catch (cpExc) {
-      console.error('[Dashboard Stage 3: creator_profiles Exception]:', cpExc);
+      console.error('Creator profile error:', cpExc);
     }
 
-    // ── STAGE 4: Creator Packages ──
     let loadedPackages: CreatorPackage[] = [];
     try {
-      const { data: pkgs, error: pkgsError } = await supabase
+      const { data: pkgs } = await supabase
         .from('creator_packages')
         .select('*')
         .eq('creator_id', authUserId);
 
-      if (pkgsError) {
-        console.error('[Dashboard Stage 4: creator_packages Query Error]:', {
-          code: pkgsError.code,
-          message: pkgsError.message,
-          details: pkgsError.details,
-          hint: pkgsError.hint,
-        });
-      } else if (pkgs) {
+      if (pkgs) {
         loadedPackages = pkgs as unknown as CreatorPackage[];
       }
     } catch (pkgExc) {
-      console.error('[Dashboard Stage 4: creator_packages Exception]:', pkgExc);
+      console.error('Packages error:', pkgExc);
     }
 
-    // ── STAGE 5: Creator Reels / Work Samples ──
     let loadedReels: CreatorReel[] = [];
     try {
-      const { data: reelsData, error: reelsError } = await supabase
+      const { data: reelsData } = await supabase
         .from('creator_reels')
         .select('*')
         .eq('creator_id', authUserId)
         .order('sort_order', { ascending: true });
 
-      if (reelsError) {
-        console.error('[Dashboard Stage 5: creator_reels Query Error]:', {
-          code: reelsError.code,
-          message: reelsError.message,
-          details: reelsError.details,
-          hint: reelsError.hint,
-        });
-      } else if (reelsData) {
+      if (reelsData) {
         loadedReels = reelsData as unknown as CreatorReel[];
       }
     } catch (reelsExc) {
-      console.error('[Dashboard Stage 5: creator_reels Exception]:', reelsExc);
+      console.error('Reels error:', reelsExc);
     }
 
-    // ── APPLY STATE ──
     if (loadedCreatorProfile) {
       setDbCreator({
         ...loadedCreatorProfile,
@@ -345,7 +301,6 @@ export default function CreatorDashboardPage() {
       });
       setPayoutUpiId(loadedCreatorProfile.payout_upi_id || '');
     } else {
-      // Fallback empty creator state so studio still renders rather than crashing
       setDbCreator({
         user_id: authUserId || 'unknown',
         display_name: profileDisplayName,
@@ -393,16 +348,14 @@ export default function CreatorDashboardPage() {
           })
           .eq('user_id', currentUser.id);
 
-        if (error) {
-          throw new Error(error.message);
-        }
+        if (error) throw new Error(error.message);
       }
 
       setPayoutUpiId(cleanedValue || '');
       setDbCreator((prev) => (prev ? { ...prev, payout_upi_id: cleanedValue } : null));
       setUpiSuccessMessage(
         cleanedValue
-          ? 'Payment details saved successfully. Payouts will be transferred to this UPI ID upon order approval.'
+          ? 'Payout details saved. Payments will be transferred to this UPI ID upon delivery approval.'
           : 'Payment details cleared.'
       );
     } catch (err) {
@@ -457,10 +410,12 @@ export default function CreatorDashboardPage() {
     (o) =>
       o &&
       o.order_status !== 'COMPLETED' &&
+      o.order_status !== 'APPROVED' &&
+      o.order_status !== 'AUTO_APPROVED' &&
       o.order_status !== 'CANCELLED'
   );
   const completedOrders = creatorOrders.filter(
-    (o) => o && (o.order_status === 'COMPLETED' || o.order_status === 'APPROVED')
+    (o) => o && (o.order_status === 'COMPLETED' || o.order_status === 'APPROVED' || o.order_status === 'AUTO_APPROVED')
   );
 
   // Financial calculations
@@ -478,36 +433,13 @@ export default function CreatorDashboardPage() {
   const creatorCity = dbCreator?.city || currentUser?.city || 'India';
   const followerCount = Number(dbCreator?.follower_count) || 0;
 
-  if (isLoadingAuth) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
-        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
-        <p>Loading your influencer studio...</p>
-      </div>
-    );
-  }
-
-  if (pageError) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4">
-        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 flex items-center justify-center mx-auto">
-          <AlertCircle className="w-6 h-6" />
-        </div>
-        <h2 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Studio Error</h2>
-        <p className="text-xs text-[#71717A] dark:text-zinc-400">{pageError}</p>
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <Button variant="primary" size="sm" onClick={() => loadDbCreator()}>
-            Try Again
-          </Button>
-          <Link href="/">
-            <Button variant="outline" size="sm">
-              Back to Home
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  // Filtered orders for the primary Orders section
+  const displayedOrders =
+    orderFilter === 'ongoing'
+      ? activeOrders
+      : orderFilter === 'completed'
+      ? completedOrders
+      : creatorOrders;
 
   const handleUploadReel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -690,12 +622,12 @@ export default function CreatorDashboardPage() {
     }
   };
 
-  const handleCreatePackage = async (e: React.FormEvent) => {
+  const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPkgName.trim()) return;
 
     setIsSavingPkg(true);
-    const newPkgPayload = {
+    const pkgPayload = {
       creator_id: creatorId,
       name: newPkgName.trim(),
       platform: 'Instagram',
@@ -708,54 +640,105 @@ export default function CreatorDashboardPage() {
       active: true,
     };
 
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('creator_packages')
-        .insert(newPkgPayload)
-        .select('*')
-        .single();
+    if (editingPkgId) {
+      if (isSupabaseConfigured) {
+        await supabase
+          .from('creator_packages')
+          .update(pkgPayload)
+          .eq('id', editingPkgId)
+          .eq('creator_id', creatorId);
+      }
+      setPackages((prev) =>
+        prev.map((p) => (p.id === editingPkgId ? { ...p, ...pkgPayload } : p))
+      );
+    } else {
+      if (isSupabaseConfigured) {
+        const { data } = await supabase
+          .from('creator_packages')
+          .insert(pkgPayload)
+          .select('*')
+          .single();
 
-      if (!error && data) {
-        setPackages((prev) => [...prev, data as unknown as CreatorPackage]);
+        if (data) {
+          setPackages((prev) => [...prev, data as unknown as CreatorPackage]);
+        } else {
+          setPackages((prev) => [
+            ...prev,
+            { ...pkgPayload, id: generatePackageId(), revisions: 1 } as CreatorPackage,
+          ]);
+        }
       } else {
         setPackages((prev) => [
           ...prev,
-          {
-            ...newPkgPayload,
-            id: generatePackageId(),
-            revisions: 1,
-          } as CreatorPackage,
+          { ...pkgPayload, id: generatePackageId(), revisions: 1 } as CreatorPackage,
         ]);
       }
-    } else {
-      setPackages((prev) => [
-        ...prev,
-        {
-          ...newPkgPayload,
-          id: generatePackageId(),
-          revisions: 1,
-        } as CreatorPackage,
-      ]);
     }
 
     setIsAddingPkg(false);
+    setEditingPkgId(null);
     setNewPkgName('');
     setNewPkgDesc('');
     setIsSavingPkg(false);
   };
 
+  const handleDeletePackage = async (pkgId: string) => {
+    if (isSupabaseConfigured) {
+      await supabase
+        .from('creator_packages')
+        .delete()
+        .eq('id', pkgId)
+        .eq('creator_id', creatorId);
+    }
+    setPackages((prev) => prev.filter((p) => p.id !== pkgId));
+  };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4 font-mono text-xs text-[#71717A] dark:text-zinc-400">
+        <div className="w-8 h-8 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p>Loading creator workspace...</p>
+      </div>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4 font-mono">
+        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-[#121214] dark:text-white">Workspace Error</h2>
+        <p className="text-xs text-[#71717A] dark:text-zinc-400">{pageError}</p>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Button variant="primary" size="sm" onClick={() => loadDbCreator()}>
+            Try Again
+          </Button>
+          <Link href="/">
+            <Button variant="outline" size="sm">
+              Back to Home
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Active opportunities (active campaigns posted by businesses)
+  const activeOpportunities = (campaigns || []).filter((c) => c && c.status === 'active');
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 font-mono">
+      {/* Top Header & Role Indicator */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="editorial-label text-[#FF5416]">Influencer Studio</span>
-            <span className="text-[11px] font-mono text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800">
-              Active Creator
+            <span className="editorial-label text-[#FF5416]">Creator Workspace</span>
+            <span className="text-[10px] text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800">
+              Active Influencer
             </span>
           </div>
-          <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#121214] dark:text-white mt-1">
             {creatorDisplayName}
           </h1>
           <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
@@ -764,59 +747,30 @@ export default function CreatorDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Link href={`/creators/${creatorId}`}>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" className="text-xs">
               <span>View Public Profile</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+              <ExternalLink className="w-3.5 h-3.5 ml-1" />
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* DASHBOARD STATS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Settlements"
-          value={`₹${totalEarnings.toLocaleString('en-IN')}`}
-          subtext="Direct bank transfers"
-          badge="SETTLED"
-        />
-        <StatCard
-          label="Active Orders Value"
-          value={`₹${pendingEarnings.toLocaleString('en-IN')}`}
-          subtext="Payable upon approved delivery"
-          badge="PROTECTED"
-        />
-        <StatCard
-          label="Active Collaborations"
-          value={activeOrders.length}
-          subtext="Campaigns in production"
-        />
-        <StatCard
-          label="Showcase Reels"
-          value={reels.length}
-          subtext="Visible on profile"
-        />
-      </div>
-
-      {/* NAVIGATION TABS */}
-      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 font-mono text-xs overflow-x-auto">
+      {/* PRIMARY NAVIGATION TABS (Simple Marketplace IA) */}
+      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 text-xs overflow-x-auto">
         {[
-          { key: 'overview', label: 'Overview' },
+          { key: 'home', label: 'Home' },
+          { key: 'discover', label: `Discover (${activeOpportunities.length})` },
+          { key: 'orders', label: `Orders (${creatorOrders.length})` },
+          { key: 'messages', label: `Messages` },
           { key: 'profile', label: 'Profile' },
-          { key: 'reels', label: `My Reels (${reels.length})` },
-          { key: 'packages', label: `Packages (${packages.length})` },
-          { key: 'requests', label: `Collaboration Requests (${pendingRequests.length})` },
-          { key: 'active', label: `Active Orders (${activeOrders.length})` },
-          { key: 'completed', label: `Completed Orders (${completedOrders.length})` },
-          { key: 'messages', label: `Messages (${creatorOrders.length})` },
           { key: 'settings', label: 'Settings' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as TabKey)}
-            className={`px-3 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
               activeTab === tab.key
                 ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
                 : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
@@ -827,100 +781,98 @@ export default function CreatorDashboardPage() {
         ))}
       </div>
 
-      {/* TAB 1: OVERVIEW */}
-      {activeTab === 'overview' && (
-        <div className="space-y-8">
-          {/* Missing UPI Notice for Completed Orders */}
-          {!dbCreator?.payout_upi_id &&
-            (orders || []).some(
-              (o) =>
-                o &&
-                (o.order_status === 'COMPLETED' || o.payout_status === 'PAYOUT_PENDING') &&
-                o.creator_user_id === currentUser?.id
-            ) && (
-              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-start justify-between gap-3 text-xs">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">Payment Details needed for completed orders</p>
-                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                      You have orders awaiting payout. Please add your UPI ID in Settings so your payout can be transferred.
-                    </p>
-                  </div>
+      {/* 1. HOME TAB */}
+      {activeTab === 'home' && (
+        <div className="space-y-6">
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard
+              label="Active Orders"
+              value={activeOrders.length}
+              subtext="In production"
+            />
+            <StatCard
+              label="Completed"
+              value={completedOrders.length}
+              subtext="Settled deliveries"
+            />
+            <StatCard
+              label="Payout Pending"
+              value={`₹${pendingEarnings.toLocaleString('en-IN')}`}
+              subtext="Awaiting release"
+            />
+            <StatCard
+              label="Total Earned"
+              value={`₹${totalEarnings.toLocaleString('en-IN')}`}
+              subtext="Settled to UPI"
+            />
+          </div>
+
+          {/* Important Action Required Notice (if missing UPI ID for completed orders) */}
+          {!dbCreator?.payout_upi_id && completedOrders.length > 0 && (
+            <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Payout UPI ID Required</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                    You have completed orders awaiting settlement. Add your UPI ID in Settings so your payout can be transferred.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className="px-2.5 py-1 text-xs font-semibold bg-amber-600 text-white rounded hover:bg-amber-700 shrink-0"
-                >
-                  Add UPI ID
-                </button>
               </div>
-            )}
-
-          {/* Pending Requests Preview */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="editorial-label text-[#FF5416]">Incoming Requests</span>
-                <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-                  App Collaboration Requests
-                </h3>
-              </div>
-              <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                {pendingRequests.length} pending review
-              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setActiveTab('settings')}
+                className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 text-xs"
+              >
+                Add UPI ID
+              </Button>
             </div>
+          )}
 
-            {pendingRequests.length === 0 ? (
-              <div className="bg-white dark:bg-[#18181B] border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-8 text-center text-xs text-[#71717A] dark:text-zinc-400 font-mono">
-                No collaboration requests yet.
+          {/* Pending Requests Preview (if any) */}
+          {pendingRequests.length > 0 && (
+            <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#FF5416] animate-pulse" />
+                  <h3 className="font-bold text-sm text-[#121214] dark:text-white">
+                    Action Required: Incoming Collaboration Requests ({pendingRequests.length})
+                  </h3>
+                </div>
               </div>
-            ) : (
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {pendingRequests.map((req) => (
                   <div
                     key={req.id}
-                    className="bg-white dark:bg-[#18181B] border-2 border-[#121214] dark:border-zinc-700 rounded-xl p-5 space-y-4 shadow-sm"
+                    className="p-4 rounded-lg bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 space-y-3"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        {req.business?.logo_path ? (
-                          <img
-                            src={req.business.logo_path}
-                            alt={req.business.business_name}
-                            className="w-10 h-10 rounded-xl object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-xl bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-sm text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
-                            {(req.business?.business_name || 'B')[0]}
-                          </div>
-                        )}
-                        <div>
-                          <span className="editorial-label text-[#FF5416]">
-                            {req.business?.business_name || 'Brand Partner'}
-                          </span>
-                          <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                            {req.campaign?.campaign_name || req.campaign?.product_name || 'App Collaboration'}
-                          </h4>
-                          <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                            Package: {req.package?.name || 'Custom Package'} • {safeFormatDate(req.created_at)}
-                          </p>
-                        </div>
+                      <div>
+                        <span className="editorial-label text-[#FF5416] block">
+                          {req.business?.business_name || 'Brand Partner'}
+                        </span>
+                        <h4 className="font-bold text-sm text-[#121214] dark:text-white">
+                          {req.campaign?.campaign_name || req.campaign?.product_name || 'App Promotion'}
+                        </h4>
+                        <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                          Package: {req.package?.name || 'Custom Package'} • {safeFormatDate(req.created_at)}
+                        </p>
                       </div>
 
-                      <div className="text-right">
-                        <span className="font-mono text-base font-bold text-[#121214] dark:text-white block">
-                          {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price || 0).toLocaleString('en-IN')}` : 'Budget Open')}
-                        </span>
-                        <span className="editorial-label text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded text-[9px]">
-                          {req.status}
-                        </span>
-                      </div>
+                      <span className="font-bold text-sm text-[#121214] dark:text-white shrink-0">
+                        {req.proposed_budget != null
+                          ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}`
+                          : req.package
+                          ? `₹${Number(req.package.price || 0).toLocaleString('en-IN')}`
+                          : 'Budget Open'}
+                      </span>
                     </div>
 
                     {req.message && (
-                      <p className="text-xs text-[#52525B] dark:text-zinc-300 bg-[#FBFBFA] dark:bg-zinc-900 p-2.5 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 font-mono leading-relaxed">
+                      <p className="text-xs text-[#52525B] dark:text-zinc-300 bg-white dark:bg-zinc-800 p-2.5 rounded border border-[#E5E5DE] dark:border-zinc-700">
                         &quot;{req.message}&quot;
                       </p>
                     )}
@@ -931,7 +883,7 @@ export default function CreatorDashboardPage() {
                         size="sm"
                         disabled={processingRequestId === req.id}
                         onClick={() => handleDeclineCollabRequest(req.id)}
-                        className="text-[#71717A]"
+                        className="text-[#71717A] text-xs"
                       >
                         Decline
                       </Button>
@@ -940,446 +892,337 @@ export default function CreatorDashboardPage() {
                         size="sm"
                         disabled={processingRequestId === req.id}
                         onClick={() => handleAcceptCollabRequest(req.id)}
+                        className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
                       >
-                        {processingRequestId === req.id ? 'Accepting...' : 'Accept'}
+                        {processingRequestId === req.id ? 'Accepting...' : 'Accept & Chat'}
                       </Button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active Order Highlight */}
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <h3 className="font-bold text-sm text-[#121214] dark:text-white">
+                Active Order Summary
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveTab('orders')}
+                className="text-xs text-[#FF5416] hover:underline cursor-pointer"
+              >
+                View all orders ({creatorOrders.length})
+              </button>
+            </div>
+
+            {activeOrders.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
+                <p className="font-bold text-[#121214] dark:text-white">No active orders in progress</p>
+                <p>When a brand accepts your proposal or confirms an order, it will appear here.</p>
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab('discover')}
+                    className="text-xs"
+                  >
+                    <Compass className="w-3.5 h-3.5 mr-1" />
+                    <span>Discover Opportunities</span>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activeOrders.map((ord) => (
+                  <div
+                    key={ord.id}
+                    className="p-4 rounded-lg bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-[#121214] dark:text-white">
+                          #{ord.order_number}
+                        </span>
+                        <StatusBadge status={ord.order_status} size="sm" />
+                      </div>
+                      <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-1">
+                        Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Deliverable: {ord.package?.name || '1 × Instagram Reel'}
+                      </p>
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                        Deadline: {ord.deadline ? new Date(ord.deadline).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'N/A'} • Price: ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+
+                    <Link href={`/orders/${ord.id}`}>
+                      <Button variant="primary" size="sm" className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white">
+                        <span>Open Workspace</span>
+                        <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    </Link>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Active Campaigns Table */}
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm space-y-4 p-6">
-            <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">
-              <div>
-                <span className="editorial-label text-[#71717A] dark:text-zinc-400">Work in Progress</span>
-                <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
-                  Active Promotions
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('active')}
-                className="text-xs font-mono text-[#FF5416] hover:underline cursor-pointer"
-              >
-                View all ({activeOrders.length})
-              </button>
-            </div>
-
-            {activeOrders.length === 0 ? (
-              <p className="text-xs text-zinc-500 font-mono py-4 text-center">
-                No promotions currently in progress.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead>
-                    <tr className="border-b border-[#ECECE6] dark:border-zinc-800 text-[#71717A] dark:text-zinc-400 uppercase text-[10px]">
-                      <th className="py-2.5 px-3">Order #</th>
-                      <th className="py-2.5 px-3">Advertiser</th>
-                      <th className="py-2.5 px-3">Package</th>
-                      <th className="py-2.5 px-3">Amount</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
-                    {activeOrders.map((ord) => (
-                      <tr key={ord.id} className="hover:bg-[#FBFBFA] dark:hover:bg-zinc-900/60">
-                        <td className="py-3 px-3 font-bold text-[#121214] dark:text-white">{ord.order_number}</td>
-                        <td className="py-3 px-3 text-[#52525B] dark:text-zinc-300">
-                          {ord.business?.business_name || 'Brand'}
-                        </td>
-                        <td className="py-3 px-3 text-[#121214] dark:text-white">{ord.package?.name}</td>
-                        <td className="py-3 px-3 font-bold text-[#121214] dark:text-white">
-                          ₹{Number(ord.subtotal || 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-3 px-3">
-                          <StatusBadge status={ord.order_status} size="sm" />
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <Link href={`/orders/${ord.id}`}>
-                            <Button variant="outline" size="sm">
-                              Workspace
-                            </Button>
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: PROFILE */}
-      {activeTab === 'profile' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <span className="editorial-label text-[#FF5416]">Profile Settings</span>
-            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-              Creator Profile Information
-            </h3>
-            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              This data is visible to advertisers on your public creator page.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">Display Name</span>
-              <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorDisplayName}
-              </p>
-            </div>
-
-            <div>
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">Primary City</span>
-              <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorCity}
-              </p>
-            </div>
-
-            <div>
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">Primary Niche</span>
-              <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {creatorNiche}
-              </p>
-            </div>
-
-            <div>
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">Audience Reach</span>
-              <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white">
-                {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount}{' '}
-                {dbCreator?.instagram_connected ? 'Verified Followers' : 'Followers'}
-              </p>
-            </div>
-
-            {/* Instagram Account Connection Status (Local DB only, decoupled from network) */}
-            <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
-                    <InstagramIcon className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">
-                        {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified'
-                          ? `@${dbCreator?.instagram_username || 'connected'}`
-                          : 'Instagram Account'}
-                      </h4>
-                      {(dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified') && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
-                      )}
-                    </div>
-                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                      {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified'
-                        ? 'Meta Graph API Connected & Verified'
-                        : 'Connect your creator account to verify followers automatically.'}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  {dbCreator?.instagram_connected || dbCreator?.metrics_source === 'instagram_meta_verified' ? (
-                    <span className="text-[11px] px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
-                      Connected ✓
-                    </span>
-                  ) : (
-                    <a
-                      href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
-                    >
-                      <InstagramIcon className="w-3.5 h-3.5" />
-                      <span>Connect Instagram</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="sm:col-span-2">
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">Bio</span>
-              <p className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#52525B] dark:text-zinc-300 leading-relaxed">
-                {dbCreator?.bio || 'Content creator helping brands reach target audiences.'}
-              </p>
-            </div>
-
-            {/* Payout UPI ID */}
-            <div className="sm:col-span-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
-              <span className="font-semibold text-[#121214] dark:text-white block mb-1">
-                Payout UPI ID <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400">(Private & Confidential)</span>
-              </span>
-              <div className="flex items-center justify-between p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-xs text-[#121214] dark:text-white">
-                <span>{dbCreator?.payout_upi_id ? dbCreator.payout_upi_id : 'Not configured yet (Optional)'}</span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className="text-[11px] text-[#FF5416] hover:underline font-sans font-medium cursor-pointer"
-                >
-                  {dbCreator?.payout_upi_id ? 'Change' : 'Add UPI ID'}
-                </button>
-              </div>
-              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1">
-                This is used only for creator payouts. It is never shown to businesses.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
-            <Link href={`/creators/${creatorId}`}>
-              <Button variant="primary" size="sm">
-                <span>View Public Profile</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-1" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: MY REELS (19MB REEL UPLOAD & INSTAGRAM REEL URL) */}
-      {activeTab === 'reels' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <div>
-              <span className="editorial-label text-[#FF5416]">Video Portfolio</span>
-              <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-                Promotional Showcase Reels
-              </h3>
-              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                Upload vertical video reels (max 19 MB) or add Instagram Reel links to showcase your review format.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAddingReelUrl(!isAddingReelUrl)}
-              >
-                <InstagramIcon className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
-                <span>{isAddingReelUrl ? 'Cancel' : 'Add Instagram Reel'}</span>
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/mp4,video/webm,video/quicktime"
-                className="hidden"
-                onChange={handleUploadReel}
-                disabled={isUploading}
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-              >
-                <Upload className="w-3.5 h-3.5 mr-1" />
-                <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload MP4'}</span>
-              </Button>
-            </div>
-          </div>
-
-          {/* Add Instagram Reel URL Form */}
-          {isAddingReelUrl && (
-            <form
-              onSubmit={handleAddInstagramReel}
-              className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4 font-mono text-xs"
+          {/* Quick Navigation Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab('discover')}
+              className="p-4 rounded-xl bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 text-left hover:border-[#FF5416] transition-colors cursor-pointer group"
             >
-              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-2">
-                <span className="font-bold text-[#121214] dark:text-white flex items-center gap-1.5">
-                  <InstagramIcon className="w-4 h-4 text-[#FF5416]" />
-                  <span>Add Instagram Reel Work Sample</span>
-                </span>
-                <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
-                  Embeds via Instagram player
-                </span>
-              </div>
+              <Compass className="w-5 h-5 text-[#FF5416] mb-2" />
+              <h4 className="font-bold text-xs text-[#121214] dark:text-white group-hover:text-[#FF5416]">
+                Discover Opportunities
+              </h4>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Browse open brand campaigns looking for influencers.
+              </p>
+            </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Reel Title</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Fintech App UI Walkthrough"
-                    value={newReelTitle}
-                    onChange={(e) => setNewReelTitle(e.target.value)}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Sample Type</label>
-                  <select
-                    value={newReelType}
-                    onChange={(e) => setNewReelType(e.target.value as ReelType)}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white"
-                  >
-                    <option value="client_work">Promotional Campaign</option>
-                    <option value="demo">Sample / Demo Reel</option>
-                  </select>
-                </div>
-              </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              className="p-4 rounded-xl bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 text-left hover:border-[#FF5416] transition-colors cursor-pointer group"
+            >
+              <Film className="w-5 h-5 text-[#FF5416] mb-2" />
+              <h4 className="font-bold text-xs text-[#121214] dark:text-white group-hover:text-[#FF5416]">
+                Manage Reels & Packages
+              </h4>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Update showcase reel links and pricing packages.
+              </p>
+            </button>
 
-              <div>
-                <label className="font-semibold text-[#121214] dark:text-white block mb-1">
-                  Instagram Reel URL <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://www.instagram.com/reel/..."
-                  value={instagramReelUrl}
-                  onChange={(e) => {
-                    setInstagramReelUrl(e.target.value);
-                    if (reelUrlError) setReelUrlError(null);
-                  }}
-                  className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
-                />
-              </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('messages')}
+              className="p-4 rounded-xl bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 text-left hover:border-[#FF5416] transition-colors cursor-pointer group"
+            >
+              <MessageSquare className="w-5 h-5 text-[#FF5416] mb-2" />
+              <h4 className="font-bold text-xs text-[#121214] dark:text-white group-hover:text-[#FF5416]">
+                Messages & Negotiations
+              </h4>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                Chat with brands and confirm deal terms.
+              </p>
+            </button>
+          </div>
+        </div>
+      )}
 
-              {reelUrlError && (
-                <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{reelUrlError}</span>
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingReelUrl(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  isLoading={isSavingReelUrl}
-                  disabled={!instagramReelUrl.trim()}
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  <span>Save Reel Sample</span>
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {uploadError && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300 rounded-lg text-xs font-mono flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-              <span>{uploadError}</span>
+      {/* 2. DISCOVER OPPORTUNITIES TAB */}
+      {activeTab === 'discover' && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-5 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Marketplace Opportunities</span>
+              <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                Brand Campaigns & Collaboration Opportunities
+              </h3>
             </div>
-          )}
+            <span className="text-xs text-[#71717A]">
+              {activeOpportunities.length} opportunities available
+            </span>
+          </div>
 
-          {reels.length === 0 ? (
-            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-3">
-              <Film className="w-10 h-10 text-[#A1A1AA] mx-auto" />
-              <p className="font-bold text-sm text-[#121214] dark:text-white">No reels uploaded yet</p>
-              <p>Upload a short vertical demo or client work reel to showcase your style to app founders.</p>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-              >
-                Upload Reel (Max 19 MB)
-              </Button>
+          {activeOpportunities.length === 0 ? (
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
+              <Compass className="w-8 h-8 text-[#A1A1AA] mx-auto mb-1" />
+              <p className="font-bold text-sm text-[#121214] dark:text-white">
+                No collaboration opportunities available yet.
+              </p>
+              <p className="max-w-md mx-auto">
+                When businesses post open campaigns or send you direct collaboration requests, they will appear here. In the meantime, make sure your profile, packages, and showcase reels are up to date.
+              </p>
+              <div className="pt-2 flex justify-center gap-2">
+                <Button variant="primary" size="sm" onClick={() => setActiveTab('profile')} className="text-xs">
+                  Update Creator Profile
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reels.map((reel) => {
-                const reelSrc = reel.video_url || reel.reel_url || '';
-                const fileSizeMb = reel.file_size_bytes ? (Number(reel.file_size_bytes) / (1024 * 1024)).toFixed(1) : null;
+              {activeOpportunities.map((camp) => (
+                <div
+                  key={camp.id}
+                  className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="editorial-label text-[#FF5416] block">
+                        {camp.category || camp.product_type}
+                      </span>
+                      <h4 className="font-bold text-base text-[#121214] dark:text-white">
+                        {camp.campaign_name}
+                      </h4>
+                      <p className="text-xs text-[#71717A] dark:text-zinc-400">
+                        Product: <strong>{camp.product_name}</strong>
+                      </p>
+                    </div>
+
+                    {camp.budget > 0 && (
+                      <span className="font-bold text-sm text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800 shrink-0">
+                        ₹{Number(camp.budget).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
+
+                  {camp.description && (
+                    <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed line-clamp-3">
+                      {camp.description}
+                    </p>
+                  )}
+
+                  <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between text-xs">
+                    <span className="text-[11px] text-[#71717A]">
+                      Posted {safeFormatDate(camp.created_at)}
+                    </span>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setActiveTab('messages')}
+                      className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
+                    >
+                      <span>Inquire / Chat</span>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. PRIMARY ORDERS TAB */}
+      {activeTab === 'orders' && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-5 shadow-sm">
+          {/* Header & Filter Pills */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+            <div>
+              <span className="editorial-label text-[#FF5416]">Collaboration Orders</span>
+              <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                My Orders ({creatorOrders.length})
+              </h3>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1.5 text-xs">
+              {(['all', 'ongoing', 'completed'] as OrderFilter[]).map((flt) => (
+                <button
+                  key={flt}
+                  type="button"
+                  onClick={() => setOrderFilter(flt)}
+                  className={`px-3 py-1 rounded capitalize transition-colors cursor-pointer ${
+                    orderFilter === flt
+                      ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-bold'
+                      : 'text-[#71717A] dark:text-zinc-400 hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {flt} (
+                  {flt === 'all'
+                    ? creatorOrders.length
+                    : flt === 'ongoing'
+                    ? activeOrders.length
+                    : completedOrders.length}
+                  )
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Orders List */}
+          {displayedOrders.length === 0 ? (
+            <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
+              <ShoppingBag className="w-8 h-8 text-[#A1A1AA] mx-auto mb-1" />
+              <p className="font-bold text-sm text-[#121214] dark:text-white">
+                You don&apos;t have any {orderFilter !== 'all' ? orderFilter : ''} orders yet.
+              </p>
+              <p>When a business confirms an order or accepts terms with you, it will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayedOrders.map((ord) => {
+                const isOrdPaid =
+                  ord.payment_status === 'PAID' ||
+                  ord.order_status === 'PAID' ||
+                  ord.order_status === 'WORK_STARTED' ||
+                  ord.order_status === 'IN_PROGRESS' ||
+                  ord.order_status === 'DELIVERED' ||
+                  ord.order_status === 'REVISION_REQUESTED' ||
+                  ord.order_status === 'APPROVED' ||
+                  ord.order_status === 'AUTO_APPROVED' ||
+                  ord.order_status === 'COMPLETED';
+
+                // Contextual Next Action guidance for the creator
+                const nextActionGuidance = !isOrdPaid
+                  ? 'Waiting for the business to complete payment.'
+                  : ord.order_status === 'PAID'
+                  ? 'Payment received. You can start working.'
+                  : ord.order_status === 'WORK_STARTED' || ord.order_status === 'IN_PROGRESS'
+                  ? 'In production. Submit your Instagram Reel URL when ready.'
+                  : ord.order_status === 'DELIVERED'
+                  ? 'Delivery submitted. Waiting for business review.'
+                  : ord.order_status === 'REVISION_REQUESTED'
+                  ? 'Business requested 1 revision. Please update and submit revised Reel.'
+                  : 'Delivery accepted. Payout processing.';
 
                 return (
                   <div
-                    key={reel.id}
-                    className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-4 bg-[#FBFBFA] dark:bg-zinc-900 flex flex-col justify-between space-y-3"
+                    key={ord.id}
+                    className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 space-y-3.5 hover:border-[#FF5416]/50 transition-colors"
                   >
-                    <div className="flex gap-3">
-                      <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
-                        <ReelVideo
-                          src={reelSrc}
-                          poster={reel.thumbnail_url}
-                          autoPlay={true}
-                          loop={true}
-                          muted={true}
-                          playsInline={true}
-                          className="w-full h-full"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {reel.is_featured && (
-                            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#FFF2EC] dark:bg-[#FF5416]/10 border border-[#FFD2C1] dark:border-[#FF5416]/30 text-[#FF5416] font-bold flex items-center gap-1">
-                              <Star className="w-2.5 h-2.5 fill-[#FF5416]" />
-                              Featured
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-base text-[#121214] dark:text-white">
+                            #{ord.order_number}
+                          </span>
+                          <StatusBadge status={ord.order_status} size="sm" />
+                          {isOrdPaid ? (
+                            <span className="text-[10px] text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold">
+                              PAID ✓
                             </span>
-                          )}
-                          {!reel.is_visible && (
-                            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                              Hidden
+                          ) : (
+                            <span className="text-[10px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                              Payment Pending
                             </span>
                           )}
                         </div>
-
-                        <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white truncate">
-                          {reel.title || 'Untitled Reel'}
-                        </h4>
-
-                        <p className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                          {fileSizeMb ? `${fileSizeMb} MB` : 'Compliant format'}
+                        <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-1">
+                          Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Deliverable: {ord.package?.name || '1 × Instagram Reel'}
                         </p>
+                      </div>
+
+                      <div className="text-left sm:text-right">
+                        <span className="font-bold text-base text-[#121214] dark:text-white block">
+                          ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-[11px] text-[#71717A]">
+                          Deadline: {ord.deadline ? new Date(ord.deadline).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'N/A'}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Controls */}
-                    <div className="flex items-center justify-between pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono">
+                    {/* Action Required Box */}
+                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#ECECE6] dark:border-zinc-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFeatured(reel.id)}
-                          className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 transition-colors cursor-pointer ${
-                            reel.is_featured
-                              ? 'border-[#FF5416] bg-[#FFF2EC] dark:bg-[#FF5416]/10 text-[#FF5416]'
-                              : 'border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300'
-                          }`}
-                        >
-                          <Star className="w-3 h-3" />
-                          <span>{reel.is_featured ? 'Featured' : 'Make Featured'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleToggleVisibility(reel.id)}
-                          className="px-2 py-1 rounded border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] text-[#71717A] dark:text-zinc-300 flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          {reel.is_visible ? (
-                            <>
-                              <Eye className="w-3 h-3" />
-                              <span>Visible</span>
-                            </>
-                          ) : (
-                            <>
-                              <EyeOff className="w-3 h-3" />
-                              <span>Hidden</span>
-                            </>
-                          )}
-                        </button>
+                        <span className="w-2 h-2 rounded-full bg-[#FF5416] shrink-0" />
+                        <span className="text-[#121214] dark:text-zinc-200 font-medium">
+                          {nextActionGuidance}
+                        </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReel(reel.id)}
-                        className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors cursor-pointer"
-                        aria-label="Delete reel"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <Link href={`/orders/${ord.id}`}>
+                        <Button variant="primary" size="sm" className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white shrink-0">
+                          <span>Open Workspace</span>
+                          <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 );
@@ -1389,458 +1232,493 @@ export default function CreatorDashboardPage() {
         </div>
       )}
 
-      {/* TAB 4: PACKAGES */}
-      {activeTab === 'packages' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <div>
-              <span className="editorial-label text-[#FF5416]">Packages & Pricing</span>
-              <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-                Promotion Packages
-              </h3>
-              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                Standard packages that app and website founders can book directly.
-              </p>
-            </div>
-
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setIsAddingPkg(!isAddingPkg)}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              <span>{isAddingPkg ? 'Close' : 'Add Package'}</span>
-            </Button>
-          </div>
-
-          {/* Add Package Form */}
-          {isAddingPkg && (
-            <form onSubmit={handleCreatePackage} className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
-              <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Create New Package</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Package Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newPkgName}
-                    onChange={(e) => setNewPkgName(e.target.value)}
-                    placeholder="e.g. 1 Reel + Bio Link"
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Price (₹ INR)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newPkgPrice}
-                    onChange={(e) => setNewPkgPrice(Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1">Delivery Time (Days)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newPkgDelivery}
-                    onChange={(e) => setNewPkgDelivery(Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="font-semibold text-[#121214] dark:text-white block mb-1 text-xs">Description & Deliverables</label>
-                <textarea
-                  rows={2}
-                  value={newPkgDesc}
-                  onChange={(e) => setNewPkgDesc(e.target.value)}
-                  placeholder="Detail what is included: vertical reel, caption, app mention..."
-                  className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs text-[#121214] dark:text-white"
-                />
-              </div>
-              <Button type="submit" variant="primary" size="sm" disabled={isSavingPkg}>
-                {isSavingPkg ? 'Saving...' : 'Save Package'}
-              </Button>
-            </form>
-          )}
-
-          {packages.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-2">
-              <p className="font-bold text-sm text-[#121214] dark:text-white">No packages created yet</p>
-              <p>Add at least one reel promotion package so brands can book collaborations with you.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {packages.map((pkg: CreatorPackage) => (
-                <div
-                  key={pkg.id}
-                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-3"
-                >
-                  <div className="flex justify-between items-start">
-                    <h4 className="font-mono font-bold text-sm text-[#121214] dark:text-white">{pkg.name}</h4>
-                    <span className="font-mono font-bold text-base text-[#FF5416]">
-                      ₹{Number(pkg.price || 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed">{pkg.description}</p>
-                  <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                    Delivery: {pkg.delivery_days} days • {pkg.revisions ?? pkg.revision_count ?? 1} Revisions
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 5: COLLABORATION REQUESTS */}
-      {activeTab === 'requests' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <span className="editorial-label text-[#FF5416]">Collaboration Requests</span>
-            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-              Incoming Advertiser Requests
-            </h3>
-            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              Review campaign goals, app links, and proposed budgets. Once accepted, private chat unlocks.
-            </p>
-          </div>
-
-          {incomingRequests.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No collaboration requests yet.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {incomingRequests.map((req) => (
-                <div
-                  key={req.id}
-                  className="p-5 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 space-y-4 shadow-sm"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      {req.business?.logo_path ? (
-                        <img
-                          src={req.business.logo_path}
-                          alt={req.business.business_name}
-                          className="w-12 h-12 rounded-xl object-cover border border-[#E5E5DE] dark:border-zinc-700 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-[#F4F4F0] dark:bg-zinc-800 font-mono font-bold text-base text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-zinc-700 shrink-0">
-                          {(req.business?.business_name || 'B')[0]}
-                        </div>
-                      )}
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="editorial-label text-[#FF5416]">
-                            {req.business?.business_name || 'Brand Partner'}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold ${
-                            req.status === 'ACCEPTED'
-                              ? 'bg-[#ECFDF5] text-[#047857] dark:bg-[#064E3B]/40 dark:text-[#34D399]'
-                              : req.status === 'DECLINED'
-                              ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400'
-                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                          }`}>
-                            {req.status}
-                          </span>
-                        </div>
-                        <h4 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
-                          {req.campaign?.campaign_name || req.campaign?.product_name || 'App Promotion'}
-                        </h4>
-                        <p className="text-xs text-[#71717A] dark:text-zinc-400 font-mono">
-                          Proposed Package: {req.package?.name || 'Custom Package'} • Sent {safeFormatDate(req.created_at)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="sm:text-right">
-                      <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 block">Proposed Budget:</span>
-                      <span className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                        {req.proposed_budget != null ? `₹${Number(req.proposed_budget).toLocaleString('en-IN')}` : (req.package ? `₹${Number(req.package.price || 0).toLocaleString('en-IN')}` : 'Budget Open')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {req.message && (
-                    <div className="p-3 bg-white dark:bg-zinc-800/80 rounded-lg border border-[#ECECE6] dark:border-zinc-800 text-xs font-mono text-[#3F3F46] dark:text-zinc-300 leading-relaxed">
-                      &quot;{req.message}&quot;
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
-                    {req.status === 'PENDING' ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={processingRequestId === req.id}
-                          onClick={() => handleDeclineCollabRequest(req.id)}
-                        >
-                          Decline
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          disabled={processingRequestId === req.id}
-                          onClick={() => handleAcceptCollabRequest(req.id)}
-                        >
-                          {processingRequestId === req.id ? 'Accepting...' : 'Accept Request'}
-                        </Button>
-                      </>
-                    ) : req.status === 'ACCEPTED' ? (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => setActiveTab('messages')}
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                        <span>Open Chat</span>
-                      </Button>
-                    ) : (
-                      <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-                        Request {String(req.status || '').toLowerCase()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 6: ACTIVE ORDERS */}
-      {activeTab === 'active' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">
-            <div>
-              <span className="editorial-label text-[#FF5416]">Active Collaborations</span>
-              <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white mt-0.5">
-                Orders in Progress
-              </h3>
-            </div>
-            <span className="text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              {activeOrders.length} active
-            </span>
-          </div>
-
-          {activeOrders.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No active orders yet.
-            </div>
-          ) : (
-            <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
-              {activeOrders.map((ord) => (
-                <div key={ord.id} className="py-4 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <strong className="font-mono text-sm text-[#121214] dark:text-white">
-                          #{ord.order_number}
-                        </strong>
-                        <StatusBadge status={ord.order_status} size="sm" />
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                          {ord.payment_status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                        Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Campaign: {ord.campaign?.campaign_name || ord.brief?.objective || 'App Promotion'}
-                      </p>
-                      <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                        Package: {ord.package?.name || 'Custom Package'} • Created {safeFormatDate(ord.created_at)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <span className="text-[10px] font-mono text-[#71717A] dark:text-zinc-500 block">Agreed Amount:</span>
-                        <span className="font-mono font-bold text-base text-[#121214] dark:text-white">
-                          ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                      <Link href={`/orders/${ord.id}`}>
-                        <Button variant="outline" size="sm">
-                          Workspace
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 7: COMPLETED ORDERS */}
-      {activeTab === 'completed' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">Completed Promotions</h3>
-          {completedOrders.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
-              No completed promotions yet.
-            </div>
-          ) : (
-            <div className="divide-y divide-[#ECECE6] dark:divide-zinc-800">
-              {completedOrders.map((ord) => (
-                <div key={ord.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <strong className="font-mono text-[#121214] dark:text-white">#{ord.order_number}</strong>
-                      <StatusBadge status={ord.order_status} size="sm" />
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        {ord.payment_status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1 font-mono">
-                      Brand: {ord.business?.business_name || 'Brand'} • Package: {ord.package?.name}
-                    </p>
-                    <p className="text-[11px] text-[#71717A] dark:text-zinc-500 font-mono">
-                      Completed {safeFormatDate(ord.created_at)}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <span className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                      ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
-                    </span>
-                    <Link href={`/orders/${ord.id}`}>
-                      <Button variant="outline" size="sm">
-                        View
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 8: MESSAGES */}
+      {/* 4. MESSAGES TAB */}
       {activeTab === 'messages' && (
         <div className="space-y-4">
-          <div>
-            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">Messages & Negotiations</h3>
-            <p className="text-xs text-[#71717A] dark:text-zinc-400">
-              Private chat with advertisers for accepted collaboration requests.
-            </p>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-[#121214] dark:text-white">
+              Collaboration Messages & Negotiations
+            </h3>
           </div>
           <ConversationChat role="creator" />
         </div>
       )}
 
-      {/* TAB 9: SETTINGS */}
+      {/* 5. PROFILE TAB */}
+      {activeTab === 'profile' && (
+        <div className="space-y-6">
+          {/* Section A: Profile Information */}
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
+            <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">
+              <div>
+                <span className="editorial-label text-[#FF5416]">Creator Information</span>
+                <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                  Public Profile
+                </h3>
+              </div>
+              <Link href={`/creators/${creatorId}`}>
+                <Button variant="outline" size="sm" className="text-xs">
+                  <span>View Public Page</span>
+                  <ExternalLink className="w-3.5 h-3.5 ml-1" />
+                </Button>
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+                <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase">Display Name</span>
+                <span className="font-bold text-[#121214] dark:text-white block mt-0.5">{creatorDisplayName}</span>
+              </div>
+              <div className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+                <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase">Primary City</span>
+                <span className="font-bold text-[#121214] dark:text-white block mt-0.5">{creatorCity}</span>
+              </div>
+              <div className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+                <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase">Primary Niche</span>
+                <span className="font-bold text-[#121214] dark:text-white block mt-0.5">{creatorNiche}</span>
+              </div>
+              <div className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+                <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase">Audience Reach</span>
+                <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
+                  {followerCount >= 1000 ? `${(followerCount / 1000).toFixed(1)}K` : followerCount} Followers
+                </span>
+              </div>
+
+              {/* Instagram Connection */}
+              <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                    <InstagramIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs text-[#121214] dark:text-white">
+                      {dbCreator?.instagram_connected
+                        ? `@${dbCreator?.instagram_username || 'connected'}`
+                        : 'Instagram Account'}
+                    </h4>
+                    <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                      {dbCreator?.instagram_connected
+                        ? 'Meta Verified connection active'
+                        : 'Connect Instagram to auto-verify followers.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  {dbCreator?.instagram_connected ? (
+                    <span className="text-[11px] px-2.5 py-1 rounded bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold border border-[#A7F3D0] dark:border-emerald-800">
+                      Connected ✓
+                    </span>
+                  ) : (
+                    <a
+                      href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors"
+                    >
+                      <InstagramIcon className="w-3.5 h-3.5" />
+                      <span>Connect Instagram</span>
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div className="sm:col-span-2 p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+                <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase mb-1">Bio</span>
+                <p className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed">
+                  {dbCreator?.bio || 'Content creator helping apps and websites reach targeted audiences.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section B: Packages Management */}
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
+            <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex items-center justify-between">
+              <div>
+                <span className="editorial-label text-[#FF5416]">Pricing & Deliverables</span>
+                <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                  Collaboration Packages ({packages.length})
+                </h3>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setEditingPkgId(null);
+                  setNewPkgName('');
+                  setNewPkgPrice(3000);
+                  setNewPkgDelivery(4);
+                  setNewPkgDesc('');
+                  setIsAddingPkg(!isAddingPkg);
+                }}
+                className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                <span>{isAddingPkg ? 'Cancel' : 'Create Package'}</span>
+              </Button>
+            </div>
+
+            {/* Add / Edit Package Form */}
+            {isAddingPkg && (
+              <form onSubmit={handleSavePackage} className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-3 text-xs">
+                <h4 className="font-bold text-sm text-[#121214] dark:text-white">
+                  {editingPkgId ? 'Edit Package' : 'Create Package'}
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Package Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={newPkgName}
+                      onChange={(e) => setNewPkgName(e.target.value)}
+                      placeholder="e.g. 1 Instagram Reel + Link in Bio"
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Price (₹ INR)</label>
+                    <input
+                      type="number"
+                      required
+                      min={500}
+                      value={newPkgPrice}
+                      onChange={(e) => setNewPkgPrice(Number(e.target.value))}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Delivery Time (Days)</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={30}
+                      value={newPkgDelivery}
+                      onChange={(e) => setNewPkgDelivery(Number(e.target.value))}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Description</label>
+                  <textarea
+                    rows={2}
+                    value={newPkgDesc}
+                    onChange={(e) => setNewPkgDesc(e.target.value)}
+                    placeholder="Details about the reel format, features highlighted, and CTA..."
+                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingPkg(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="primary" size="sm" disabled={isSavingPkg} className="bg-[#FF5416] text-white">
+                    {isSavingPkg ? 'Saving...' : editingPkgId ? 'Update Package' : 'Save Package'}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {packages.length === 0 ? (
+              <p className="text-xs text-[#71717A] text-center py-6 border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
+                No packages created yet. Create a package so businesses can book you directly.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {packages.map((pkg) => (
+                  <div
+                    key={pkg.id}
+                    className="p-4 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 space-y-2.5 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-sm text-[#121214] dark:text-white">{pkg.name}</h4>
+                        <span className="font-bold text-sm text-[#FF5416]">
+                          ₹{Number(pkg.price || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-1 leading-relaxed">
+                        {pkg.description}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between text-[11px] text-[#71717A]">
+                      <span>{pkg.delivery_days} days delivery</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPkgId(pkg.id);
+                            setNewPkgName(pkg.name);
+                            setNewPkgPrice(pkg.price);
+                            setNewPkgDelivery(pkg.delivery_days);
+                            setNewPkgDesc(pkg.description);
+                            setIsAddingPkg(true);
+                          }}
+                          className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                          title="Edit package"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePackage(pkg.id)}
+                          className="text-[#71717A] hover:text-red-600"
+                          title="Delete package"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section C: Showcase Reels Management */}
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
+            <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="editorial-label text-[#FF5416]">Video Portfolio</span>
+                <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                  Showcase Reels ({reels.length})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddingReelUrl(!isAddingReelUrl)}
+                  className="text-xs"
+                >
+                  <InstagramIcon className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
+                  <span>{isAddingReelUrl ? 'Cancel' : 'Add Instagram Reel'}</span>
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime"
+                  className="hidden"
+                  onChange={handleUploadReel}
+                  disabled={isUploading}
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
+                >
+                  <Upload className="w-3.5 h-3.5 mr-1" />
+                  <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload MP4'}</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Add Instagram Reel URL Form */}
+            {isAddingReelUrl && (
+              <form onSubmit={handleAddInstagramReel} className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Reel Title</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Fintech App UI Walkthrough"
+                      value={newReelTitle}
+                      onChange={(e) => setNewReelTitle(e.target.value)}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Sample Type</label>
+                    <select
+                      value={newReelType}
+                      onChange={(e) => setNewReelType(e.target.value as ReelType)}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                    >
+                      <option value="client_work">Promotional Campaign</option>
+                      <option value="demo">Demo Reel</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1 font-semibold text-[#121214] dark:text-white">Instagram Reel URL *</label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://www.instagram.com/reel/XXXXXXXX/"
+                    value={instagramReelUrl}
+                    onChange={(e) => {
+                      setInstagramReelUrl(e.target.value);
+                      if (reelUrlError) setReelUrlError(null);
+                    }}
+                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+                  />
+                </div>
+
+                {reelUrlError && (
+                  <p className="text-xs text-red-600">{reelUrlError}</p>
+                )}
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingReelUrl(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="primary" size="sm" isLoading={isSavingReelUrl} className="bg-[#FF5416] text-white">
+                    Save Reel
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {reels.length === 0 ? (
+              <p className="text-xs text-[#71717A] text-center py-6 border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
+                No showcase reels added yet. Add Instagram Reel URLs or upload short MP4 clips to display on your profile.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {reels.map((reel) => {
+                  const reelSrc = reel.video_url || reel.reel_url || '';
+                  return (
+                    <div
+                      key={reel.id}
+                      className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl space-y-2 flex flex-col justify-between"
+                    >
+                      <div className="flex gap-2.5">
+                        <div className="w-16 h-24 bg-black rounded-lg overflow-hidden shrink-0">
+                          <ReelVideo
+                            src={reelSrc}
+                            poster={reel.thumbnail_url}
+                            autoPlay={true}
+                            loop={true}
+                            muted={true}
+                            playsInline={true}
+                            className="w-full h-full"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-xs text-[#121214] dark:text-white truncate">
+                            {reel.title || 'Showcase Reel'}
+                          </h4>
+                          {reel.is_featured && (
+                            <span className="text-[10px] text-[#FF5416] font-bold block mt-1">★ Featured</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFeatured(reel.id)}
+                            className={`px-2 py-0.5 rounded text-[10px] ${
+                              reel.is_featured ? 'bg-[#FFF2EC] text-[#FF5416]' : 'text-[#71717A]'
+                            }`}
+                          >
+                            {reel.is_featured ? 'Featured' : 'Feature'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVisibility(reel.id)}
+                            className="p-1 text-[#71717A]"
+                            title={reel.is_visible ? 'Visible' : 'Hidden'}
+                          >
+                            {reel.is_visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReel(reel.id)}
+                          className="p-1 text-[#71717A] hover:text-red-600"
+                          title="Delete reel"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-            <span className="editorial-label text-[#FF5416]">Account & Integrations</span>
-            <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-6 shadow-sm">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+            <span className="editorial-label text-[#FF5416]">Payouts & Preferences</span>
+            <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
               Creator Settings
             </h3>
           </div>
 
-          <div className="space-y-6">
-            {/* Instagram Verification Architecture */}
-            <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-50 dark:bg-pink-950/40 border border-pink-200 dark:border-pink-900 flex items-center justify-center">
-                    <Camera className="w-5 h-5 text-pink-600 dark:text-pink-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                      Instagram Official Insights Integration
-                    </h4>
-                    <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                      OAuth 2.0 readiness for Meta Graph API follower and reach verification.
-                    </p>
-                  </div>
-                </div>
-
-                <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                  Ready for Meta OAuth
-                </span>
-              </div>
-              <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                Handle confidentiality: Your Instagram username is protected and never publicly exposed. Metrics are currently maintained as platform metrics.
+          {/* Payout Details */}
+          <div className="space-y-3 max-w-md text-xs">
+            <div>
+              <h4 className="font-bold text-sm text-[#121214] dark:text-white">Payout Details (UPI ID)</h4>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                This UPI ID is used only for manual direct payouts. It is private, confidential, and never shown to businesses or on public discovery.
               </p>
             </div>
 
-            {/* Payment Details Section */}
-            <div className="space-y-4 pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
-              <div>
-                <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Payment Details</h4>
-                <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-                  This is used only for creator payouts. It is never shown to businesses.
-                </p>
-              </div>
-
-              <div className="max-w-md space-y-3 text-xs">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-semibold text-[#121214] dark:text-white block">UPI ID</label>
-                    <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">Example: name@upi</span>
-                  </div>
-                  <input
-                    type="text"
-                    value={payoutUpiId}
-                    onChange={(e) => {
-                      setPayoutUpiId(e.target.value);
-                      if (upiError) setUpiError(null);
-                      if (upiSuccessMessage) setUpiSuccessMessage(null);
-                    }}
-                    onBlur={() => {
-                      if (payoutUpiId.trim()) {
-                        const res = validateAndNormalizeUpiId(payoutUpiId);
-                        if (!res.isValid) {
-                          setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
-                        } else {
-                          setPayoutUpiId(res.value);
-                          setUpiError(null);
-                        }
-                      }
-                    }}
-                    placeholder="name@upi"
-                    className={`w-full py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
-                      upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                    } rounded font-mono text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
-                  />
-                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1">
-                    This is used only for creator payouts. It is never shown to businesses.
-                  </p>
-                  {upiError && (
-                    <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1 font-sans">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>{upiError}</span>
-                    </p>
-                  )}
-                  {upiSuccessMessage && (
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1 font-sans">
-                      <CheckCircle2 className="w-3 h-3 shrink-0" />
-                      <span>{upiSuccessMessage}</span>
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-1">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={isSavingUpi}
-                    onClick={handleSavePayoutUpi}
-                  >
-                    <span>{isSavingUpi ? 'Saving...' : 'Save Payment Details'}</span>
-                  </Button>
-                </div>
-              </div>
+            <div>
+              <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
+                UPI ID (e.g. name@upi or phone@paytm)
+              </label>
+              <input
+                type="text"
+                value={payoutUpiId}
+                onChange={(e) => {
+                  setPayoutUpiId(e.target.value);
+                  if (upiError) setUpiError(null);
+                  if (upiSuccessMessage) setUpiSuccessMessage(null);
+                }}
+                onBlur={() => {
+                  if (payoutUpiId.trim()) {
+                    const res = validateAndNormalizeUpiId(payoutUpiId);
+                    if (!res.isValid) {
+                      setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+                    } else {
+                      setPayoutUpiId(res.value);
+                      setUpiError(null);
+                    }
+                  }
+                }}
+                placeholder="name@upi"
+                className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                  upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                } rounded focus:outline-none focus:border-[#FF5416]`}
+              />
             </div>
+
+            {upiError && <p className="text-xs text-red-600">{upiError}</p>}
+            {upiSuccessMessage && <p className="text-xs text-[#047857]">{upiSuccessMessage}</p>}
+
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isSavingUpi}
+              onClick={handleSavePayoutUpi}
+              className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs"
+            >
+              <span>{isSavingUpi ? 'Saving...' : 'Save Payout UPI ID'}</span>
+            </Button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export default function CreatorDashboardPage() {
+  return (
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-20 text-center text-xs font-mono">Loading creator workspace...</div>}>
+      <CreatorDashboardContent />
+    </Suspense>
   );
 }

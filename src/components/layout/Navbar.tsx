@@ -16,18 +16,39 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const navLinks = [
-    { label: 'Discover', href: '/discover' },
-    { label: 'How It Works', href: '/how-it-works' },
-    { label: 'For Advertisers', href: '/for-businesses' },
-    { label: 'For Influencers', href: '/for-creators' },
-  ];
-
   const userRole = (currentUser?.role || activeRole || '').toLowerCase();
+  const isCreator = userRole === 'creator' || userRole === 'influencer';
+  const isBusiness = userRole === 'business' || userRole === 'advertiser';
+
+  const navLinks = currentUser && (isCreator || isBusiness)
+    ? isCreator
+      ? [
+          { label: 'Home', href: '/dashboard/creator?tab=home' },
+          { label: 'Discover', href: '/dashboard/creator?tab=discover' },
+          { label: 'Orders', href: '/dashboard/creator?tab=orders' },
+          { label: 'Messages', href: '/dashboard/creator?tab=messages' },
+          { label: 'Profile', href: '/dashboard/creator?tab=profile' },
+          { label: 'Settings', href: '/dashboard/creator?tab=settings' },
+        ]
+      : [
+          { label: 'Home', href: '/dashboard/business?tab=home' },
+          { label: 'Discover', href: '/discover' },
+          { label: 'Orders', href: '/dashboard/business?tab=orders' },
+          { label: 'Messages', href: '/dashboard/business?tab=messages' },
+          { label: 'Profile', href: '/dashboard/business?tab=profile' },
+          { label: 'Settings', href: '/dashboard/business?tab=settings' },
+        ]
+    : [
+        { label: 'Discover', href: '/discover' },
+        { label: 'How It Works', href: '/how-it-works' },
+        { label: 'For Advertisers', href: '/for-businesses' },
+        { label: 'For Influencers', href: '/for-creators' },
+      ];
+
   const dashboardHref =
-    userRole === 'creator' || userRole === 'influencer'
+    isCreator
       ? '/dashboard/creator'
-      : userRole === 'business' || userRole === 'advertiser'
+      : isBusiness
       ? '/dashboard/business'
       : currentUser
       ? '/auth/role-select'
@@ -47,7 +68,7 @@ export function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           {/* Left: Brand Logo */}
           <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 group">
+            <Link href={currentUser ? dashboardHref : '/'} className="flex items-center gap-2 group">
               <div className="w-7 h-7 rounded-lg bg-[#FF5416] flex items-center justify-center text-white font-mono font-black text-xs shadow-sm">
                 M
               </div>
@@ -59,7 +80,7 @@ export function Navbar() {
             {/* Desktop Navigation Links */}
             <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-[#71717A] dark:text-[#A1A1AA]">
               {navLinks.map((link) => {
-                const isActive = pathname === link.href;
+                const isActive = pathname === link.href.split('?')[0];
                 return (
                   <Link
                     key={link.href}

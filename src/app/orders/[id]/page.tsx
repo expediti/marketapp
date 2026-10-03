@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { Order } from '@/types/marketplace';
-import { OrderTimeline } from '@/components/order/OrderTimeline';
 import { OrderBriefView } from '@/components/order/OrderBriefView';
 import { ChatWindow } from '@/components/order/ChatWindow';
 import { DeliveryWorkspace } from '@/components/order/DeliveryWorkspace';
@@ -18,12 +17,13 @@ import {
   ShieldCheck,
   CheckCircle,
   Clock,
-  History,
-  AlertTriangle,
   Building,
   User,
   Info,
-  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  History,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -31,10 +31,12 @@ export const dynamic = 'force-dynamic';
 export default function OrderWorkspacePage() {
   const params = useParams();
   const orderId = params.id as string;
-  const { getOrder, acceptOrder, declineOrder, activeRole, isLoading: storeLoading } = useMarketplace();
+  const { getOrder, activeRole, currentUser, isLoading: storeLoading } = useMarketplace();
   const storeOrder = getOrder(orderId);
   const [dbOrder, setDbOrder] = useState<Order | null>(null);
   const [isFetchingDirect, setIsFetchingDirect] = useState(false);
+  const [showBrief, setShowBrief] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
 
   useEffect(() => {
     if (!storeOrder && isSupabaseConfigured && orderId) {
@@ -126,9 +128,19 @@ export default function OrderWorkspacePage() {
   }, [storeOrder, orderId]);
 
   const order = storeOrder || dbOrder;
-
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'workspace' | 'brief' | 'chat' | 'events'>('workspace');
+
+  const isMeCreator =
+    currentUser?.id === order?.creator_user_id ||
+    currentUser?.id === order?.creator_id ||
+    activeRole === 'creator' ||
+    activeRole === 'influencer';
+
+  const isMeBusiness =
+    currentUser?.id === order?.business_user_id ||
+    currentUser?.id === order?.business_id ||
+    activeRole === 'business' ||
+    activeRole === 'advertiser';
 
   if (storeLoading || isFetchingDirect) {
     return (
@@ -143,246 +155,193 @@ export default function OrderWorkspacePage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4 font-mono">
         <h2 className="text-2xl font-bold text-[#121214] dark:text-white">Order not found</h2>
-        <Link href="/discover">
+        <Link href={isMeCreator ? '/dashboard/creator?tab=orders' : '/dashboard/business?tab=orders'}>
           <Button variant="primary" size="sm">
-            Back to Directory
+            Back to Orders
           </Button>
         </Link>
       </div>
     );
   }
 
+  const isPaid =
+    order.payment_status === 'PAID' ||
+    order.order_status === 'PAID' ||
+    order.order_status === 'WORK_STARTED' ||
+    order.order_status === 'IN_PROGRESS' ||
+    order.order_status === 'DELIVERED' ||
+    order.order_status === 'REVISION_REQUESTED' ||
+    order.order_status === 'APPROVED' ||
+    order.order_status === 'AUTO_APPROVED' ||
+    order.order_status === 'COMPLETED';
+
+  const otherPartyName = isMeCreator
+    ? order.business?.business_name || 'Brand Partner'
+    : order.creator?.display_name || order.creator?.profile?.display_name || 'Creator';
+
+  const deliverableText = order.package?.name || order.brief?.objective || '1 × Instagram Reel';
+  const revisionsLeft = Math.max(0, (order.included_revisions ?? 1) - (order.revisions_used ?? 0));
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      {/* Top Breadcrumb & Quick Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-mono">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 font-mono">
+      {/* Top Breadcrumb */}
+      <div className="flex items-center justify-between">
         <Link
-          href={activeRole === 'creator' ? '/dashboard/creator' : '/dashboard/business'}
+          href={isMeCreator ? '/dashboard/creator?tab=orders' : '/dashboard/business?tab=orders'}
           className="inline-flex items-center gap-1.5 text-xs text-[#71717A] hover:text-[#121214] dark:hover:text-white transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Dashboard</span>
+          <span>Back to Orders</span>
         </Link>
 
-        {/* Contextual Status Indicator */}
-        {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
-          <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 px-3 py-1.5 rounded-lg text-xs text-purple-700 dark:text-purple-300">
-            <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
-            <span className="font-semibold">
-              {activeRole === 'business'
-                ? 'Payment required to start this collaboration.'
-                : 'Deal Confirmed ✓ — Awaiting Business Payment'}
-            </span>
-          </div>
-        )}
-
-        {order.order_status === 'PAID' && (
-          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-1.5 rounded-lg text-xs text-emerald-700 dark:text-emerald-300">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="font-semibold">
-              {activeRole === 'creator'
-                ? 'Payment received. You can now start the work.'
-                : 'Payment received.'}
-            </span>
-          </div>
+        {isPaid ? (
+          <span className="text-[11px] text-[#047857] dark:text-emerald-400 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold flex items-center gap-1">
+            <CheckCircle className="w-3.5 h-3.5" />
+            <span>Payment Protected ✓</span>
+          </span>
+        ) : (
+          <span className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+            Awaiting Payment
+          </span>
         )}
       </div>
 
-      {/* ORDER HEADER */}
-      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-4 shadow-sm font-mono">
+      {/* COMPACT ORDER HEADER */}
+      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="editorial-label text-[#71717A] dark:text-zinc-400">Order Workspace</span>
-              <StatusBadge status={order.order_status} size="sm" />
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white tracking-tight">
-              {order.order_number}
+          <div>
+            <span className="editorial-label text-[#FF5416] block">
+              {isMeCreator ? 'Business Partner' : 'Creator'}
+            </span>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#121214] dark:text-white mt-0.5">
+              {otherPartyName}
             </h1>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+              Order #{order.order_number}
+            </p>
           </div>
 
-          <div className="text-left sm:text-right">
-            <div className="text-2xl font-bold text-[#121214] dark:text-white">
+          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2">
+            <StatusBadge status={order.order_status} size="sm" />
+            <span className="font-bold text-lg sm:text-xl text-[#121214] dark:text-white">
               ₹{order.total_amount.toLocaleString('en-IN')}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-[#047857] sm:justify-end mt-0.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Platform Payment Protection</span>
-            </div>
+            </span>
           </div>
         </div>
 
-        {/* CONTEXTUAL WORKFLOW NOTICES */}
-        {(order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING') && (
-          <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 p-3.5 rounded-lg text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
-            <Info className="w-4 h-4 shrink-0 text-purple-600" />
-            <p className="font-semibold">
-              Payment required to start this collaboration.
-            </p>
-          </div>
-        )}
-
-        {order.order_status === 'PAID' && (
-          <div className="bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800 p-3.5 rounded-lg text-xs text-[#047857] dark:text-emerald-400 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 shrink-0 text-[#047857]" />
-            <p className="font-semibold">
-              {activeRole === 'creator'
-                ? 'Payment received. You can now start the work.'
-                : 'Payment received.'}
-            </p>
-          </div>
-        )}
-
-        {(order.order_status === 'WORK_STARTED' || order.order_status === 'IN_PROGRESS') && (
-          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 p-3.5 rounded-lg text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 shrink-0 text-blue-600" />
-            <p>
-              Work has started! Creator is actively preparing deliverable according to the agreed brief.
-            </p>
-          </div>
-        )}
-
-        {order.order_status === 'DELIVERED' && (
-          <div className="bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] p-3.5 rounded-lg text-xs text-[#C2410C] dark:text-[#F97316] flex items-center gap-2">
-            <Clock className="w-4 h-4 shrink-0 text-[#FF5416]" />
-            <p>
-              Please review the delivery within 4 days. If no action is taken, it will be automatically approved.
-            </p>
-          </div>
-        )}
-
-        {/* Parties involved & terms */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 text-xs">
-          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
-            <User className="w-4 h-4 text-[#FF5416]" />
-            <div>
-              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Creator</span>
-              <span className="font-bold text-[#121214] dark:text-white">
-                {order.creator?.display_name || order.creator?.profile?.display_name || 'Creator'}
-              </span>
-            </div>
+        {/* Essential Terms Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Deliverable</span>
+            <span className="font-bold text-[#121214] dark:text-white truncate block mt-0.5">
+              {deliverableText}
+            </span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
-            <Building className="w-4 h-4 text-[#FF5416]" />
-            <div>
-              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Business / Brand</span>
-              <span className="font-bold text-[#121214] dark:text-white">
-                {order.business?.business_name || 'Business'}
-              </span>
-            </div>
+          <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Price</span>
+            <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
+              ₹{order.total_amount.toLocaleString('en-IN')}
+            </span>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
-            <RefreshCw className="w-4 h-4 text-[#FF5416]" />
-            <div>
-              <span className="editorial-label text-[#71717A] dark:text-zinc-400 block">Included Revisions</span>
-              <span className="font-bold text-[#121214] dark:text-white">
-                {order.included_revisions ?? 1} revision(s) ({order.revisions_used ?? 0} used)
-              </span>
-            </div>
+          <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Deadline</span>
+            <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
+              {order.deadline ? new Date(order.deadline).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'N/A'}
+            </span>
+          </div>
+
+          <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Revisions</span>
+            <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
+              {revisionsLeft} remaining
+            </span>
           </div>
         </div>
       </div>
 
-      {/* LIFECYCLE TIMELINE */}
-      <OrderTimeline currentStatus={order.order_status} />
-
-      {/* WORKSPACE NAVIGATION TABS */}
-      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 font-mono text-xs">
-        {[
-          { key: 'workspace', label: 'Delivery & Proofs' },
-          { key: 'chat', label: 'Order Chat' },
-          { key: 'brief', label: 'Campaign Brief' },
-          { key: 'events', label: 'Activity Trail' },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
-            className={`px-3 py-1.5 rounded transition-colors ${activeTab === tab.key
-                ? 'bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-bold'
-                : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
-              }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* TAB CONTENT */}
-      {activeTab === 'workspace' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-7 space-y-6">
-            <DeliveryWorkspace
-              order={order}
-              onOpenDispute={() => setIsDisputeOpen(true)}
-            />
-            <OrderBriefView
-              brief={order.brief}
-              packageName={order.package?.name}
-              totalAmount={order.total_amount}
-            />
-          </div>
-
-          <div className="lg:col-span-5">
-            <ChatWindow orderId={order.id} />
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'chat' && (
-        <div className="max-w-3xl mx-auto">
-          <ChatWindow orderId={order.id} />
-        </div>
-      )}
-
-      {activeTab === 'brief' && (
-        <div className="max-w-3xl mx-auto">
-          <OrderBriefView
-            brief={order.brief}
-            packageName={order.package?.name}
-            totalAmount={order.total_amount}
+      {/* PRIMARY WORKSPACE: DELIVERY & CHAT */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Delivery */}
+        <div className="lg:col-span-6 space-y-4">
+          <DeliveryWorkspace
+            order={order}
+            onOpenDispute={() => setIsDisputeOpen(true)}
           />
         </div>
-      )}
 
-      {activeTab === 'events' && (
-        <div className="max-w-3xl mx-auto bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm font-mono">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
-            <span className="editorial-label text-[#FF5416]">Audit Trail</span>
-            <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
-              Collaboration Activity History
-            </h3>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {(!order.events || order.events.length === 0) ? (
-              <p className="text-[#71717A] dark:text-zinc-400 text-xs py-4 text-center">
-                No activity events recorded yet.
-              </p>
-            ) : (
-              order.events.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="p-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#71717A] dark:text-zinc-400">{ev.from_status || 'INIT'}</span>
-                      <span className="text-[#FF5416]">→</span>
-                      <strong className="text-[#121214] dark:text-white">{ev.to_status}</strong>
-                    </div>
-                    <p className="text-[#52525B] dark:text-zinc-300 mt-1 text-[11px]">{ev.reason}</p>
-                  </div>
-                  <span className="text-[10px] text-[#A1A1AA] dark:text-zinc-500 shrink-0">
-                    {new Date(ev.created_at).toLocaleString('en-IN')}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+        {/* Right Column: Chat */}
+        <div className="lg:col-span-6">
+          <ChatWindow orderId={order.id} />
         </div>
-      )}
+      </div>
+
+      {/* SECONDARY COLLAPSIBLE SECTIONS */}
+      <div className="space-y-3 pt-2">
+        {/* Collapsible Campaign Brief */}
+        <div className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-white dark:bg-[#18181B] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowBrief(!showBrief)}
+            className="w-full p-4 flex items-center justify-between text-left text-xs font-bold text-[#121214] dark:text-white hover:bg-[#FBFBFA] dark:hover:bg-zinc-900 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#FF5416]" />
+              <span>Campaign Brief & Requirements</span>
+            </span>
+            {showBrief ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showBrief && (
+            <div className="p-4 border-t border-[#ECECE6] dark:border-zinc-800">
+              <OrderBriefView
+                brief={order.brief}
+                packageName={order.package?.name}
+                totalAmount={order.total_amount}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible Activity Trail */}
+        <div className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl bg-white dark:bg-[#18181B] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowEvents(!showEvents)}
+            className="w-full p-4 flex items-center justify-between text-left text-xs font-bold text-[#121214] dark:text-white hover:bg-[#FBFBFA] dark:hover:bg-zinc-900 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <History className="w-4 h-4 text-[#71717A]" />
+              <span>Activity History ({order.events?.length || 0})</span>
+            </span>
+            {showEvents ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showEvents && (
+            <div className="p-4 border-t border-[#ECECE6] dark:border-zinc-800 space-y-2 text-xs">
+              {(!order.events || order.events.length === 0) ? (
+                <p className="text-[#71717A] text-center py-2">No activity events recorded yet.</p>
+              ) : (
+                order.events.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded flex items-center justify-between text-[11px]"
+                  >
+                    <div>
+                      <span className="font-semibold text-[#121214] dark:text-white">{ev.to_status}</span>
+                      {ev.reason && <p className="text-[#71717A] mt-0.5">{ev.reason}</p>}
+                    </div>
+                    <span className="text-[10px] text-[#A1A1AA] shrink-0">
+                      {new Date(ev.created_at).toLocaleDateString('en-IN')}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* SYSTEM REVIEW MODAL */}
       <DisputeModal
