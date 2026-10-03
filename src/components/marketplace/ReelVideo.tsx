@@ -112,7 +112,7 @@ export function ReelVideo({
   // Initial playback attempt on mount and source change
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !resolvedSrc) return;
     applyDOMProperties(video);
 
     if (autoPlay) {
@@ -239,7 +239,7 @@ export function ReelVideo({
       )}
 
       {/* HTML5 Video Element with automated muted looped inline playback and NO controls */}
-      {!hasError && (
+      {!hasError && resolvedSrc && (
         <video
           ref={(el) => {
             videoRef.current = el;
@@ -263,8 +263,8 @@ export function ReelVideo({
         />
       )}
 
-      {/* Fallback Display if Video Fails (shows poster image, no play button) */}
-      {hasError && !poster && (
+      {/* Fallback Display if Video Fails or is empty (shows poster image, no play button) */}
+      {(hasError || !resolvedSrc) && !poster && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#18181B] text-zinc-400 p-4 text-center">
           <AlertCircle className="w-5 h-5 text-zinc-500 mb-1" />
           <span className="text-[11px] font-mono">Video preview</span>

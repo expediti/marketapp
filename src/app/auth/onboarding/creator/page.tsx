@@ -91,12 +91,12 @@ export default function CreatorOnboardingPage() {
   const [payoutUpiId, setPayoutUpiId] = useState('');
   const [upiError, setUpiError] = useState<string | null>(null);
 
-  // Step 4: Verified Instagram Connection (Manual follower input removed)
+  // Step 4: Audience Metrics & Optional Instagram Connection
   const [isInstagramConnected, setIsInstagramConnected] = useState<boolean>(false);
   const [instagramUsername, setInstagramUsername] = useState<string>('');
-  const [followerCount, setFollowerCount] = useState<number>(0);
-  const [averageReach, setAverageReach] = useState<number>(0);
-  const [engagementRate, setEngagementRate] = useState<number>(0);
+  const [followerCount, setFollowerCount] = useState<number>(10000);
+  const [averageReach, setAverageReach] = useState<number>(5000);
+  const [engagementRate, setEngagementRate] = useState<number>(4.2);
   const [igError, setIgError] = useState<string | null>(null);
 
   // Step 6: Reel link / upload state
@@ -414,9 +414,9 @@ export default function CreatorOnboardingPage() {
           niche: selectedCategories[0] || 'Technology',
           categories: selectedCategories.length > 0 ? selectedCategories : ['Technology'],
           languages: languages.length > 0 ? languages : ['Hindi', 'English'],
-          follower_count: isVerifiedIg ? followerCount : 0,
-          average_reach: isVerifiedIg ? averageReach : 0,
-          engagement_rate: isVerifiedIg ? engagementRate : 0,
+          follower_count: Number(followerCount) || 0,
+          average_reach: Number(averageReach) || 0,
+          engagement_rate: Number(engagementRate) || 0,
           instagram_connected: isVerifiedIg,
           instagram_username: isVerifiedIg ? instagramUsername : null,
           instagram_verified: isVerifiedIg,
@@ -505,9 +505,9 @@ export default function CreatorOnboardingPage() {
         languages: languages,
         bio: bio || '',
         profile_image_path: profileImage || undefined,
-        follower_count: isInstagramConnected ? followerCount : 0,
-        average_reach: isInstagramConnected ? averageReach : 0,
-        engagement_rate: isInstagramConnected ? engagementRate : 0,
+        follower_count: Number(followerCount) || 0,
+        average_reach: Number(averageReach) || 0,
+        engagement_rate: Number(engagementRate) || 0,
         instagram_connected: Boolean(isInstagramConnected),
         instagram_verified: Boolean(isInstagramConnected),
         instagram_username: isInstagramConnected && instagramUsername ? instagramUsername : null,
@@ -958,92 +958,146 @@ export default function CreatorOnboardingPage() {
         </div>
       )}
 
-      {/* STEP 4: CONNECT INSTAGRAM */}
+      {/* STEP 4: AUDIENCE METRICS & INSTAGRAM (OPTIONAL) */}
       {step === 4 && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Connect Instagram</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
+                Audience Reach & Metrics
+              </h2>
+              <span className="text-[11px] font-mono text-[#71717A] bg-[#F4F4F0] dark:bg-zinc-800 px-2 py-0.5 rounded border border-[#E5E5DE] dark:border-zinc-700">
+                Instagram Optional
+              </span>
+            </div>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-              Connect your creator Instagram account to verify your profile and automatically import your verified follower count.
+              Enter your follower and audience metrics. You can optionally connect Instagram for automatic verification or enter your numbers manually.
             </p>
           </div>
 
           {igError && (
-            <div className="p-3.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-800 dark:text-red-300">{igError}</p>
+            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-900 dark:text-amber-200 space-y-0.5">
+                <p className="font-semibold">Instagram Connection Notice</p>
+                <p>
+                  Instagram couldn&apos;t be connected right now ({igError}). You can enter your metrics manually below and finish onboarding, or connect Instagram anytime later from your Settings.
+                </p>
+              </div>
             </div>
           )}
 
-          {isInstagramConnected ? (
-            <div className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white">
-                    <InstagramIcon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-sm font-bold text-[#121214] dark:text-white font-mono">
-                        @{instagramUsername || 'connected'}
-                      </h4>
-                      <CheckCircle2 className="w-4 h-4 text-[#FF5416]" />
-                    </div>
-                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                      Instagram Account Connected & Verified
-                    </span>
-                  </div>
+          {/* Optional Instagram Connect Card */}
+          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                  <InstagramIcon className="w-5 h-5" />
                 </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-xs font-bold text-[#121214] dark:text-white font-mono">
+                      {isInstagramConnected
+                        ? `@${instagramUsername || 'connected'}`
+                        : 'Instagram Verification (Optional)'}
+                    </h4>
+                    {isInstagramConnected && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
+                    )}
+                  </div>
+                  <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                    {isInstagramConnected
+                      ? 'Meta Graph API Verified & Connected'
+                      : 'Connect your professional creator account for verified badges.'}
+                  </span>
+                </div>
+              </div>
 
-                <span className="text-xs px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
-                  Verified
+              <div>
+                {isInstagramConnected ? (
+                  <span className="text-xs px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
+                    Verified ✓
+                  </span>
+                ) : (
+                  <a
+                    href="/api/auth/instagram/authorize?returnTo=%2Fauth%2Fonboarding%2Fcreator"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
+                  >
+                    <InstagramIcon className="w-3.5 h-3.5" />
+                    <span>Connect Instagram</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Core Metrics Entry (Self-Declared or Verified) */}
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-[#121214] dark:text-white uppercase tracking-wider">
+                Platform Performance Metrics
+              </span>
+              <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                {isInstagramConnected ? 'Source: Meta Graph API (Verified)' : 'Source: Self-Declared (Manual)'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Followers Count <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  value={followerCount}
+                  onChange={(e) => setFollowerCount(Number(e.target.value) || 0)}
+                  placeholder="e.g. 15000"
+                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
+                />
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
+                  Total followers across platforms
                 </span>
               </div>
 
-              <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <span className="text-[11px] font-semibold text-[#71717A] dark:text-zinc-400 block mb-0.5">
-                    Verified Followers
-                  </span>
-                  <span className="text-lg font-mono font-bold text-[#121214] dark:text-white">
-                    {followerCount > 0 ? followerCount.toLocaleString('en-IN') : 'Verified via API'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-semibold text-[#71717A] dark:text-zinc-400 block mb-0.5">
-                    Data Source
-                  </span>
-                  <span className="text-xs font-mono text-[#FF5416]">
-                    Meta Graph API (Verified)
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-6 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl text-center space-y-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white mx-auto shadow-sm">
-                <InstagramIcon className="w-6 h-6" />
-              </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <h3 className="text-sm font-bold text-[#121214] dark:text-white">
-                  Connect your Instagram Account
-                </h3>
-                <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                  Connect your Instagram account to automatically verify your identity and import your follower statistics. No manual follower entry required.
-                </p>
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Average Reach (Per Reel)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={averageReach}
+                  onChange={(e) => setAverageReach(Number(e.target.value) || 0)}
+                  placeholder="e.g. 8500"
+                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
+                />
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
+                  Estimated average views / impressions
+                </span>
               </div>
 
-              <div className="pt-2">
-                <a
-                  href="/api/auth/instagram/authorize?returnTo=/auth/onboarding/creator"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold shadow-sm transition-all"
-                >
-                  <InstagramIcon className="w-4 h-4" />
-                  <span>Connect Instagram</span>
-                </a>
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Engagement Rate (%)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={100}
+                  value={engagementRate}
+                  onChange={(e) => setEngagementRate(Number(e.target.value) || 0)}
+                  placeholder="e.g. 4.5"
+                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
+                />
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
+                  Average likes & comments / views ratio
+                </span>
               </div>
             </div>
-          )}
+          </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
             <Button variant="outline" size="sm" onClick={() => setStep(3)}>

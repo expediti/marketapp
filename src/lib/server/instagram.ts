@@ -53,7 +53,8 @@ export function getInstagramCredentials(): InstagramCredentials {
 
 /**
  * Builds the official Instagram OAuth Authorization URL.
- * Requests standard creator profile scopes.
+ * Uses Meta's "Instagram API with Instagram Login" product (Graph API).
+ * Requests the standard creator 'instagram_business_basic' scope.
  */
 export function buildInstagramAuthUrl(state: string): string {
   const { appId, redirectUri } = getInstagramCredentials();
@@ -62,21 +63,24 @@ export function buildInstagramAuthUrl(state: string): string {
     throw new Error('INSTAGRAM_APP_ID is not configured in server secrets.');
   }
 
-  // Instagram API scopes for profile & media insights
-  // user_profile: basic username & account ID
-  // user_media: access to media & reels
-  // instagram_business_basic: for creator/business profiles with metrics
-  const scope = 'user_profile,user_media,instagram_business_basic';
+  // Meta "Instagram API with Instagram Login" permission scope.
+  // Note: 'user_profile' and 'user_media' are deprecated Instagram Basic Display API
+  // permissions (sunset Dec 2024). Requesting them against modern Meta apps causes
+  // "Invalid platform app" / "Request parameters are invalid".
+  // 'instagram_business_basic' is the current valid scope for Creator profile & metrics.
+  const scope = 'instagram_business_basic';
 
   const params = new URLSearchParams({
+    enable_fb_login: '0',
+    force_authentication: '1',
     client_id: appId,
     redirect_uri: redirectUri,
-    scope,
     response_type: 'code',
+    scope,
     state,
   });
 
-  return `https://api.instagram.com/oauth/authorize?${params.toString()}`;
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
 
 /**

@@ -22,7 +22,7 @@ export function ReelCard({ reel, showCreatorInfo = true, className = '' }: ReelC
     >
       {/* Autoplaying looping short-form reel video */}
       <ReelVideo
-        src={reel.video_url}
+        src={reel.video_url || reel.reel_url || ''}
         poster={reel.thumbnail_url}
         title={reel.title}
         autoPlay={true}

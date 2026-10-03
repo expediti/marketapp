@@ -1005,7 +1005,7 @@ export default function CreatorDashboardPage() {
                     </span>
                   ) : (
                     <a
-                      href="/api/auth/instagram/authorize?returnTo=/dashboard/creator?tab=profile"
+                      href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
                     >
                       <InstagramIcon className="w-3.5 h-3.5" />
@@ -1211,7 +1211,7 @@ export default function CreatorDashboardPage() {
                   <div className="flex gap-3">
                     <div className="w-20 h-32 bg-black rounded-lg overflow-hidden relative shrink-0">
                       <ReelVideo
-                        src={reel.video_url}
+                        src={reel.video_url || reel.reel_url || ''}
                         poster={reel.thumbnail_url}
                         autoPlay={true}
                         loop={true}

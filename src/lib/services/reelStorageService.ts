@@ -270,15 +270,19 @@ export class ReelStorageService {
     return { success: true };
   }
 
-  getPublicUrl(path: string): string {
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
-      return path;
+  getPublicUrl(path: string | null | undefined): string {
+    if (!path || typeof path !== 'string' || !path.trim()) {
+      return '';
+    }
+    const trimmed = path.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+      return trimmed;
     }
     if (supabase) {
-      const { data } = supabase.storage.from(this.reelsBucket).getPublicUrl(path);
-      return data.publicUrl;
+      const { data } = supabase.storage.from(this.reelsBucket).getPublicUrl(trimmed);
+      return data?.publicUrl || '';
     }
-    return `/reels/${path}`;
+    return `/reels/${trimmed}`;
   }
 }
 
