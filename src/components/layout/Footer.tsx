@@ -77,7 +77,12 @@ export function Footer() {
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/about" className="hover:text-white transition-colors">
-                  About Market My App
+                  About Us
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" className="hover:text-white transition-colors">
+                  Contact & Support
                 </Link>
               </li>
               <li>
@@ -91,7 +96,9 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <span className="text-[#71717A] text-xs">Direct Collaboration Protection</span>
+                <Link href="/refund-policy" className="hover:text-white transition-colors">
+                  Refund & Cancellation
+                </Link>
               </li>
             </ul>
           </div>
@@ -100,16 +107,21 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
           <div>
-            © {new Date().getFullYear()} Market My App. Dedicated Indian Influencer Marketing Marketplace.
+            © {new Date().getFullYear()} Market My Idea. Dedicated Indian Influencer Marketing Marketplace.
           </div>
           <div className="flex items-center gap-6">
+            <Link href="/contact" className="hover:text-[#A1A1AA] transition-colors">
+              Contact
+            </Link>
             <Link href="/terms" className="hover:text-[#A1A1AA] transition-colors">
               Terms
             </Link>
             <Link href="/privacy" className="hover:text-[#A1A1AA] transition-colors">
               Privacy
             </Link>
-            <span>v2.0 Production</span>
+            <Link href="/refund-policy" className="hover:text-[#A1A1AA] transition-colors">
+              Refunds
+            </Link>
           </div>
         </div>
       </div>

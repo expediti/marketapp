@@ -50,6 +50,17 @@ export async function GET(request: Request) {
       );
     }
 
+    // Protect OAuth route: Only authorized test account can initiate Instagram OAuth during review
+    const ALLOWED_TESTER_EMAILS = ['khormasti104@gmail.com'];
+    const userEmail = (user.email || '').toLowerCase().trim();
+    if (!ALLOWED_TESTER_EMAILS.includes(userEmail)) {
+      return NextResponse.redirect(
+        `${origin}${returnTo}?ig_error=${encodeURIComponent(
+          'Instagram verification is currently being finalized. Coming soon!'
+        )}`
+      );
+    }
+
     // 3. Build state token (userId + returnTo + timestamp)
     const statePayload = {
       uid: user.id,

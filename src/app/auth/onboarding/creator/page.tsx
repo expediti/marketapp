@@ -999,7 +999,7 @@ export default function CreatorOnboardingPage() {
                     <h4 className="text-xs font-bold text-[#121214] dark:text-white font-mono">
                       {isInstagramConnected
                         ? `@${instagramUsername || 'connected'}`
-                        : 'Instagram Verification (Optional)'}
+                        : 'Instagram Verification'}
                     </h4>
                     {isInstagramConnected && (
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
@@ -1008,7 +1008,9 @@ export default function CreatorOnboardingPage() {
                   <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
                     {isInstagramConnected
                       ? 'Meta Graph API Verified & Connected'
-                      : 'Connect your professional creator account for verified badges.'}
+                      : (currentUser?.email || '').toLowerCase().trim() === 'khormasti104@gmail.com'
+                      ? 'Connect your professional creator account for verified badges.'
+                      : 'Coming soon — Instagram verification is currently being finalized.'}
                   </span>
                 </div>
               </div>
@@ -1018,7 +1020,7 @@ export default function CreatorOnboardingPage() {
                   <span className="text-xs px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
                     Verified ✓
                   </span>
-                ) : (
+                ) : (currentUser?.email || '').toLowerCase().trim() === 'khormasti104@gmail.com' ? (
                   <a
                     href="/api/auth/instagram/authorize?returnTo=%2Fauth%2Fonboarding%2Fcreator"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
@@ -1026,6 +1028,14 @@ export default function CreatorOnboardingPage() {
                     <InstagramIcon className="w-3.5 h-3.5" />
                     <span>Connect Instagram</span>
                   </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#E5E5DE] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 text-xs font-semibold font-mono cursor-not-allowed border border-[#D4D4CE] dark:border-zinc-700"
+                  >
+                    <span>Coming Soon</span>
+                  </button>
                 )}
               </div>
             </div>

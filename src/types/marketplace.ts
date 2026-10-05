@@ -6,7 +6,7 @@ export type UserRole =
   | 'promoter'
   | 'admin';
 
-export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
+export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'verified_manual' | 'verified_oauth' | 'rejected';
 
 export type OrderStatus =
   | 'DRAFT'

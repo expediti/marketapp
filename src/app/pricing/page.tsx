@@ -1,101 +1,163 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { Check, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Check, ShieldCheck, ArrowRight, Wallet, CheckCircle2, Zap } from 'lucide-react';
+
+export const metadata = {
+  title: 'Pricing | Market My Idea',
+  description:
+    'Transparent pricing with zero subscription fees. Pay only when a collaboration deal happens with Market My Idea.',
+};
 
 export default function PricingPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 space-y-16">
-      <div className="text-center space-y-3 max-w-xl mx-auto">
+      {/* Header */}
+      <div className="text-center space-y-3 max-w-2xl mx-auto">
         <span className="editorial-label text-[#FF5416]">Transparent Platform Economics</span>
-        <h1 className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] tracking-tight">
-          Simple 5% Platform Fee. Zero Retainers.
+        <h1 className="font-mono text-3xl sm:text-5xl font-extrabold text-[#121214] dark:text-white tracking-tight">
+          No Subscriptions. Pay Only When Deals Happen.
         </h1>
-        <p className="text-sm text-[#71717A]">
-          No monthly subscription charges or hidden agency markups. We charge a flat fee per successful platform collaboration.
+        <p className="text-sm sm:text-base text-[#52525B] dark:text-zinc-300">
+          Market My Idea doesn&apos;t charge recurring subscription fees or upfront listing charges. You only pay when a deal happens.
         </p>
       </div>
 
+      {/* Pricing Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Businesses */}
-        <div className="bg-white border-2 border-[#121214] rounded-xl p-8 space-y-6 shadow-sm">
-          <div>
-            <span className="editorial-label text-[#FF5416]">For Businesses & Brands</span>
-            <div className="font-mono text-4xl font-extrabold text-[#121214] mt-2">
-              5% <span className="text-sm font-normal text-[#71717A]">per collaboration</span>
+        {/* For Businesses */}
+        <div className="bg-white dark:bg-[#18181B] border-2 border-[#121214] dark:border-[#FF5416] rounded-xl p-8 space-y-6 shadow-sm flex flex-col justify-between">
+          <div className="space-y-6">
+            <div>
+              <span className="editorial-label text-[#FF5416]">For Businesses</span>
+              <div className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white mt-2">
+                Free to Browse <span className="text-xs font-normal text-[#71717A] dark:text-zinc-400 block mt-1">+ 6% Platform Fee at Checkout</span>
+              </div>
+              <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-3 leading-relaxed">
+                Browse influencer profiles and packages for free. Pay only for the package you select with transparent fees.
+              </p>
             </div>
-            <p className="text-xs text-[#52525B] mt-2">
-              Added directly to the package checkout at payment time.
-            </p>
+
+            <ul className="space-y-3 text-xs text-[#27272A] dark:text-zinc-200 font-mono">
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>Browse verified influencer profiles & packages for free</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>Pay only for the package you select (e.g., &quot;1 Reel + 2 Stories&quot;)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>Small 6% platform fee added at checkout, clearly shown before you pay</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>No hidden charges, recurring retainers, or agency overhead</span>
+              </li>
+            </ul>
           </div>
 
-          <ul className="space-y-3 text-xs text-[#27272A] font-mono">
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Protected Collaboration Workflow</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Verified Creator Demographics & Engagement</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Structured Briefs & Order-Specific Chat</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Dispute Mediation Service</span>
-            </li>
-          </ul>
-
-          <Link href="/discover" className="block pt-2">
+          <Link href="/discover" className="block pt-4">
             <Button variant="primary" size="md" className="w-full">
-              <span>Find Creators</span>
+              <span>Find Influencers</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </Link>
         </div>
 
-        {/* Creators */}
-        <div className="bg-[#FBFBFA] border border-[#E5E5DE] rounded-xl p-8 space-y-6">
-          <div>
-            <span className="editorial-label text-[#71717A]">For Creators</span>
-            <div className="font-mono text-4xl font-extrabold text-[#121214] mt-2">
-              5% <span className="text-sm font-normal text-[#71717A]">payout settlement</span>
+        {/* For Creators */}
+        <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-8 space-y-6 flex flex-col justify-between">
+          <div className="space-y-6">
+            <div>
+              <span className="editorial-label text-[#71717A] dark:text-zinc-400">For Creators</span>
+              <div className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white mt-2">
+                Free to Join <span className="text-xs font-normal text-[#71717A] dark:text-zinc-400 block mt-1">6% Platform Fee on Completed Payouts</span>
+              </div>
+              <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-3 leading-relaxed">
+                Creating a profile and listing packages is completely free. You set your own rates and keep the vast majority of your deal earnings.
+              </p>
             </div>
-            <p className="text-xs text-[#52525B] mt-2">
-              Deducted automatically when collaboration funds are settled to your bank.
-            </p>
+
+            <ul className="space-y-3 text-xs text-[#27272A] dark:text-zinc-200 font-mono">
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>Creating a profile and listing packages is 100% free</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>You set your own rates and delivery timeframes</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>6% platform fee deducted only when an order completes</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span>Always see your exact net payout before accepting any deal</span>
+              </li>
+            </ul>
           </div>
 
-          <ul className="space-y-3 text-xs text-[#27272A] font-mono">
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Zero Upfront Listing Fees</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Committed Client Orders</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Direct Bank UPI Disbursements</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-[#047857]" />
-              <span>Instagram Handle Confidentiality</span>
-            </li>
-          </ul>
-
-          <Link href="/auth/signup" className="block pt-2">
+          <Link href="/auth/signup?role=influencer" className="block pt-4">
             <Button variant="secondary" size="md" className="w-full">
               <span>Join as Creator</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </Link>
         </div>
       </div>
 
-      <div className="text-center text-xs text-[#71717A] max-w-xl mx-auto leading-relaxed">
-        Note: Exact processing gateways and applicable payment settlement charges may vary depending on the production payment provider (Razorpay / Cashfree / Bank IMPS).
+      {/* How Payment Works Section */}
+      <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-8 space-y-6">
+        <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+          <span className="editorial-label text-[#FF5416]">Transaction Architecture</span>
+          <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white mt-1">
+            How Payment Works
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 space-y-2">
+            <div className="w-7 h-7 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-mono text-xs font-bold flex items-center justify-center">
+              1
+            </div>
+            <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">Confirm Deal</h4>
+            <p className="text-[11px] text-[#52525B] dark:text-zinc-300 leading-relaxed">
+              You agree on a package, deliverable details, and price with the other party.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 space-y-2">
+            <div className="w-7 h-7 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-mono text-xs font-bold flex items-center justify-center">
+              2
+            </div>
+            <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">Pay Upfront</h4>
+            <p className="text-[11px] text-[#52525B] dark:text-zinc-300 leading-relaxed">
+              The business pays upfront safely through Market My Idea before creator production starts.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 space-y-2">
+            <div className="w-7 h-7 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-mono text-xs font-bold flex items-center justify-center">
+              3
+            </div>
+            <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">Protected Hold</h4>
+            <p className="text-[11px] text-[#52525B] dark:text-zinc-300 leading-relaxed">
+              Payment is held safely by the platform until the creator delivers and work is confirmed.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 space-y-2">
+            <div className="w-7 h-7 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] font-mono text-xs font-bold flex items-center justify-center">
+              4
+            </div>
+            <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">Direct Payout</h4>
+            <p className="text-[11px] text-[#52525B] dark:text-zinc-300 leading-relaxed">
+              The creator is paid out directly to their verified bank account or UPI VPA.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

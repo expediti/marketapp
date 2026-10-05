@@ -118,6 +118,7 @@ function CreatorDashboardContent() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
+  const [userEmail, setUserEmail] = useState<string>('');
   const [igNotice, setIgNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Synchronize URL tab parameter and Instagram OAuth status
@@ -208,6 +209,7 @@ function CreatorDashboardContent() {
       authUserId = user.id;
       authUserEmail = user.email || '';
       authUserMeta = user.user_metadata || {};
+      setUserEmail(authUserEmail || '');
     } catch (authErr) {
       router.replace('/auth/login');
       return;
@@ -1347,12 +1349,14 @@ function CreatorDashboardContent() {
                     <h4 className="font-bold text-xs text-[#121214] dark:text-white">
                       {dbCreator?.instagram_connected
                         ? `@${dbCreator?.instagram_username || 'connected'}`
-                        : 'Instagram Account'}
+                        : 'Instagram Verification'}
                     </h4>
                     <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
                       {dbCreator?.instagram_connected
                         ? 'Meta Verified connection active'
-                        : 'Connect Instagram to auto-verify followers.'}
+                        : userEmail.toLowerCase().trim() === 'khormasti104@gmail.com'
+                        ? 'Connect Instagram to auto-verify followers.'
+                        : 'Coming soon — Instagram verification is currently being finalized.'}
                     </p>
                   </div>
                 </div>
@@ -1362,7 +1366,7 @@ function CreatorDashboardContent() {
                     <span className="text-[11px] px-2.5 py-1 rounded bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold border border-[#A7F3D0] dark:border-emerald-800">
                       Connected ✓
                     </span>
-                  ) : (
+                  ) : userEmail.toLowerCase().trim() === 'khormasti104@gmail.com' ? (
                     <a
                       href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors"
@@ -1370,6 +1374,14 @@ function CreatorDashboardContent() {
                       <InstagramIcon className="w-3.5 h-3.5" />
                       <span>Connect Instagram</span>
                     </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#E5E5DE] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 text-xs font-semibold cursor-not-allowed border border-[#D4D4CE] dark:border-zinc-700"
+                    >
+                      <span>Coming Soon</span>
+                    </button>
                   )}
                 </div>
               </div>
