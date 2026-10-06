@@ -101,7 +101,10 @@ export default function PrivacyPage() {
             You have the right to request access to, correction of, or permanent deletion of your personal data, creator profile, or business account.
           </p>
           <p>
-            To submit an account deletion request or user data deletion request, contact us directly at <a href="mailto:support@gmail.com" className="text-[#FF5416] hover:underline font-mono">support@gmail.com</a> with the subject &quot;Account Deletion Request&quot;. Requests are processed within 30 days, subject to our statutory financial record retention obligations.
+            Both Creator and Business accounts can self-delete directly via their dashboard settings, or you can visit our dedicated <Link href="/delete-account" className="text-[#FF5416] underline font-semibold">Account Deletion Page</Link> for step-by-step instructions.
+          </p>
+          <p>
+            To submit an account deletion request or user data deletion request via email, contact us directly at <a href="mailto:support@gmail.com" className="text-[#FF5416] hover:underline font-mono">support@gmail.com</a> with the subject &quot;Account Deletion Request&quot;. Requests are processed promptly, subject to our statutory financial and dispute record retention obligations.
           </p>
         </section>
 

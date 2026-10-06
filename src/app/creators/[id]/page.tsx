@@ -309,12 +309,12 @@ export default function CreatorDetailPage() {
                     ? `${creator.city || creator.profile?.city}, ${creator.state}`
                     : (creator.city || creator.profile?.city || 'India')}
                 </span>
-                {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified' || creator.verification_status === 'verified_oauth' ? (
+                {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified') ? (
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
                     <InstagramIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
                     <span>Instagram Verified {creator.instagram_username ? `@${creator.instagram_username}` : ''}</span>
                   </div>
-                ) : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified' || creator.instagram_verified ? (
+                ) : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified' ? (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Verified Creator</span>
@@ -391,9 +391,9 @@ export default function CreatorDetailPage() {
               )}
             </div>
             <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
-              {creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified' || creator.verification_status === 'verified_oauth'
+              {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified')
                 ? 'IG Verified Followers'
-                : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified' || creator.instagram_verified
+                : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified'
                 ? 'Verified Followers'
                 : 'Self-Reported Followers'}
             </div>

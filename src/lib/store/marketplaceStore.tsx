@@ -3218,7 +3218,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       audience_age: profileData.audience_age || { '18-24': 50, '25-34': 35, '35+': 15 },
       audience_gender: profileData.audience_gender || { female: 45, male: 55 },
       audience_locations: profileData.audience_locations || [],
-      verification_status: profileData.instagram_verified ? 'verified' : 'unverified',
+      verification_status: profileData.instagram_verified ? 'verified_oauth' : 'unverified',
       packages: profileData.packages || [],
       samples: profileData.samples || [],
       reels: profileData.reels || [],

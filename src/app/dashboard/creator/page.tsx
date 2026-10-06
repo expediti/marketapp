@@ -108,6 +108,7 @@ function CreatorDashboardContent() {
     acceptCollaborationRequest,
     declineCollaborationRequest,
     campaigns = [],
+    refreshData,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -120,36 +121,6 @@ function CreatorDashboardContent() {
 
   const [userEmail, setUserEmail] = useState<string>('');
   const [igNotice, setIgNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Synchronize URL tab parameter and Instagram OAuth status
-  useEffect(() => {
-    if (tabParam) {
-      if (tabParam === 'overview') setActiveTab('home');
-      else if (['home', 'discover', 'orders', 'messages', 'profile', 'settings'].includes(tabParam)) {
-        setActiveTab(tabParam as TabKey);
-      }
-    }
-
-    const igErr = searchParams.get('ig_error');
-    const igConnected = searchParams.get('ig_connected');
-    const igUsername = searchParams.get('ig_username');
-
-    if (igErr) {
-      setIgNotice({
-        type: 'error',
-        message: decodeURIComponent(igErr),
-      });
-      setActiveTab('profile');
-    } else if (igConnected === 'true') {
-      setIgNotice({
-        type: 'success',
-        message: igUsername
-          ? `Instagram account @${igUsername} connected and verified successfully!`
-          : 'Instagram account connected successfully!',
-      });
-      setActiveTab('profile');
-    }
-  }, [tabParam, searchParams]);
 
   // Reels management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -180,6 +151,37 @@ function CreatorDashboardContent() {
   const [reelUrlError, setReelUrlError] = useState<string | null>(null);
   const [isAddingReelUrl, setIsAddingReelUrl] = useState(false);
   const [isSavingReelUrl, setIsSavingReelUrl] = useState(false);
+
+  // Account Deletion State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText.trim().toUpperCase() !== 'DELETE') {
+      setDeleteAccountError('Please type DELETE to confirm account deletion.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    setDeleteAccountError(null);
+    try {
+      const res = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete account');
+      }
+      await supabase.auth.signOut();
+      window.location.href = '/?account_deleted=true';
+    } catch (err: any) {
+      setDeleteAccountError(err.message || 'Failed to delete account. Please try again.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   // Isolated stage data loader for the creator dashboard
   const loadDbCreator = useCallback(async () => {
@@ -348,6 +350,40 @@ function CreatorDashboardContent() {
   useEffect(() => {
     loadDbCreator();
   }, [loadDbCreator]);
+
+  // Synchronize URL tab parameter and Instagram OAuth status
+  useEffect(() => {
+    if (tabParam) {
+      if (tabParam === 'overview') setActiveTab('home');
+      else if (['home', 'discover', 'orders', 'messages', 'profile', 'settings'].includes(tabParam)) {
+        setActiveTab(tabParam as TabKey);
+      }
+    }
+
+    const igErr = searchParams.get('ig_error');
+    const igConnected = searchParams.get('ig_connected');
+    const igUsername = searchParams.get('ig_username');
+
+    if (igErr) {
+      setIgNotice({
+        type: 'error',
+        message: decodeURIComponent(igErr),
+      });
+      setActiveTab('profile');
+    } else if (igConnected === 'true') {
+      setIgNotice({
+        type: 'success',
+        message: igUsername
+          ? `Instagram account @${igUsername} connected and verified successfully!`
+          : 'Instagram account connected successfully!',
+      });
+      setActiveTab('profile');
+      loadDbCreator();
+      if (refreshData) {
+        refreshData().catch((e) => console.warn('refreshData note:', e));
+      }
+    }
+  }, [tabParam, searchParams, loadDbCreator, refreshData]);
 
   const handleSavePayoutUpi = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -1774,6 +1810,102 @@ function CreatorDashboardContent() {
               <span>{isSavingUpi ? 'Saving...' : 'Save Payout UPI ID'}</span>
             </Button>
           </div>
+
+          {/* Danger Zone: Delete Account */}
+          <div className="pt-6 border-t border-red-200 dark:border-red-950/60 space-y-3">
+            <div>
+              <span className="editorial-label text-red-600 dark:text-red-400">Danger Zone</span>
+              <h4 className="font-bold text-sm text-red-600 dark:text-red-400 mt-0.5">Delete Creator Account</h4>
+              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 max-w-xl">
+                Permanently deletes your creator profile, public listings, Instagram connection, and account credentials. Historical completed order records and invoices are retained where required by law.
+              </p>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDeleteConfirmText('');
+                setDeleteAccountError(null);
+                setIsDeleteModalOpen(true);
+              }}
+              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40 text-xs"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              <span>Delete Account</span>
+            </Button>
+          </div>
+
+          {/* Account Deletion Confirmation Modal */}
+          {isDeleteModalOpen && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-[#18181B] border border-red-200 dark:border-red-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                  <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <Trash2 className="w-5 h-5" />
+                    <h3 className="font-mono text-base font-bold">Delete Account Permanently</h3>
+                  </div>
+                  <button
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed font-mono">
+                  <p>
+                    Are you sure you want to delete your <strong>Market My Idea</strong> creator account? This action is <strong>irreversible</strong>.
+                  </p>
+                  <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg text-[11px] text-red-700 dark:text-red-300 space-y-1">
+                    <p className="font-bold">• Your creator profile and portfolio will be removed from marketplace discovery.</p>
+                    <p>• Your Instagram OAuth connection and token data will be cleared.</p>
+                    <p>• Legally required financial, tax, and completed order dispute records will be retained in accordance with our retention policy.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#121214] dark:text-white mb-1">
+                      Type <span className="text-red-600 font-extrabold">DELETE</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="DELETE"
+                      className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-red-300 dark:border-red-800 rounded focus:outline-none focus:border-red-600 uppercase"
+                    />
+                  </div>
+
+                  {deleteAccountError && (
+                    <p className="text-xs text-red-600 font-semibold">{deleteAccountError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    disabled={isDeletingAccount}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleDeleteAccount}
+                    isLoading={isDeletingAccount}
+                    disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    <span>Confirm Account Deletion</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

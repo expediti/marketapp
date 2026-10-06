@@ -21,7 +21,19 @@ export interface InstagramUserProfile {
   accountType?: string;
   mediaCount?: number;
   followerCount?: number | null;
+  profilePictureUrl?: string | null;
+  biography?: string | null;
   rawData: Record<string, any>;
+}
+
+export interface InstagramMediaItem {
+  id: string;
+  caption?: string;
+  mediaType: string;
+  mediaUrl?: string;
+  permalink?: string;
+  thumbnailUrl?: string;
+  timestamp?: string;
 }
 
 /**
@@ -68,11 +80,6 @@ export function buildInstagramAuthUrl(state: string): string {
     throw new Error('INSTAGRAM_APP_ID is not configured in server secrets.');
   }
 
-  // Meta "Instagram API with Instagram Login" permission scope.
-  // Note: 'user_profile' and 'user_media' are deprecated Instagram Basic Display API
-  // permissions (sunset Dec 2024). Requesting them against modern Meta apps causes
-  // "Invalid platform app" / "Request parameters are invalid".
-  // 'instagram_business_basic' is the current valid scope for Creator profile & metrics.
   const scope = 'instagram_business_basic';
 
   const params = new URLSearchParams({
@@ -136,19 +143,22 @@ export async function exchangeInstagramCode(code: string): Promise<InstagramToke
 
 /**
  * Fetches verified Instagram profile information and supported metrics.
- * Note: Instagram Basic Display permissions only provide username, id, account_type, media_count.
- * If followers_count is supported by the granted scope (Instagram Graph API for Creator/Business),
- * it is extracted directly without fabricating numbers.
+ * Requests all available Graph API fields (id, username, account_type, media_count,
+ * followers_count, profile_picture_url, biography) with resilient fallback.
  */
 export async function fetchInstagramProfile(accessToken: string): Promise<InstagramUserProfile> {
-  // 1. Try querying Instagram Graph API with followers_count
+  const fields = 'id,username,account_type,media_count,followers_count,profile_picture_url,biography';
+  
   try {
     const res = await fetch(
-      `https://graph.instagram.com/v21.0/me?fields=id,username,account_type,media_count,followers_count&access_token=${accessToken}`
+      `https://graph.instagram.com/v21.0/me?fields=${fields}&access_token=${accessToken}`
     );
 
     if (res.ok) {
       const data = (await res.json()) as any;
+      const returnedFields = data ? Object.keys(data) : [];
+      console.log(`[Instagram Graph API] /me HTTP 200. User ID: ${data?.id}, Username: @${data?.username}, Returned fields: [${returnedFields.join(', ')}]`);
+
       if (data && data.username) {
         return {
           id: String(data.id),
@@ -156,35 +166,112 @@ export async function fetchInstagramProfile(accessToken: string): Promise<Instag
           accountType: data.account_type,
           mediaCount: typeof data.media_count === 'number' ? data.media_count : undefined,
           followerCount: typeof data.followers_count === 'number' ? data.followers_count : null,
+          profilePictureUrl: data.profile_picture_url || null,
+          biography: data.biography || null,
           rawData: data,
         };
       }
+    } else {
+      const errorJson = (await res.json().catch(() => null)) as any;
+      const sanitizedMsg = errorJson?.error?.message || res.statusText;
+      const sanitizedCode = errorJson?.error?.code || res.status;
+      const sanitizedType = errorJson?.error?.type || 'GraphMethodException';
+      console.warn(`[Instagram Graph API] /me HTTP ${res.status} error: [${sanitizedCode}] (${sanitizedType}) ${sanitizedMsg}. Attempting resilient fallback...`);
     }
-  } catch (err) {
-    console.warn('Querying graph.instagram.com/v21.0/me failed, falling back:', err);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.warn(`[Instagram Graph API] /me request threw: ${errorMsg}. Falling back to core fields...`);
   }
 
-  // 2. Fallback to basic me endpoint
-  const fallbackRes = await fetch(
-    `https://graph.instagram.com/me?fields=id,username,account_type,media_count&access_token=${accessToken}`
-  );
-
-  if (!fallbackRes.ok) {
-    const errorText = await fallbackRes.text();
-    console.error('Instagram profile fetch failed:', fallbackRes.status, errorText);
-    throw new Error(`Failed to fetch Instagram profile data: ${fallbackRes.statusText}`);
+  // 2. Resilient fallback: fetch core fields first, then optional fields
+  let coreData: any = null;
+  try {
+    const coreRes = await fetch(
+      `https://graph.instagram.com/v21.0/me?fields=id,username,account_type,media_count&access_token=${accessToken}`
+    );
+    if (coreRes.ok) {
+      coreData = await coreRes.json();
+      console.log(`[Instagram Graph API] /me core fields succeeded: User ID: ${coreData?.id}, Username: @${coreData?.username}`);
+    } else {
+      const legacyRes = await fetch(
+        `https://graph.instagram.com/me?fields=id,username,account_type,media_count&access_token=${accessToken}`
+      );
+      if (legacyRes.ok) {
+        coreData = await legacyRes.json();
+      }
+    }
+  } catch (coreErr) {
+    console.warn('[Instagram Graph API] Core fields query error:', coreErr);
   }
 
-  const fallbackData = (await fallbackRes.json()) as any;
+  if (!coreData || !coreData.username) {
+    throw new Error('Failed to fetch Instagram profile data from Graph API.');
+  }
+
+  // 3. Attempt optional fields separately without failing the connection
+  let followerCount: number | null = null;
+  let profilePictureUrl: string | null = null;
+  let biography: string | null = null;
+
+  try {
+    const extraRes = await fetch(
+      `https://graph.instagram.com/v21.0/me?fields=followers_count,profile_picture_url,biography&access_token=${accessToken}`
+    );
+    if (extraRes.ok) {
+      const extraData = await extraRes.json();
+      if (typeof extraData.followers_count === 'number') followerCount = extraData.followers_count;
+      if (extraData.profile_picture_url) profilePictureUrl = extraData.profile_picture_url;
+      if (extraData.biography) biography = extraData.biography;
+    }
+  } catch {
+    // Optional metrics query is non-fatal
+  }
 
   return {
-    id: String(fallbackData.id),
-    username: fallbackData.username || '',
-    accountType: fallbackData.account_type,
-    mediaCount: typeof fallbackData.media_count === 'number' ? fallbackData.media_count : undefined,
-    followerCount: null, // Basic scope does not provide follower count; not fabricated
-    rawData: fallbackData,
+    id: String(coreData.id),
+    username: coreData.username || '',
+    accountType: coreData.account_type,
+    mediaCount: typeof coreData.media_count === 'number' ? coreData.media_count : undefined,
+    followerCount,
+    profilePictureUrl,
+    biography,
+    rawData: { ...coreData, followerCount, profilePictureUrl, biography },
   };
+}
+
+/**
+ * Fetches recent user media/reels from Instagram Graph API.
+ * Non-blocking: failure to fetch media never interrupts account verification.
+ */
+export async function fetchInstagramUserMedia(accessToken: string): Promise<InstagramMediaItem[]> {
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/v21.0/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp&limit=10&access_token=${accessToken}`
+    );
+
+    if (!res.ok) {
+      const errorJson = (await res.json().catch(() => null)) as any;
+      console.log(`[Instagram Graph API] /me/media HTTP ${res.status}: ${errorJson?.error?.message || res.statusText}`);
+      return [];
+    }
+
+    const data = (await res.json()) as any;
+    const items = Array.isArray(data?.data) ? data.data : [];
+    console.log(`[Instagram Graph API] /me/media fetched ${items.length} media items.`);
+
+    return items.map((m: any) => ({
+      id: String(m.id),
+      caption: m.caption || undefined,
+      mediaType: m.media_type || 'VIDEO',
+      mediaUrl: m.media_url || undefined,
+      permalink: m.permalink || undefined,
+      thumbnailUrl: m.thumbnail_url || undefined,
+      timestamp: m.timestamp || undefined,
+    }));
+  } catch (err) {
+    console.log('[Instagram Graph API] /me/media fetch skipped:', err);
+    return [];
+  }
 }
 
 /**

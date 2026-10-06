@@ -3,7 +3,8 @@
 import React from 'react';
 import { CreatorReel } from '@/types/marketplace';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
-import { Film } from 'lucide-react';
+import { parseInstagramUrl } from '@/lib/utils/instagram';
+import { Film, ExternalLink } from 'lucide-react';
 
 interface ReelCardProps {
   reel: CreatorReel & {
@@ -16,13 +17,16 @@ interface ReelCardProps {
 }
 
 export function ReelCard({ reel, showCreatorInfo = true, className = '' }: ReelCardProps) {
+  const reelSrc = reel.video_url || reel.reel_url || '';
+  const parsedIg = parseInstagramUrl(reel.reel_url || reel.video_url);
+
   return (
     <div
       className={`group relative aspect-[9/16] w-full max-w-[280px] sm:max-w-[300px] rounded-xl overflow-hidden bg-[#18181B] border border-[#27272A] shadow-md transition-all duration-200 hover:border-[#FF5416]/50 hover:shadow-lg ${className}`}
     >
       {/* Autoplaying looping short-form reel video */}
       <ReelVideo
-        src={reel.video_url || reel.reel_url || ''}
+        src={reelSrc}
         poster={reel.thumbnail_url}
         title={reel.title}
         autoPlay={true}
@@ -32,6 +36,22 @@ export function ReelCard({ reel, showCreatorInfo = true, className = '' }: ReelC
         interactive={true}
         className="w-full h-full"
       />
+
+      {/* Top action: View on Instagram if available */}
+      {parsedIg.isValid && parsedIg.canonicalUrl && (
+        <div className="absolute top-2.5 right-2.5 z-20 pointer-events-auto">
+          <a
+            href={parsedIg.canonicalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-white/90 bg-black/75 hover:bg-black hover:text-white px-2 py-1 rounded-md backdrop-blur-sm border border-white/20 transition-colors shadow-sm"
+          >
+            <span>View on Instagram</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        </div>
+      )}
 
       {/* Subtle Bottom Gradient and Info Overlay */}
       <div className="absolute inset-x-0 bottom-0 z-20 p-3.5 bg-gradient-to-t from-black/95 via-black/60 to-transparent text-white space-y-1 pointer-events-none">

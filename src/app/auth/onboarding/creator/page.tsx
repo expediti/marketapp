@@ -420,7 +420,7 @@ export default function CreatorOnboardingPage() {
           instagram_connected: isVerifiedIg,
           instagram_username: isVerifiedIg ? instagramUsername : null,
           instagram_verified: isVerifiedIg,
-          verification_status: isVerifiedIg ? 'verified' : 'unverified',
+          verification_status: isVerifiedIg ? 'verified_oauth' : 'unverified',
           metrics_source: isVerifiedIg ? 'instagram_meta_verified' : 'platform_manual',
           payout_upi_id: payoutUpiId.trim()
             ? validateAndNormalizeUpiId(payoutUpiId).value

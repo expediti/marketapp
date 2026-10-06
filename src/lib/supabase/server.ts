@@ -1,5 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createClientJs } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+import { getServerRuntimeSecret } from '@/lib/server/razorpay';
 import type { Database } from '@/types/database';
 
 export async function createClient() {
@@ -60,5 +62,31 @@ export async function getAuthenticatedUser() {
       error: err instanceof Error ? err : new Error('Unknown server auth error'),
     };
   }
+}
+
+/**
+ * Service-role/Admin client for secure server-side mutations (OAuth callbacks, webhooks, crons)
+ */
+export function createServiceClient() {
+  const supabaseUrl =
+    getServerRuntimeSecret('NEXT_PUBLIC_SUPABASE_URL') ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    'https://placeholder-project.supabase.co';
+
+  const serviceKey =
+    getServerRuntimeSecret('SUPABASE_SERVICE_ROLE_KEY') ||
+    getServerRuntimeSecret('SUPABASE_SERVICE_KEY') ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    getServerRuntimeSecret('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    'placeholder-anon-key-for-development';
+
+  return createClientJs<Database>(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 

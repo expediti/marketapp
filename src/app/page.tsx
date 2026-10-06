@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowRight, MapPin, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { InfiniteReelShowcase } from '@/components/marketplace/InfiniteReelShowcase';
 import { SHOWCASE_REELS } from '@/lib/data/reelsData';
+import { AccountDeletedBanner } from '@/components/common/AccountDeletedBanner';
 
 export default function HomePage() {
   const popularLocations = [
@@ -17,6 +18,10 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16 sm:space-y-24 pb-20">
+      <Suspense fallback={null}>
+        <AccountDeletedBanner />
+      </Suspense>
+
       {/* SECTION 1 — HERO */}
       <section className="relative pt-12 sm:pt-16 lg:pt-24 border-b border-[#E5E5DE] dark:border-[#27272A] pb-20 sm:pb-28 lg:pb-32 bg-gradient-to-b from-[#FBFBFA] to-[#F4F4F0]/60 dark:from-[#09090B] dark:to-[#121214]/60 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
