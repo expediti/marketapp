@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS public.creator_profiles (
     instagram_verified BOOLEAN NOT NULL DEFAULT false,
     metrics_source TEXT NOT NULL DEFAULT 'platform_manual' CHECK (metrics_source IN ('platform_manual', 'instagram_meta_verified')),
     metrics_verified_at TIMESTAMPTZ,
-    verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified', 'pending', 'verified', 'rejected')),
+    verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified', 'pending', 'verified', 'verified_manual', 'verified_oauth', 'rejected', 'deleted')),
     payout_upi_id TEXT,
     instagram_username TEXT,
     instagram_profile_data JSONB DEFAULT '{}'::jsonb,

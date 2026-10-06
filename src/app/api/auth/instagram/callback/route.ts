@@ -6,8 +6,22 @@ import {
   fetchInstagramUserMedia,
   getInstagramCredentials,
 } from '@/lib/server/instagram';
+import { getServerRuntimeSecret } from '@/lib/server/razorpay';
 
 export const dynamic = 'force-dynamic';
+
+export const INSTAGRAM_CALLBACK_VERSION = 'oauth-instrumented-2026-10-06-02';
+
+function extractProjectRef(url: string | undefined): string {
+  if (!url) return 'undefined';
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    return host.split('.')[0] || host;
+  } catch {
+    return 'invalid_url';
+  }
+}
 
 function getOrigin(request: Request): string {
   const forwardedHost = request.headers.get('x-forwarded-host');
@@ -37,25 +51,57 @@ function parseState(rawState: string | null): StatePayload | null {
       return parsed;
     }
   } catch (e) {
-    console.error('Failed to parse Instagram OAuth state:', e);
+    console.error('[Instagram OAuth] Failed to parse state parameter:', e);
   }
   return null;
 }
 
-export const INSTAGRAM_CALLBACK_VERSION = 'oauth-debug-2026-10-06-01';
+function renderErrorPage(step: string, errorDetails: string, contextData: Record<string, any>): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Instagram OAuth Diagnostic Failure</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0c0d0e; color: #f4f4f5; padding: 2rem; margin: 0; }
+    .container { max-width: 720px; margin: 0 auto; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 2rem; }
+    h1 { color: #ef4444; font-size: 1.5rem; margin-top: 0; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; background: #ef444420; color: #f87171; border: 1px solid #ef444440; margin-bottom: 1rem; }
+    .step { font-weight: 600; color: #38bdf8; margin-bottom: 0.5rem; }
+    pre { background: #09090b; border: 1px solid #27272a; border-radius: 8px; padding: 1rem; overflow-x: auto; color: #a1a1aa; font-size: 13px; }
+    a { color: #f97316; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">CALLBACK EXECUTION ERROR</div>
+    <h1>Instagram Connection Failed</h1>
+    <div class="step">Failed at Step: ${step}</div>
+    <p><strong>Error:</strong> ${errorDetails}</p>
+    <h3>Diagnostic Context</h3>
+    <pre>${JSON.stringify(contextData, null, 2)}</pre>
+    <div style="margin-top: 1.5rem;">
+      <a href="/dashboard/creator">← Return to Creator Dashboard</a>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 500,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
 
 /**
  * GET /api/auth/instagram/callback
  * Production Callback URL: https://marketapp.expeditionthe0.workers.dev/api/auth/instagram/callback
- *
- * 1. Validates the OAuth response and state token.
- * 2. Exchanges authorization code server-side (keeping INSTAGRAM_APP_SECRET strictly server-side).
- * 3. Fetches verified Instagram account info & metrics.
- * 4. Saves verified account to public.creator_profiles linked to auth.users.id.
- * 5. Redirects back to creator onboarding or dashboard.
  */
 export async function GET(request: Request) {
-  console.log(`[Instagram Callback] Version: ${INSTAGRAM_CALLBACK_VERSION} - Route reached.`);
+  const logPrefix = `[Instagram Callback ${INSTAGRAM_CALLBACK_VERSION}]`;
+  console.log(`${logPrefix} Hit timestamp: ${new Date().toISOString()}`);
+
   const origin = getOrigin(request);
   const { searchParams } = new URL(request.url);
 
@@ -66,105 +112,164 @@ export async function GET(request: Request) {
   const rawState = searchParams.get('state');
 
   const parsedState = parseState(rawState);
-  const returnTo = parsedState?.ret || '/auth/onboarding/creator';
+  const returnTo = parsedState?.ret || '/dashboard/creator';
 
-  // 1. Handle user cancellation or OAuth error
+  const rawUrl =
+    getServerRuntimeSecret('NEXT_PUBLIC_SUPABASE_URL') ||
+    getServerRuntimeSecret('SUPABASE_URL') ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL;
+  const projectRef = extractProjectRef(rawUrl);
+  const serviceRoleAvailable = isServiceRoleKeyAvailable();
+
+  console.log(`${logPrefix} Environment: projectRef=${projectRef}, serviceRoleAvailable=${serviceRoleAvailable}`);
+
+  // Step 1: Handle user cancellation or OAuth provider error
   if (error || errorReason) {
-    const message = errorDescription || errorReason || error || 'Instagram authorization was cancelled.';
-    console.warn('[Instagram OAuth] Callback returned error parameter:', { error, errorReason, errorDescription });
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent(message)}`
-    );
+    const errorMsg = errorDescription || errorReason || error || 'Instagram authorization was cancelled.';
+    console.warn(`${logPrefix} Step 1 Error: Meta OAuth returned error param:`, { error, errorReason, errorDescription });
+    return renderErrorPage('1_META_OAUTH_REJECTED', errorMsg, {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      error,
+      errorReason,
+      errorDescription,
+    });
   }
 
-  // 2. Validate authorization code
+  // Step 2: Validate authorization code
   if (!code) {
-    console.warn('[Instagram OAuth] No code received in callback');
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent('No authorization code was provided by Instagram.')}`
-    );
+    console.warn(`${logPrefix} Step 2 Error: No code received in query parameters.`);
+    return renderErrorPage('2_NO_AUTH_CODE', 'No authorization code provided by Instagram.', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      searchParams: Object.fromEntries(searchParams.entries()),
+    });
   }
 
-  // 3. Validate state
+  // Step 3: Validate state parameter
   if (!parsedState || !parsedState.uid) {
-    console.warn('[Instagram OAuth] Invalid state received in callback:', rawState);
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent('Invalid or expired Instagram session state.')}`
-    );
+    console.warn(`${logPrefix} Step 3 Error: Invalid state parameter:`, rawState);
+    return renderErrorPage('3_INVALID_STATE', 'Invalid or expired Instagram session state.', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      rawState: rawState ? `${rawState.slice(0, 10)}...` : null,
+    });
   }
 
-  // Check state age (must be within 30 minutes)
-  const age = Date.now() - (parsedState.ts || 0);
-  if (age > 30 * 60 * 1000) {
-    console.warn('[Instagram OAuth] State expired:', { ageMs: age });
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent('Instagram authorization session timed out. Please try again.')}`
-    );
+  const stateAgeMs = Date.now() - (parsedState.ts || 0);
+  if (stateAgeMs > 30 * 60 * 1000) {
+    console.warn(`${logPrefix} Step 3 Error: State expired (${stateAgeMs}ms old).`);
+    return renderErrorPage('3_EXPIRED_STATE', 'Instagram authorization session timed out. Please try again.', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      stateAgeMs,
+    });
   }
 
-  // 4. Verify authenticated user matches state creator UID (or has active session)
-  const { user: authUser } = await getAuthenticatedUser();
+  // Step 4: Identify target user
+  const { user: authUser, error: authError } = await getAuthenticatedUser();
   const targetUserId = authUser?.id || parsedState.uid;
-  console.log(`[Instagram OAuth] Authenticated user ID: ${authUser?.id || 'none'}, State UID: ${parsedState.uid}, Target UID: ${targetUserId}`);
+  console.log(
+    `${logPrefix} Step 4 User Identification: authUser.id=${authUser?.id || 'none'}, state.uid=${parsedState.uid}, resolved targetUserId=${targetUserId}`
+  );
 
   if (authUser && authUser.id !== parsedState.uid) {
-    console.warn('[Instagram OAuth] Authenticated user mismatch:', {
-      authId: authUser.id,
-      stateId: parsedState.uid,
+    console.warn(`${logPrefix} Step 4 Warning: Authenticated user mismatch: authId=${authUser.id}, stateUid=${parsedState.uid}`);
+    return renderErrorPage('4_USER_MISMATCH', 'Active session user ID does not match OAuth session initiator.', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      authUser: authUser.id,
+      stateUser: parsedState.uid,
     });
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent('Authenticated user mismatch. Please try again.')}`
-    );
   }
 
+  // Step 5: Server-side token exchange with Meta
+  let tokenResult: { accessToken: string; userId: string; expiresIn?: number };
   try {
-    // 5. Server-side code exchange
-    console.log('[Instagram OAuth] Attempting token exchange with Meta...');
-    const tokenResult = await exchangeInstagramCode(code);
-    console.log(`[Instagram OAuth] Token exchange succeeded! Instagram User ID: ${tokenResult.userId}`);
-
-    // 6. Fetch verified Instagram profile information and supported metrics
-    console.log('[Instagram OAuth] Fetching profile from Meta Graph API...');
-    const profile = await fetchInstagramProfile(tokenResult.accessToken);
-    console.log(
-      `[Instagram OAuth] Meta Profile fetched: username: @${profile.username}, id: ${profile.id}, account_type: ${profile.accountType || 'N/A'}, followers_count: ${profile.followerCount ?? 'N/A'}`
-    );
-
-    // 7. Verify Database runtime environment & service client
-    const isServiceKeyPresent = isServiceRoleKeyAvailable();
-    console.log('[Instagram OAuth Diagnostic] SERVICE_ROLE_KEY_AVAILABLE =', isServiceKeyPresent);
-
-    const serviceClient = createServiceClient();
-    const userSessionClient = await createClient();
-    const now = new Date().toISOString();
-
-    // Check existing creator_profile to preserve non-Instagram creator data
-    console.log(`[Instagram OAuth] Looking up creator_profiles for user_id: ${targetUserId}...`);
-    const { data: existingCp, error: existingCpError } = await serviceClient
-      .from('creator_profiles')
-      .select('id, user_id, follower_count, instagram_connected, instagram_username, verification_status, display_name, bio, profile_image_path')
-      .eq('user_id', targetUserId)
-      .maybeSingle();
-
-    console.log('[Instagram OAuth Diagnostic] Existing creator_profiles row:', {
-      found: Boolean(existingCp),
-      rowId: existingCp?.id || null,
-      currentFollowers: existingCp?.follower_count ?? null,
-      currentIgConnected: existingCp?.instagram_connected ?? null,
-      currentIgUsername: existingCp?.instagram_username ?? null,
-      lookupError: existingCpError?.message || null,
+    console.log(`${logPrefix} Step 5: Exchanging authorization code with Meta...`);
+    tokenResult = await exchangeInstagramCode(code);
+    console.log(`${logPrefix} Step 5 Succeeded: Meta User ID=${tokenResult.userId}`);
+  } catch (tokenErr: any) {
+    console.error(`${logPrefix} Step 5 Failed: Token exchange error:`, tokenErr);
+    return renderErrorPage('5_TOKEN_EXCHANGE_FAILED', tokenErr.message || 'Token exchange failed', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      targetUserId,
     });
+  }
 
-    const followerCountToSave =
-      typeof profile.followerCount === 'number' && profile.followerCount > 0
-        ? profile.followerCount
-        : (existingCp?.follower_count || 10000);
+  // Step 6: Fetch verified profile from Instagram Graph API
+  let profile: any;
+  try {
+    console.log(`${logPrefix} Step 6: Fetching profile data from Meta Graph API...`);
+    profile = await fetchInstagramProfile(tokenResult.accessToken);
+    console.log(
+      `${logPrefix} Step 6 Succeeded: username=@${profile.username}, id=${profile.id}, followers=${profile.followerCount ?? 'N/A'}`
+    );
+  } catch (profileErr: any) {
+    console.error(`${logPrefix} Step 6 Failed: Profile fetch error:`, profileErr);
+    return renderErrorPage('6_PROFILE_FETCH_FAILED', profileErr.message || 'Graph API profile fetch failed', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      metaUserId: tokenResult.userId,
+      targetUserId,
+    });
+  }
 
-    const isVerifiedMetricsSource =
-      typeof profile.followerCount === 'number' && profile.followerCount > 0
-        ? 'instagram_meta_verified'
-        : 'platform_manual';
+  // Step 7: Initialize Database Service-Role Client
+  const serviceClient = createServiceClient();
+  const now = new Date().toISOString();
 
+  // Check existing creator_profiles row
+  const { data: existingCp, error: existingCpErr } = await serviceClient
+    .from('creator_profiles')
+    .select('id, user_id, follower_count, instagram_connected, instagram_username, verification_status')
+    .eq('user_id', targetUserId)
+    .maybeSingle();
+
+  console.log(`${logPrefix} Step 7: Existing creator_profile lookup:`, {
+    found: Boolean(existingCp),
+    id: existingCp?.id || null,
+    user_id: existingCp?.user_id || null,
+    follower_count: existingCp?.follower_count ?? null,
+    instagram_connected: existingCp?.instagram_connected ?? null,
+    error: existingCpErr?.message || null,
+  });
+
+  const followerCountToSave =
+    typeof profile.followerCount === 'number' && profile.followerCount > 0
+      ? profile.followerCount
+      : (existingCp?.follower_count || 10000);
+
+  // Step 8: Execute RPC save_creator_instagram_connection
+  console.log(`${logPrefix} Step 8: Executing RPC public.save_creator_instagram_connection...`);
+  let rpcSuccess = false;
+  let rpcDataResult: any = null;
+  let rpcErrorMessage: string | null = null;
+
+  try {
+    const { data: rpcData, error: rpcError } = await serviceClient.rpc('save_creator_instagram_connection', {
+      p_user_id: targetUserId,
+      p_instagram_user_id: profile.id,
+      p_instagram_username: profile.username,
+      p_follower_count: followerCountToSave,
+      p_profile_data: profile.rawData || {},
+      p_access_token: tokenResult.accessToken,
+    } as any);
+
+    if (rpcError) {
+      rpcErrorMessage = rpcError.message;
+      console.error(`${logPrefix} Step 8 RPC Error:`, rpcError);
+    } else {
+      rpcSuccess = true;
+      rpcDataResult = rpcData;
+      console.log(`${logPrefix} Step 8 RPC Succeeded:`, rpcData);
+    }
+  } catch (rpcExc: any) {
+    rpcErrorMessage = rpcExc.message || 'RPC invocation exception';
+    console.error(`${logPrefix} Step 8 RPC Exception:`, rpcExc);
+  }
+
+  // Step 9: Fallback direct UPDATE / UPSERT if RPC fails
+  let writeSucceeded = rpcSuccess;
+  let fallbackErrorMsg: string | null = null;
+
+  if (!writeSucceeded) {
+    console.log(`${logPrefix} Step 9: Attempting direct service-role UPDATE/UPSERT fallback...`);
     const updatePayload: Record<string, any> = {
       user_id: targetUserId,
       instagram_connected: true,
@@ -172,16 +277,30 @@ export async function GET(request: Request) {
       instagram_user_id: profile.id,
       instagram_username: profile.username,
       follower_count: followerCountToSave,
-      metrics_source: isVerifiedMetricsSource,
-      metrics_verified_at: now,
       verification_status: 'verified_oauth',
+      metrics_source: 'instagram_meta_verified',
+      metrics_verified_at: now,
       instagram_connected_at: now,
       instagram_profile_data: profile.rawData || {},
       instagram_access_token: tokenResult.accessToken,
       updated_at: now,
     };
 
-    if (!existingCp) {
+    if (existingCp) {
+      const { data: directUpdateData, error: directUpdateError } = await serviceClient
+        .from('creator_profiles')
+        .update(updatePayload as any)
+        .eq('user_id', targetUserId)
+        .select('id, user_id, instagram_connected, instagram_username, verification_status');
+
+      if (!directUpdateError && directUpdateData && directUpdateData.length > 0) {
+        writeSucceeded = true;
+        console.log(`${logPrefix} Step 9 Direct UPDATE Succeeded:`, directUpdateData[0]);
+      } else {
+        fallbackErrorMsg = directUpdateError?.message || 'Direct update affected 0 rows';
+        console.warn(`${logPrefix} Step 9 Direct UPDATE Failed:`, fallbackErrorMsg);
+      }
+    } else {
       updatePayload.display_name = profile.username || 'Creator';
       updatePayload.bio = profile.biography || 'Content creator helping apps reach targeted users.';
       updatePayload.profile_image_path = profile.profilePictureUrl || null;
@@ -192,191 +311,119 @@ export async function GET(request: Request) {
       updatePayload.languages = ['Hindi', 'English'];
       updatePayload.average_reach = 0;
       updatePayload.engagement_rate = 0.0;
-    } else {
-      if (!existingCp.profile_image_path && profile.profilePictureUrl) {
-        updatePayload.profile_image_path = profile.profilePictureUrl;
-      }
-    }
 
-    // Tier A: Direct UPDATE using serviceClient (preferred if row exists)
-    let writeSuccess = false;
-    let lastError: string | null = null;
-
-    if (existingCp) {
-      console.log(`[Instagram OAuth] Executing direct UPDATE on creator_profiles for user_id: ${targetUserId}...`);
-      const { data: updateData, error: updateError } = await serviceClient
+      const { data: upsertData, error: upsertErr } = await serviceClient
         .from('creator_profiles')
-        .update(updatePayload as any)
-        .eq('user_id', targetUserId)
-        .select('id, user_id, instagram_connected, instagram_username, follower_count, verification_status');
+        .upsert(updatePayload as any, { onConflict: 'user_id' })
+        .select('id, user_id, instagram_connected, instagram_username, verification_status');
 
-      if (!updateError && updateData && updateData.length > 0) {
-        writeSuccess = true;
-        console.log('[Instagram OAuth] Direct UPDATE succeeded:', updateData[0]);
+      if (!upsertErr && upsertData && upsertData.length > 0) {
+        writeSucceeded = true;
+        console.log(`${logPrefix} Step 9 Direct UPSERT Succeeded:`, upsertData[0]);
       } else {
-        lastError = updateError?.message || 'Update returned 0 rows';
-        console.warn('[Instagram OAuth] Direct UPDATE note:', lastError);
+        fallbackErrorMsg = upsertErr?.message || 'Direct upsert failed';
+        console.warn(`${logPrefix} Step 9 Direct UPSERT Failed:`, fallbackErrorMsg);
       }
     }
+  }
 
-    // Tier B: Direct UPSERT using serviceClient
-    if (!writeSuccess) {
-      console.log(`[Instagram OAuth] Executing UPSERT on creator_profiles for user_id: ${targetUserId}...`);
-      try {
-        const { data: upsertData, error: upsertError } = await serviceClient
-          .from('creator_profiles')
-          .upsert(updatePayload as any, { onConflict: 'user_id' })
-          .select('id, user_id, instagram_connected, instagram_username, follower_count, verification_status');
+  // If ALL persistence mechanisms failed, return detailed diagnostic error page
+  if (!writeSucceeded) {
+    console.error(`${logPrefix} Step 9 Fatal: Database write failed completely.`);
+    return renderErrorPage('9_DATABASE_WRITE_FAILED', rpcErrorMessage || fallbackErrorMsg || 'All write methods failed', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      projectRef,
+      serviceRoleAvailable,
+      targetUserId,
+      instagramUser: `@${profile.username} (${profile.id})`,
+      rpcError: rpcErrorMessage,
+      fallbackError: fallbackErrorMsg,
+    });
+  }
 
-        if (!upsertError) {
-          writeSuccess = true;
-          console.log('[Instagram OAuth] Service client UPSERT succeeded:', upsertData);
-        } else {
-          lastError = upsertError.message;
-          console.warn(`[Instagram OAuth] Service client UPSERT note: ${upsertError.message}`);
-        }
-      } catch (scErr: any) {
-        lastError = scErr.message;
-        console.warn('[Instagram OAuth] Service client exception:', scErr.message);
-      }
-    }
+  // Step 10: Immediate verification read
+  console.log(`${logPrefix} Step 10: Executing verification read from creator_profiles...`);
+  const { data: verifiedRow, error: verifyError } = await serviceClient
+    .from('creator_profiles')
+    .select('id, user_id, instagram_connected, instagram_verified, instagram_username, instagram_user_id, follower_count, verification_status, metrics_source, updated_at')
+    .eq('user_id', targetUserId)
+    .maybeSingle();
 
-    // Tier C: Fallback to SECURITY DEFINER RPC
-    if (!writeSuccess) {
-      console.log(`[Instagram OAuth] Executing RPC save_creator_instagram_connection for user_id: ${targetUserId}...`);
-      try {
-        const { data: rpcData, error: rpcError } = await serviceClient.rpc('save_creator_instagram_connection', {
-          p_user_id: targetUserId,
-          p_instagram_user_id: profile.id,
-          p_instagram_username: profile.username,
-          p_follower_count: followerCountToSave,
-          p_profile_data: profile.rawData || {},
-          p_access_token: tokenResult.accessToken,
-        } as any);
+  console.log(`${logPrefix} Step 10 Verification Result:`, verifiedRow);
 
-        if (!rpcError) {
-          writeSuccess = true;
-          console.log('[Instagram OAuth] RPC save_creator_instagram_connection succeeded:', rpcData);
-        } else {
-          lastError = rpcError.message;
-          console.warn(`[Instagram OAuth] RPC save note: ${rpcError.message}`);
-        }
-      } catch (rpcErr: any) {
-        lastError = rpcErr.message;
-        console.warn('[Instagram OAuth] RPC exception:', rpcErr.message);
-      }
-    }
+  const isRowVerified = Boolean(
+    verifiedRow &&
+    verifiedRow.instagram_connected === true &&
+    verifiedRow.instagram_username === profile.username &&
+    verifiedRow.verification_status === 'verified_oauth'
+  );
 
-    // Tier D: Fallback to userSessionClient (auth.uid() = user_id)
-    if (!writeSuccess) {
-      console.log(`[Instagram OAuth] Executing userSessionClient write for user_id: ${targetUserId}...`);
-      try {
-        const { data: userClientData, error: userClientError } = await userSessionClient
-          .from('creator_profiles')
-          .upsert(updatePayload as any, { onConflict: 'user_id' })
-          .select('id, user_id, instagram_connected, instagram_username, follower_count, verification_status');
-
-        if (!userClientError) {
-          writeSuccess = true;
-          console.log('[Instagram OAuth] User session client write succeeded:', userClientData);
-        } else {
-          lastError = userClientError.message;
-          console.error(`[Instagram OAuth] User session client error: ${userClientError.message}`);
-        }
-      } catch (userErr: any) {
-        lastError = userErr.message;
-        console.error('[Instagram OAuth] User session client exception:', userErr.message);
-      }
-    }
-
-    if (!writeSuccess) {
-      console.error('[Instagram OAuth] ALL write attempts failed:', lastError);
-      throw new Error(`Failed to persist Instagram profile: ${lastError || 'Unknown database write error'}`);
-    }
-
-    // 8. Immediate verification read from database
-    const { data: verifiedRow, error: verifyError } = await serviceClient
-      .from('creator_profiles')
-      .select('id, user_id, instagram_connected, instagram_username, instagram_user_id, follower_count, verification_status, metrics_source')
-      .eq('user_id', targetUserId)
-      .maybeSingle();
-
-    console.log('[Instagram OAuth Diagnostic Post-Read]:', {
-      verified: Boolean(verifiedRow),
-      instagram_connected: verifiedRow?.instagram_connected,
-      instagram_username: verifiedRow?.instagram_username,
-      instagram_user_id: verifiedRow?.instagram_user_id,
-      verification_status: verifiedRow?.verification_status,
-      follower_count: verifiedRow?.follower_count,
-      metrics_source: verifiedRow?.metrics_source,
+  if (!isRowVerified) {
+    console.error(`${logPrefix} Step 10 Verification Mismatch:`, { verifiedRow, expectedUsername: profile.username });
+    return renderErrorPage('10_VERIFICATION_READ_MISMATCH', 'Database write completed but immediate verification read showed unexpected values.', {
+      version: INSTAGRAM_CALLBACK_VERSION,
+      targetUserId,
+      expected: {
+        instagram_connected: true,
+        instagram_username: profile.username,
+        verification_status: 'verified_oauth',
+      },
+      actual: verifiedRow || null,
       verifyError: verifyError?.message || null,
     });
-
-    // Also update public.profiles display_name / avatar if needed
-    try {
-      const { data: userProfile } = await serviceClient
-        .from('profiles')
-        .select('id, avatar_url, display_name')
-        .eq('id', targetUserId)
-        .maybeSingle();
-
-      if (userProfile && !userProfile.avatar_url && profile.profilePictureUrl) {
-        await serviceClient
-          .from('profiles')
-          .update({ avatar_url: profile.profilePictureUrl, updated_at: now })
-          .eq('id', targetUserId);
-      }
-    } catch (profileUpdateErr) {
-      console.warn('[Instagram OAuth] profiles update note:', profileUpdateErr);
-    }
-
-    // 8. Fetch user media/reels and save to creator_reels (non-blocking)
-    try {
-      const mediaItems = await fetchInstagramUserMedia(tokenResult.accessToken);
-      if (mediaItems && mediaItems.length > 0) {
-        const reelRows = mediaItems.map((m, idx) => ({
-          creator_id: targetUserId,
-          title: m.caption ? m.caption.slice(0, 80) : `Instagram Reel #${idx + 1}`,
-          video_url: m.mediaUrl || m.permalink || '',
-          reel_url: m.permalink || m.mediaUrl || null,
-          instagram_media_id: m.id,
-          thumbnail_url: m.thumbnailUrl || null,
-          type: 'client_work',
-          sort_order: idx + 1,
-          is_featured: idx === 0,
-          is_visible: true,
-        }));
-
-        await serviceClient
-          .from('creator_reels')
-          .upsert(reelRows, { onConflict: 'creator_id,instagram_media_id' as any })
-          .then(({ error: rErr }) => {
-            if (rErr) console.log('[Instagram OAuth] creator_reels sync note:', rErr.message);
-            else console.log(`[Instagram OAuth] Synced ${reelRows.length} reels to creator_reels`);
-          });
-      }
-    } catch (mediaErr) {
-      console.log('[Instagram OAuth] Media sync skipped:', mediaErr);
-    }
-
-    // 9. Redirect back to destination with success parameters
-    const redirectUrl = new URL(returnTo, origin);
-    redirectUrl.searchParams.set('ig_connected', 'true');
-    redirectUrl.searchParams.set('ig_username', profile.username);
-    if (typeof profile.followerCount === 'number') {
-      redirectUrl.searchParams.set('ig_followers', String(profile.followerCount));
-    }
-    // If returning to onboarding, make sure they land on Step 4
-    if (returnTo.includes('/auth/onboarding/creator') && !redirectUrl.searchParams.has('step')) {
-      redirectUrl.searchParams.set('step', '4');
-    }
-
-    return NextResponse.redirect(redirectUrl.toString());
-  } catch (err: unknown) {
-    console.error('Error during Instagram OAuth callback handling:', err);
-    const message = err instanceof Error ? err.message : 'Failed to complete Instagram connection';
-    return NextResponse.redirect(
-      `${origin}${returnTo}?ig_error=${encodeURIComponent(message)}`
-    );
   }
+
+  // Step 11: Non-blocking sync for user media / reels & user profile avatar
+  try {
+    if (profile.profilePictureUrl) {
+      await serviceClient
+        .from('profiles')
+        .update({ avatar_url: profile.profilePictureUrl, updated_at: now })
+        .eq('id', targetUserId);
+    }
+  } catch (profErr) {
+    console.warn(`${logPrefix} Profile avatar update note:`, profErr);
+  }
+
+  try {
+    const mediaItems = await fetchInstagramUserMedia(tokenResult.accessToken);
+    if (mediaItems && mediaItems.length > 0) {
+      const reelRows = mediaItems.map((m, idx) => ({
+        creator_id: targetUserId,
+        title: m.caption ? m.caption.slice(0, 80) : `Instagram Reel #${idx + 1}`,
+        video_url: m.mediaUrl || m.permalink || '',
+        reel_url: m.permalink || m.mediaUrl || null,
+        instagram_media_id: m.id,
+        thumbnail_url: m.thumbnailUrl || null,
+        type: 'client_work',
+        sort_order: idx + 1,
+        is_featured: idx === 0,
+        is_visible: true,
+      }));
+
+      await serviceClient
+        .from('creator_reels')
+        .upsert(reelRows, { onConflict: 'creator_id,instagram_media_id' as any })
+        .then(({ error: rErr }) => {
+          if (rErr) console.log(`${logPrefix} creator_reels sync note:`, rErr.message);
+          else console.log(`${logPrefix} Synced ${reelRows.length} reels to creator_reels`);
+        });
+    }
+  } catch (mediaErr) {
+    console.log(`${logPrefix} Media sync skipped:`, mediaErr);
+  }
+
+  // Step 12: Redirect with success parameters
+  console.log(`${logPrefix} Step 12: All verifications passed! Redirecting to ${returnTo}...`);
+  const redirectUrl = new URL(returnTo, origin);
+  redirectUrl.searchParams.set('ig_connected', 'true');
+  redirectUrl.searchParams.set('ig_username', profile.username);
+  if (typeof profile.followerCount === 'number') {
+    redirectUrl.searchParams.set('ig_followers', String(profile.followerCount));
+  }
+  if (returnTo.includes('/auth/onboarding/creator') && !redirectUrl.searchParams.has('step')) {
+    redirectUrl.searchParams.set('step', '4');
+  }
+
+  return NextResponse.redirect(redirectUrl.toString());
 }
