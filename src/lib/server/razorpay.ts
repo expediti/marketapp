@@ -59,7 +59,19 @@ export function getServerRuntimeSecret(key: string): string | undefined {
     }
   } catch {}
 
-  // 3. Fallback to process.env
+  // 3. Try globalThis directly (direct Cloudflare Worker env binding)
+  try {
+    const directVal = (globalThis as any)?.[key];
+    if (typeof directVal === 'string' && directVal.trim().length > 0) {
+      return directVal.trim();
+    }
+    const envVal = (globalThis as any)?.env?.[key];
+    if (typeof envVal === 'string' && envVal.trim().length > 0) {
+      return envVal.trim();
+    }
+  } catch {}
+
+  // 4. Fallback to process.env
   try {
     const procVal = process.env[key];
     if (typeof procVal === 'string' && procVal.trim().length > 0) {

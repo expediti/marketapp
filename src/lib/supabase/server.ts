@@ -65,12 +65,27 @@ export async function getAuthenticatedUser() {
 }
 
 /**
- * Service-role/Admin client for secure server-side mutations (OAuth callbacks, webhooks, crons)
+ * Helper to safely check if service-role key is available in runtime
+ */
+export function isServiceRoleKeyAvailable(): boolean {
+  const serviceKey =
+    getServerRuntimeSecret('SUPABASE_SERVICE_ROLE_KEY') ||
+    getServerRuntimeSecret('SUPABASE_SERVICE_KEY') ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY;
+  return Boolean(serviceKey && serviceKey.trim().length > 0);
+}
+
+/**
+ * Service-role/Admin client for secure server-side mutations (OAuth callbacks, webhooks, crons).
+ * Strictly isolated: never inherits SSR cookies or user session JWTs.
  */
 export function createServiceClient() {
   const supabaseUrl =
     getServerRuntimeSecret('NEXT_PUBLIC_SUPABASE_URL') ||
+    getServerRuntimeSecret('SUPABASE_URL') ||
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
     'https://placeholder-project.supabase.co';
 
   const serviceKey =
@@ -84,8 +99,9 @@ export function createServiceClient() {
 
   return createClientJs<Database>(supabaseUrl, serviceKey, {
     auth: {
-      persistSession: false,
       autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
     },
   });
 }
