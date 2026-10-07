@@ -29,10 +29,10 @@ function DiscoverContent() {
   const filteredInfluencers = useMemo(() => {
     let result = [...creators];
 
-    // 1. Natural Language Search query filter (understands "food influencers in Varanasi", "fitness in Delhi", etc.)
+    // 1. Natural Language Search query filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      const tokens = q.split(/\s+/).filter((t) => !['in', 'for', 'the', 'and', 'with', 'creators', 'influencers'].includes(t));
+      const tokens = q.split(/\s+/).filter((t) => !['in', 'for', 'the', 'and', 'with', 'creators', 'influencers', 'communities'].includes(t));
 
       result = result.filter((c) => {
         const creatorName = (c.profile?.display_name || '').toLowerCase();
@@ -46,10 +46,8 @@ function DiscoverContent() {
 
         const searchableText = `${creatorName} ${creatorCity} ${creatorState} ${creatorCountry} ${creatorNiche} ${creatorBio} ${categories} ${audienceCities}`;
 
-        // Direct full phrase match
         if (searchableText.includes(q)) return true;
 
-        // If user typed multi-word phrase like "food in Varanasi" or "tech Bengaluru"
         if (tokens.length > 0) {
           return tokens.every((token) => searchableText.includes(token));
         }
@@ -68,20 +66,19 @@ function DiscoverContent() {
       );
     }
 
-    // 3. State filter (Intersection)
+    // 3. State filter
     if (selectedState && selectedState !== 'All States') {
       const st = selectedState.toLowerCase();
       result = result.filter((c) => {
         const creatorState = (c.state || '').toLowerCase();
         if (creatorState === st) return true;
-        // Check if creator's city belongs to this state
         const cityState = findStateForCity(c.city || c.profile?.city || '');
         if (cityState && cityState.toLowerCase() === st) return true;
         return false;
       });
     }
 
-    // 4. City filter (Intersection)
+    // 4. City filter
     if (selectedCity && selectedCity !== 'All Cities' && !selectedCity.startsWith('All Cities in')) {
       const ct = selectedCity.toLowerCase();
       result = result.filter(
@@ -91,7 +88,7 @@ function DiscoverContent() {
       );
     }
 
-    // 5. Follower Range filter (Intersection)
+    // 5. Follower Range filter
     if (selectedFollowerRange && selectedFollowerRange !== 'Any Reach') {
       if (selectedFollowerRange.includes('Micro')) {
         result = result.filter((c) => c.follower_count >= 10000 && c.follower_count < 25000);
@@ -104,26 +101,20 @@ function DiscoverContent() {
       }
     }
 
-    // 6. Price Range filter (Intersection)
+    // 6. Price Range filter
     if (selectedPriceRange && selectedPriceRange !== 'Any Budget') {
       if (selectedPriceRange.includes('Under ₹3,000')) {
-        result = result.filter((c) => (c.starting_price || 2500) < 3000);
+        result = result.filter((c) => (c.starting_price || 0) < 3000);
       } else if (selectedPriceRange.includes('₹3,000 - ₹5,000')) {
-        result = result.filter((c) => {
-          const p = c.starting_price || 2500;
-          return p >= 3000 && p <= 5000;
-        });
+        result = result.filter((c) => (c.starting_price || 0) >= 3000 && (c.starting_price || 0) <= 5000);
       } else if (selectedPriceRange.includes('₹5,000 - ₹10,000')) {
-        result = result.filter((c) => {
-          const p = c.starting_price || 2500;
-          return p >= 5000 && p <= 10000;
-        });
+        result = result.filter((c) => (c.starting_price || 0) >= 5000 && (c.starting_price || 0) <= 10000);
       } else if (selectedPriceRange.includes('₹10,000+')) {
-        result = result.filter((c) => (c.starting_price || 2500) >= 10000);
+        result = result.filter((c) => (c.starting_price || 0) > 10000);
       }
     }
 
-    // 7. Sort order
+    // 7. Sort
     if (sortBy === 'followers') {
       result.sort((a, b) => b.follower_count - a.follower_count);
     } else if (sortBy === 'reach') {
@@ -131,9 +122,9 @@ function DiscoverContent() {
     } else if (sortBy === 'engagement') {
       result.sort((a, b) => b.engagement_rate - a.engagement_rate);
     } else if (sortBy === 'price_asc') {
-      result.sort((a, b) => (a.starting_price || 2500) - (b.starting_price || 2500));
+      result.sort((a, b) => (a.starting_price || 0) - (b.starting_price || 0));
     } else if (sortBy === 'price_desc') {
-      result.sort((a, b) => (b.starting_price || 2500) - (a.starting_price || 2500));
+      result.sort((a, b) => (b.starting_price || 0) - (a.starting_price || 0));
     }
 
     return result;
@@ -164,16 +155,16 @@ function DiscoverContent() {
       {/* Page Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <span className="editorial-label text-[#FF5416]">Market My App Discovery</span>
+          <span className="editorial-label text-[#FF5416]">Audience Directory</span>
           <span className="text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-            Verified Creators
+            Verified Distribution Partners
           </span>
         </div>
         <h1 className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white tracking-tight">
-          Find the right influencer for your app.
+          Find the audience that already exists for what you built.
         </h1>
         <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA] max-w-2xl">
-          Discover vetted Indian influencers by niche, location, audience reach, engagement rate, and fixed collaboration packages.
+          Discover creators and communities that already reach your target demographic — filtered by category, location, audience reach, and fixed packages.
         </p>
       </div>
 
@@ -201,37 +192,37 @@ function DiscoverContent() {
       {/* Results Header */}
       <div className="flex items-center justify-between text-xs font-mono text-[#71717A] dark:text-[#A1A1AA] border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
         <span>
-          SHOWING <strong className="text-[#121214] dark:text-white">{filteredInfluencers.length}</strong> INFLUENCERS
+          SHOWING <strong className="text-[#121214] dark:text-white">{filteredInfluencers.length}</strong> DISTRIBUTION PARTNERS
         </span>
         <span className="text-[11px] text-[#A1A1AA]">
-          Social handles protected for creator privacy
+          Direct handles protected for partner privacy
         </span>
       </div>
 
-      {/* Influencers Grid */}
+      {/* Partners Grid */}
       {isLoading ? (
         <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-16 text-center space-y-3">
           <div className="w-6 h-6 border-2 border-[#FF5416] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">Loading creators from database...</p>
+          <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">Loading directory from database...</p>
         </div>
       ) : creators.length === 0 ? (
         <div className="bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-16 text-center space-y-3">
           <Users className="w-10 h-10 text-[#A1A1AA] mx-auto" />
           <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
-            No creators yet
+            No distribution partners yet
           </h3>
           <p className="text-sm text-[#71717A] dark:text-[#A1A1AA] max-w-md mx-auto">
-            Creators will appear here once they complete their profiles.
+            Partners will appear here once they complete their onboarding.
           </p>
         </div>
       ) : filteredInfluencers.length === 0 ? (
         <div className="bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-12 text-center space-y-3">
           <Users className="w-8 h-8 text-[#A1A1AA] mx-auto" />
           <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
-            No influencers match your current filters
+            No partners match your current filters
           </h3>
           <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] max-w-md mx-auto">
-            Try adjusting your search query, switching cities, or resetting filters to browse all available influencers.
+            Try adjusting your search query, switching cities, or resetting filters to browse all available distribution partners.
           </p>
           <button
             onClick={handleReset}
@@ -253,7 +244,7 @@ function DiscoverContent() {
 
 export default function DiscoverPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-20 text-center text-xs font-mono">Loading marketplace...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-20 text-center text-xs font-mono">Loading audience directory...</div>}>
       <DiscoverContent />
     </Suspense>
   );

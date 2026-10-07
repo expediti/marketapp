@@ -25,9 +25,9 @@ const fontMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Market My App — Influencer Marketing for Apps, Websites & Products',
+  title: 'Market My App — Audience Distribution & Discovery Platform',
   description:
-    'Discover Indian influencers by niche, audience, reach and budget — and find the right creators to promote your app, website or product.',
+    'Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets. Built for developers, founders, and small businesses.',
 };
 
 export default function RootLayout({

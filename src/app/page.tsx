@@ -1,19 +1,125 @@
 import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { ArrowRight, MapPin, Search } from 'lucide-react';
+import {
+  ArrowRight,
+  MapPin,
+  Search,
+  ShieldCheck,
+  Lock,
+  Layers,
+  MessageSquare,
+  Sparkles,
+  CheckCircle2,
+  Users,
+  Smartphone,
+  Globe,
+  Radio,
+  Send,
+  Building2,
+  Zap,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { InfiniteReelShowcase } from '@/components/marketplace/InfiniteReelShowcase';
 import { SHOWCASE_REELS } from '@/lib/data/reelsData';
 import { AccountDeletedBanner } from '@/components/common/AccountDeletedBanner';
 
 export default function HomePage() {
+  const distributionChannels = [
+    {
+      name: 'Instagram Creators',
+      desc: 'Short-form video reels, app walkthroughs, story demonstrations, and visual product showcases.',
+      status: 'AVAILABLE NOW',
+      isLive: true,
+      icon: Radio,
+    },
+    {
+      name: 'Telegram Communities',
+      desc: 'Developer forums, tech deals, productivity channels, and niche regional discussion groups.',
+      status: 'COMING SOON',
+      isLive: false,
+      icon: Send,
+    },
+    {
+      name: 'WhatsApp Communities',
+      desc: 'Hyper-local business networks, neighborhood forums, student cohorts, and merchant groups.',
+      status: 'COMING SOON',
+      isLive: false,
+      icon: MessageSquare,
+    },
+    {
+      name: 'Facebook Communities',
+      desc: 'Interest-based groups, regional trade communities, hobbyists, and local service networks.',
+      status: 'COMING SOON',
+      isLive: false,
+      icon: Users,
+    },
+    {
+      name: 'Local Communities',
+      desc: 'City-specific tech meetups, regional founder networks, campus groups, and trade associations.',
+      status: 'COMING SOON',
+      isLive: false,
+      icon: MapPin,
+    },
+  ];
+
   const popularLocations = [
-    { city: 'Varanasi', state: 'Uttar Pradesh', niche: 'Food & Culture' },
-    { city: 'Bengaluru', state: 'Karnataka', niche: 'Tech & SaaS' },
-    { city: 'Mumbai', state: 'Maharashtra', niche: 'Fashion & D2C' },
-    { city: 'Delhi NCR', state: 'Delhi NCR', niche: 'Fitness & Apps' },
-    { city: 'Jaipur', state: 'Rajasthan', niche: 'Design & Heritage' },
-    { city: 'Kochi', state: 'Kerala', niche: 'Travel & Lifestyle' },
+    { city: 'Varanasi', state: 'Uttar Pradesh', niche: 'Food, Culture & Local Services' },
+    { city: 'Bengaluru', state: 'Karnataka', niche: 'Tech, SaaS & Developer Tools' },
+    { city: 'Mumbai', state: 'Maharashtra', niche: 'Finance, Lifestyle & D2C' },
+    { city: 'Delhi NCR', state: 'Delhi NCR', niche: 'Fitness, EdTech & Utilities' },
+    { city: 'Jaipur', state: 'Rajasthan', niche: 'Design, Commerce & Craft' },
+    { city: 'Kochi', state: 'Kerala', niche: 'Travel, Consumer & Digital' },
+  ];
+
+  const steps = [
+    {
+      num: '01',
+      title: "Tell us what you're promoting",
+      desc: 'Specify your product: mobile app, web SaaS, developer tool, local business, or consumer product.',
+    },
+    {
+      num: '02',
+      title: 'Discover relevant audiences',
+      desc: 'Filter by niche, city, follower size, platform reach, and transparent package pricing.',
+    },
+    {
+      num: '03',
+      title: 'Connect and discuss the promotion',
+      desc: 'Send a structured request. The creator or community reviews your brief and accepts before chat opens.',
+    },
+    {
+      num: '04',
+      title: 'Pay securely',
+      desc: 'Platform payment protection holds funds safely until the distribution milestone is completed.',
+    },
+    {
+      num: '05',
+      title: 'Get the promotion delivered',
+      desc: 'Review the content or announcement draft, approve delivery, and reach your intended users.',
+    },
+  ];
+
+  const userSegments = [
+    {
+      title: 'Local Developers & Indie Builders',
+      desc: 'You built a utility, mobile app, or SaaS tool in your spare time. You need early users and honest feedback without paying a marketing retainer.',
+      tag: 'Apps & Software',
+    },
+    {
+      title: 'Founders & Product Creators',
+      desc: 'You launched a product or platform. Instead of burning budget on impersonal broad ads, connect with voices that already hold your audience’s attention.',
+      tag: 'Startups & Tools',
+    },
+    {
+      title: 'Vendors & Small Businesses',
+      desc: 'You run a local service, store, or regional brand. Find creators whose audience lives in your exact city, district, or neighborhood.',
+      tag: 'Local & Regional',
+    },
+    {
+      title: 'Distribution Partners & Creators',
+      desc: 'You run a dedicated community, channel, or creator account. Receive paid, vetted promotion requests from builders with transparent pricing.',
+      tag: 'Audience Partners',
+    },
   ];
 
   return (
@@ -23,188 +129,275 @@ export default function HomePage() {
       </Suspense>
 
       {/* SECTION 1 — HERO */}
-      <section className="relative pt-12 sm:pt-16 lg:pt-24 border-b border-[#E5E5DE] dark:border-[#27272A] pb-20 sm:pb-28 lg:pb-32 bg-gradient-to-b from-[#FBFBFA] to-[#F4F4F0]/60 dark:from-[#09090B] dark:to-[#121214]/60 transition-colors">
+      <section className="relative pt-12 sm:pt-16 lg:pt-20 border-b border-[#E5E5DE] dark:border-[#27272A] pb-16 sm:pb-24 lg:pb-28 bg-[#FBFBFA] dark:bg-[#09090B] transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
-            {/* Left Hero Content */}
-            <div className="lg:col-span-7 space-y-6">
-              {/* Eyebrow badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] text-xs font-mono text-[#FF5416] uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#FF5416]" />
-                <span>INDIAN INFLUENCER MARKETING MARKETPLACE</span>
-              </div>
-
-              {/* Main Headline */}
-              <h1 className="font-mono text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-[#121214] dark:text-white leading-[1.08]">
-                Market your app.{' '}
-                <span className="text-[#FF5416] block sm:inline">
-                  Reach the right audience
-                </span>{' '}
-                through influencers.
-              </h1>
-
-              {/* Supporting Text */}
-              <p className="text-base sm:text-lg text-[#52525B] dark:text-[#A1A1AA] max-w-xl leading-relaxed">
-                Discover Indian influencers by niche, location, reach and budget — and find the right creators to promote your app, website or product.
-              </p>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3.5 pt-2">
-                <Link href="/discover">
-                  <Button variant="primary" size="lg" className="px-6 py-3 text-base">
-                    <span>Find Influencers</span>
-                    <ArrowRight className="w-4 h-4 ml-1.5" />
-                  </Button>
-                </Link>
-
-                <Link href="/auth/signup?role=creator">
-                  <Button variant="secondary" size="lg" className="px-6 py-3 text-base dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
-                    <span>Join as Influencer</span>
-                  </Button>
-                </Link>
-
-                <Link href="/auth/signup?role=business">
-                  <Button variant="outline" size="lg" className="px-6 py-3 text-base dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
-                    <span>Join as Owner</span>
-                  </Button>
-                </Link>
-              </div>
-
-              {/* Value tags */}
-              <div className="pt-6 border-t border-[#ECECE6] dark:border-[#27272A] flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
-                <span>Apps, Websites & Software</span>
-                <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
-                <span>Authentic Video Samples</span>
-                <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
-                <span>Clear Fixed Packages</span>
-              </div>
+          <div className="max-w-3xl space-y-6">
+            {/* Eyebrow badge */}
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded bg-[#FFF2EC] dark:bg-[#27140B] border border-[#FFD2C1] dark:border-[#4D1F0E] text-xs font-mono text-[#FF5416] uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#FF5416]" />
+              <span>AUDIENCE DISCOVERY & DISTRIBUTION PLATFORM</span>
             </div>
 
-            {/* Right side: Intentional clean whitespace on desktop, collapsed on mobile */}
-            <div className="hidden lg:block lg:col-span-5" aria-hidden="true" />
+            {/* Main Headline */}
+            <h1 className="font-mono text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-[#121214] dark:text-white leading-[1.08]">
+              Built something people should know about?
+            </h1>
+
+            {/* Supporting Text */}
+            <p className="text-base sm:text-lg text-[#52525B] dark:text-[#A1A1AA] leading-relaxed max-w-2xl">
+              Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Link href="/discover">
+                <Button variant="primary" size="lg" className="px-6 py-3 text-base">
+                  <span>Find Your Audience</span>
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                </Button>
+              </Link>
+
+              <Link href="/auth/signup?role=creator">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="px-6 py-3 text-base border-[#E5E5DE] dark:border-[#27272A] text-[#121214] dark:text-white hover:bg-[#F4F4F0] dark:hover:bg-[#18181B]"
+                >
+                  <span>I&apos;m a Creator / Community</span>
+                </Button>
+              </Link>
+            </div>
+
+            {/* Core Values Summary Strip */}
+            <div className="pt-6 border-t border-[#ECECE6] dark:border-[#27272A] flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#047857] dark:text-[#34D399]" />
+                Affordable promotion
+              </span>
+              <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#047857] dark:text-[#34D399]" />
+                Relevant existing audiences
+              </span>
+              <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#FF5416]" />
+                Protected transactions
+              </span>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* SECTION 2 — MOVING REEL SHOWCASE (Infinite Right -> Left Continuous Marquee) */}
-      <InfiniteReelShowcase
-        reels={SHOWCASE_REELS}
-        title="Influencer content, built for reach."
-        subtitle="Watch authentic short-form reels, app demonstrations, and promotional campaigns created by creators across India."
-        speedSeconds={32}
-      />
-
-      {/* SECTION 3 — HOW MARKET MY APP WORKS */}
+      {/* SECTION 2 — CORE USP / POSITIONING */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-2xl mx-auto mb-14 space-y-2">
-          <span className="editorial-label text-[#FF5416]">Clear Workflow</span>
-          <h2 className="font-mono text-3xl font-bold text-[#121214] dark:text-white">
-            How Market My App Works
+        <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-8 sm:p-12 space-y-10 shadow-xs">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="lg:col-span-5 space-y-4">
+              <span className="editorial-label text-[#FF5416]">The Core Problem</span>
+              <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white leading-tight">
+                &ldquo;Big agencies aren&apos;t built for everyone.&rdquo;
+              </h2>
+              <p className="text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+                Traditional marketing agencies require massive retainer fees, confusing margins, and months of onboarding. Manual direct messaging leads to ghosting, lack of accountability, and lost payments.
+              </p>
+            </div>
+
+            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] space-y-2">
+                <span className="editorial-label text-[#B91C1C] dark:text-rose-400">The Problem</span>
+                <p className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                  &ldquo;I built something, but I don&apos;t know where to promote it.&rdquo;
+                </p>
+                <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] leading-relaxed">
+                  Developers and local founders spend months building great software or services, only to hit a wall when it comes to finding their first 1,000 real users.
+                </p>
+              </div>
+
+              <div className="p-5 rounded-xl bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 border border-[#FFD2C1] dark:border-[#4D1F0E] space-y-2">
+                <span className="editorial-label text-[#FF5416]">The Platform Answer</span>
+                <p className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                  &ldquo;Find creators and communities that already have the audience you need.&rdquo;
+                </p>
+                <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+                  Connect with curated distribution partners who already have trust, attention, and active engagement with your exact demographic.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* User Segments Grid */}
+          <div className="pt-6 border-t border-[#ECECE6] dark:border-[#27272A] space-y-4">
+            <span className="editorial-label text-[#71717A] dark:text-[#A1A1AA]">
+              Built for Practical Builders & Businesses
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {userSegments.map((segment, idx) => (
+                <div
+                  key={idx}
+                  className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] space-y-2 flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#FF5416] bg-white dark:bg-[#121214] px-2 py-0.5 rounded border border-[#E5E5DE] dark:border-[#27272A] inline-block">
+                      {segment.tag}
+                    </span>
+                    <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                      {segment.title}
+                    </h3>
+                    <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+                      {segment.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 3 — DISTRIBUTION CHANNELS AS A LARGER CONCEPT */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="max-w-2xl space-y-2">
+          <span className="editorial-label text-[#FF5416]">Distribution Channels</span>
+          <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white">
+            Discover Existing Audiences Across Multiple Channels
           </h2>
-          <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA]">
-            A transparent 6-step collaboration system for advertisers and influencers.
+          <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+            We are building a multi-channel distribution hub. Instagram creators are our first live channel, with dedicated community platforms expanding shortly.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* For Advertisers */}
-          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-4">
-              <div>
-                <span className="editorial-label text-[#FF5416]">Step-By-Step</span>
-                <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white">For Advertisers</h3>
-              </div>
-              <span className="text-xs font-mono bg-[#F4F4F0] dark:bg-[#18181B] px-3 py-1 rounded text-[#71717A] dark:text-[#A1A1AA] border border-[#E5E5DE] dark:border-[#27272A]">
-                Apps, Websites & Products
-              </span>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {distributionChannels.map((channel, idx) => {
+            const IconComponent = channel.icon;
+            return (
+              <div
+                key={idx}
+                className={`p-6 rounded-2xl border transition-colors flex flex-col justify-between space-y-4 ${
+                  channel.isLive
+                    ? 'bg-white dark:bg-[#121214] border-[#121214] dark:border-white shadow-xs'
+                    : 'bg-[#FBFBFA] dark:bg-[#141416] border-[#E5E5DE] dark:border-[#27272A]'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center border ${
+                        channel.isLive
+                          ? 'bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] border-[#FFD2C1] dark:border-[#4D1F0E]'
+                          : 'bg-[#F4F4F0] dark:bg-[#1F1F23] text-[#71717A] border-[#E5E5DE] dark:border-[#27272A]'
+                      }`}
+                    >
+                      <IconComponent className="w-4 h-4" />
+                    </div>
 
-            <ol className="space-y-4">
-              {[
-                { num: '01', title: 'Choose your category', desc: 'Select Technology, Gaming, AI, Finance, Fitness or other niches.' },
-                { num: '02', title: 'Filter by location & reach', desc: 'Search creators by city, state, audience demographics, and budget.' },
-                { num: '03', title: 'Review real video work', desc: 'Watch vertical video samples and compare predefined package rate cards.' },
-                { num: '04', title: 'Select an influencer', desc: 'Pick the creator who aligns best with your app or target users.' },
-                { num: '05', title: 'Submit your promotion brief', desc: 'Share your app links, campaign brief, and key talking points.' },
-                { num: '06', title: 'Review and publish', desc: 'Review content drafts and get your app marketed to targeted users.' },
-              ].map((step) => (
-                <li key={step.num} className="flex items-start gap-4">
-                  <span className="font-mono text-xs font-bold text-[#FF5416] bg-[#FFF2EC] dark:bg-[#27140B] w-7 h-7 rounded-md flex items-center justify-center shrink-0 border border-[#FFD2C1] dark:border-[#4D1F0E]">
-                    {step.num}
-                  </span>
-                  <div>
-                    <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">{step.title}</h4>
-                    <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] mt-0.5">{step.desc}</p>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-bold tracking-wider ${
+                        channel.isLive
+                          ? 'bg-[#ECFDF5] text-[#047857] border-[#A7F3D0] dark:bg-[#064E3B]/40 dark:text-[#34D399] dark:border-[#065F46]'
+                          : 'bg-[#F4F4F0] text-[#71717A] border-[#E5E5DE] dark:bg-[#1F1F23] dark:text-[#A1A1AA] dark:border-[#27272A]'
+                      }`}
+                    >
+                      {channel.status}
+                    </span>
                   </div>
-                </li>
-              ))}
-            </ol>
 
-            <div className="pt-2">
-              <Link href="/discover" className="block">
-                <Button variant="primary" size="sm" className="w-full">
-                  <span>Start Finding Influencers</span>
-                  <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              </Link>
-            </div>
+                  <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                    {channel.name}
+                  </h3>
+
+                  <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+                    {channel.desc}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-[#ECECE6] dark:border-[#27272A]">
+                  {channel.isLive ? (
+                    <Link
+                      href="/discover"
+                      className="inline-flex items-center text-xs font-mono font-bold text-[#FF5416] hover:underline"
+                    >
+                      <span>Explore active creators</span>
+                      <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                    </Link>
+                  ) : (
+                    <span className="text-[11px] font-mono text-[#71717A] dark:text-[#A1A1AA]">
+                      Integration in active development
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* SECTION 4 — HOW IT WORKS (5-STEP FLOW) */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-8 sm:p-12 space-y-10 shadow-xs">
+          <div className="max-w-2xl space-y-2">
+            <span className="editorial-label text-[#FF5416]">Structured Process</span>
+            <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white">
+              How Distribution Works on Market My App
+            </h2>
+            <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+              A transparent, milestone-driven collaboration process that eliminates ambiguity and protects both parties.
+            </p>
           </div>
 
-          {/* For Influencers */}
-          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm">
-            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-4">
-              <div>
-                <span className="editorial-label text-[#121214] dark:text-[#D4D4D8]">Step-By-Step</span>
-                <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white">For Influencers</h3>
-              </div>
-              <span className="text-xs font-mono bg-[#F4F4F0] dark:bg-[#18181B] px-3 py-1 rounded text-[#71717A] dark:text-[#A1A1AA] border border-[#E5E5DE] dark:border-[#27272A]">
-                Content Creators
-              </span>
-            </div>
-
-            <ol className="space-y-4">
-              {[
-                { num: '01', title: 'Create your profile', desc: 'Add your handle, country, state, city, and creator bio.' },
-                { num: '02', title: 'Select your niches', desc: 'Pick your categories (Tech, Gaming, AI, Lifestyle, Fitness, etc.).' },
-                { num: '03', title: 'Add audience metrics', desc: 'Highlight where your followers live, top age tiers, and avg reach.' },
-                { num: '04', title: 'Create promotion rate cards', desc: 'Set fixed pricing for Reels, Story Series, and product walkthroughs.' },
-                { num: '05', title: 'Upload sample reels (up to 19 MB)', desc: 'Upload previous brand campaigns or sample demo walkthroughs.' },
-                { num: '06', title: 'Receive collaboration briefs', desc: 'Get direct paid briefs from founders building high-growth apps.' },
-              ].map((step) => (
-                <li key={step.num} className="flex items-start gap-4">
-                  <span className="font-mono text-xs font-bold text-[#121214] dark:text-white bg-[#F4F4F0] dark:bg-[#27272A] w-7 h-7 rounded-md flex items-center justify-center shrink-0 border border-[#E5E5DE] dark:border-[#3F3F46]">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {steps.map((step) => (
+              <div
+                key={step.num}
+                className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] space-y-3 flex flex-col justify-between"
+              >
+                <div className="space-y-2">
+                  <span className="font-mono text-xs font-bold text-[#FF5416] bg-[#FFF2EC] dark:bg-[#27140B] w-7 h-7 rounded-md flex items-center justify-center border border-[#FFD2C1] dark:border-[#4D1F0E]">
                     {step.num}
                   </span>
-                  <div>
-                    <h4 className="font-mono text-sm font-bold text-[#121214] dark:text-white">{step.title}</h4>
-                    <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] mt-0.5">{step.desc}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+                  <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white pt-1">
+                    {step.title}
+                  </h3>
+                  <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+                    {step.desc}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
 
-            <div className="pt-2">
-              <Link href="/auth/signup?role=creator" className="block">
-                <Button variant="outline" size="sm" className="w-full dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
-                  <span>Join as an Influencer</span>
-                  <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              </Link>
-            </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
+            <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
+              Direct communication opens only after the distribution partner accepts the brief.
+            </p>
+            <Link href="/discover">
+              <Button variant="primary" size="sm">
+                <span>Find Your Audience</span>
+                <ArrowRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* SECTION 4 — LOCATION + NICHE DISCOVERY EXPLANATION */}
+      {/* SECTION 5 — MOVING REEL SHOWCASE (Continuous Stream of Real Content Samples) */}
+      <InfiniteReelShowcase
+        reels={SHOWCASE_REELS}
+        title="Authentic Demonstration Formats"
+        subtitle="Explore short-form promotional samples, walkthrough demos, and localized feature reviews created by vetted partners."
+        speedSeconds={32}
+      />
+
+      {/* SECTION 6 — LOCATION & NICHE DISCOVERY */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-8 sm:p-12 shadow-sm space-y-8">
-          <div className="max-w-2xl">
-            <span className="editorial-label text-[#FF5416]">Hyper-Local & Demographic Matching</span>
-            <h2 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] dark:text-white mt-1">
-              Find creators where your audience lives.
+        <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-8 sm:p-12 shadow-xs space-y-8">
+          <div className="max-w-2xl space-y-2">
+            <span className="editorial-label text-[#FF5416]">Targeted Regional Reach</span>
+            <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white">
+              Discover Audiences Where Your Potential Users Live
             </h2>
-            <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] mt-2 leading-relaxed">
-              Every creator on Market My App has verified structured location data (Country, State, City). Whether you are an app founder targeting tier-1 tech hubs or a brand looking for deep regional reach in Uttar Pradesh or Maharashtra, combine category and location filters for pinpoint marketing.
+            <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+              Every distribution partner on the platform has structured location and audience demographic data. Match with partners targeting tier-1 developer hubs or specific regional communities across India.
             </p>
           </div>
 
@@ -234,55 +427,100 @@ export default function HomePage() {
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-[#ECECE6] dark:border-[#27272A]">
             <p className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
-              Combine Category + Location + Reach + Budget simultaneously in the discovery directory.
+              Filter by Category, Location, Reach, and Budget simultaneously.
             </p>
             <Link href="/discover">
-              <Button variant="outline" size="sm" className="dark:border-[#27272A] dark:text-white dark:bg-[#18181B] dark:hover:bg-[#27272A]">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[#E5E5DE] dark:border-[#27272A] text-[#121214] dark:text-white hover:bg-[#F4F4F0] dark:hover:bg-[#18181B]"
+              >
                 <Search className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
-                <span>Explore Full Directory</span>
+                <span>Explore Full Audience Directory</span>
               </Button>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* SECTION 5 — FAQ */}
+      {/* SECTION 7 — TRUST, SAFETY & WORKFLOW VALUES */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-[#ECFDF5] dark:bg-[#064E3B]/40 text-[#047857] dark:text-[#34D399] flex items-center justify-center border border-[#A7F3D0] dark:border-[#065F46]">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+              Protected Payments
+            </h3>
+            <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+              Your budget is held safely on the platform until the agreed distribution deliverable is submitted, verified, and accepted.
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-[#FFF2EC] dark:bg-[#27140B] text-[#FF5416] flex items-center justify-center border border-[#FFD2C1] dark:border-[#4D1F0E]">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+              Direct & Transparent Discussion
+            </h3>
+            <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+              Communicate directly inside a dedicated workspace once a request is accepted. Clarify talking points, target links, and deadlines.
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-[#F4F4F0] dark:bg-[#1F1F23] text-[#121214] dark:text-white flex items-center justify-center border border-[#E5E5DE] dark:border-[#27272A]">
+              <Zap className="w-5 h-5" />
+            </div>
+            <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+              Fixed & Predictable Pricing
+            </h3>
+            <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+              No hidden agency fees or surprise invoices. Package rates are defined clearly upfront so you know exactly what you get.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 8 — FAQ */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         <div className="text-center space-y-2">
-          <span className="editorial-label text-[#FF5416]">Frequently Asked Questions</span>
-          <h2 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] dark:text-white">
-            Common Questions
+          <span className="editorial-label text-[#FF5416]">Common Inquiries</span>
+          <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white">
+            Frequently Asked Questions
           </h2>
           <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA]">
-            Everything you need to know about promoting apps, websites and products on Market My App.
+            How audience distribution and platform protection work on Market My App.
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {[
             {
-              q: 'What kind of products can be marketed on Market My App?',
-              a: 'You can market Android/iOS mobile apps, SaaS tools, web platforms, developer tools, fintech services, educational platforms, and physical consumer products.',
+              q: 'What types of things can I promote on Market My App?',
+              a: 'You can promote mobile apps (Android/iOS), web SaaS platforms, developer tools, digital products, local services, physical goods, and regional businesses.',
             },
             {
-              q: 'Can I see an influencer’s past promotional work before contacting them?',
-              a: 'Yes. Every influencer profile features sample reels and video work so you can evaluate production quality, on-camera delivery, and format before choosing a package.',
+              q: 'How is this different from a typical influencer marketing agency?',
+              a: 'Agencies charge high monthly retainer fees and take high percentage margins. Market My App lets you discover existing audiences directly with fixed, transparent pricing and no agency overhead.',
             },
             {
-              q: 'How does package pricing work?',
-              a: 'Influencers set clear fixed packages (e.g. 1 Instagram Reel for ₹3,000, or a Reel + 2 Stories for ₹4,500). There are no hidden retainers or confusing agency margins.',
+              q: 'Can I message a creator or community leader immediately?',
+              a: 'To prevent spam and keep communication organized, you first submit a structured collaboration request with your product brief and budget. Once the partner reviews and accepts, the private discussion workspace unlocks.',
             },
             {
-              q: 'How does location filtering work for regional campaigns?',
-              a: 'Creators specify their Country, State, and City. You can filter for creators located in specific cities like Varanasi, Mumbai, or Bengaluru, or filter by creators who have significant follower reach in those markets.',
+              q: 'How does payment protection work?',
+              a: 'When an order is confirmed, payment is recorded into platform protection. The creator or distribution partner completes the promotion and uploads the delivery link. Funds are released only after you review and approve.',
             },
             {
-              q: 'What are the reel upload requirements for creators?',
-              a: 'Creators can upload short 9:16 vertical sample reels up to 19 MB. Supported formats include MP4, WebM, and MOV, and videos are delivered via high-performance streaming storage.',
+              q: 'What distribution channels are coming next?',
+              a: 'In addition to active Instagram creators, we are rolling out integrations for Telegram tech and deal channels, WhatsApp local cohorts, Facebook regional groups, and local campus networks.',
             },
             {
-              q: 'Are influencer social handles kept confidential?',
-              a: 'Yes. Market My App protects creators from spam by keeping direct private handles off the public listing. All collaboration briefs are coordinated directly through the secure platform workspace.',
+              q: 'Are distribution partner handles kept private?',
+              a: 'Yes. To shield creators and community leaders from unverified spam, direct contact handles are protected. All communication happens securely through the platform workspace.',
             },
           ].map((faq, idx) => (
             <div
@@ -300,43 +538,59 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SECTION 6 — FINAL CTA */}
+      {/* SECTION 9 — FINAL CALL TO ACTION */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-[#121214] text-white rounded-2xl p-10 sm:p-14 relative overflow-hidden border border-[#27272A]">
+        <div className="bg-[#121214] text-white rounded-2xl p-8 sm:p-14 relative overflow-hidden border border-[#27272A]">
           <div className="max-w-2xl mx-auto text-center space-y-6">
-            <span className="editorial-label text-[#FF5416]">Get Started With Market My App</span>
+            <span className="editorial-label text-[#FF5416]">Start Today</span>
             <h2 className="font-mono text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Ready to grow your app with influencer content?
+              Ready to find the audience that already exists for what you built?
             </h2>
             <p className="text-sm text-[#A1A1AA] max-w-lg mx-auto leading-relaxed">
-              Connect with vetted Indian creators who create engaging short-form video content for your target audience.
+              Connect directly with verified creators and communities across India without agency-scale marketing budgets.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 max-w-md mx-auto text-left">
-              {/* Advertiser card */}
-              <div className="bg-[#1C1C1F] border border-[#27272A] p-5 rounded-xl flex flex-col justify-between">
+              {/* Founder / Business card */}
+              <div className="bg-[#1C1C1F] border border-[#27272A] p-5 rounded-xl flex flex-col justify-between space-y-3">
                 <div>
-                  <span className="text-[10px] font-mono text-[#A1A1AA] uppercase tracking-wider block">Advertisers</span>
-                  <h4 className="font-mono text-base font-bold text-white mt-1">Have an app or product?</h4>
-                  <p className="text-xs text-[#71717A] mt-1 mb-4">Discover influencers with proven reach.</p>
+                  <span className="text-[10px] font-mono text-[#A1A1AA] uppercase tracking-wider block">
+                    Founders & Builders
+                  </span>
+                  <h4 className="font-mono text-base font-bold text-white mt-1">
+                    Have something to promote?
+                  </h4>
+                  <p className="text-xs text-[#71717A] mt-1">
+                    Discover relevant audiences and book transparent packages.
+                  </p>
                 </div>
-                <Link href="/auth/signup?role=business">
+                <Link href="/discover">
                   <Button variant="primary" size="sm" className="w-full">
-                    <span>Join as Owner</span>
+                    <span>Find Your Audience</span>
                   </Button>
                 </Link>
               </div>
 
-              {/* Creator card */}
-              <div className="bg-[#1C1C1F] border border-[#27272A] p-5 rounded-xl flex flex-col justify-between">
+              {/* Creator / Community card */}
+              <div className="bg-[#1C1C1F] border border-[#27272A] p-5 rounded-xl flex flex-col justify-between space-y-3">
                 <div>
-                  <span className="text-[10px] font-mono text-[#A1A1AA] uppercase tracking-wider block">Influencers</span>
-                  <h4 className="font-mono text-base font-bold text-white mt-1">Create content?</h4>
-                  <p className="text-xs text-[#71717A] mt-1 mb-4">Show your work and receive paid briefs.</p>
+                  <span className="text-[10px] font-mono text-[#A1A1AA] uppercase tracking-wider block">
+                    Creators & Communities
+                  </span>
+                  <h4 className="font-mono text-base font-bold text-white mt-1">
+                    Have an audience?
+                  </h4>
+                  <p className="text-xs text-[#71717A] mt-1">
+                    List your rate cards and receive direct, paid collaboration briefs.
+                  </p>
                 </div>
                 <Link href="/auth/signup?role=creator">
-                  <Button variant="outline" size="sm" className="w-full text-white border-[#3F3F46] hover:bg-[#27272A]">
-                    <span>Join as Influencer</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-white border-[#3F3F46] hover:bg-[#27272A]"
+                  >
+                    <span>Join as Partner</span>
                   </Button>
                 </Link>
               </div>

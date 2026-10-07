@@ -15,20 +15,20 @@ export function Footer() {
               <span className="w-2 h-2 rounded-full bg-[#FF5416]" />
             </Link>
             <p className="text-sm text-[#A1A1AA] max-w-sm leading-relaxed">
-              Market your app or website to a wider audience through influencers. Discover Indian creators by niche, audience, reach and budget — and find the right creators to promote your app, website or product.
+              Audience distribution and discovery platform for local developers, founders, and small businesses. Find creators and communities that already reach the people you want to reach.
             </p>
             <div className="pt-2 text-xs font-mono text-[#71717A]">
-              CURRENCY: INR (₹) • REGION: INDIAN INFLUENCER MARKETPLACE
+              CURRENCY: INR (₹) • AUDIENCE DISCOVERY & DISTRIBUTION
             </div>
           </div>
 
-          {/* Marketplace Column */}
+          {/* Directory Column */}
           <div>
-            <h4 className="editorial-label text-white mb-4">Marketplace</h4>
+            <h4 className="editorial-label text-white mb-4">Distribution</h4>
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/discover" className="hover:text-white transition-colors">
-                  Discover Influencers
+                  Find Your Audience
                 </Link>
               </li>
               <li>
@@ -38,34 +38,34 @@ export function Footer() {
               </li>
               <li>
                 <Link href="/pricing" className="hover:text-white transition-colors">
-                  Pricing & Packages
+                  Pricing & Economics
                 </Link>
               </li>
               <li>
-                <Link href="/auth/signup?role=influencer" className="hover:text-white transition-colors">
-                  Join as an Influencer
+                <Link href="/auth/signup?role=creator" className="hover:text-white transition-colors">
+                  Join as Distribution Partner
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Stakeholders Column */}
+          {/* Solutions Column */}
           <div>
             <h4 className="editorial-label text-white mb-4">Solutions</h4>
             <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/for-businesses" className="hover:text-white transition-colors">
-                  For Advertisers
+                  For Founders & Businesses
                 </Link>
               </li>
               <li>
                 <Link href="/for-creators" className="hover:text-white transition-colors">
-                  For Influencers
+                  For Creators & Communities
                 </Link>
               </li>
               <li>
                 <Link href="/discover" className="hover:text-white transition-colors">
-                  Featured App Promos
+                  Featured Product Promos
                 </Link>
               </li>
             </ul>
@@ -112,7 +112,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
           <div>
-            © {new Date().getFullYear()} Market My Idea. Dedicated Indian Influencer Marketing Marketplace.
+            © {new Date().getFullYear()} Market My App. Audience Distribution Platform.
           </div>
           <div className="flex items-center gap-6">
             <Link href="/contact" className="hover:text-[#A1A1AA] transition-colors">
