@@ -349,7 +349,7 @@ export async function GET(request: Request) {
   console.log(`${logPrefix} Step 10: Executing verification read from creator_profiles...`);
   const { data: verifiedRow, error: verifyError } = await serviceClient
     .from('creator_profiles')
-    .select('id, user_id, instagram_connected, instagram_verified, instagram_username, instagram_user_id, follower_count, verification_status, metrics_source, instagram_profile_data, updated_at')
+    .select('id, user_id, instagram_connected, instagram_verified, instagram_username, instagram_user_id, follower_count, verification_status, metrics_source, updated_at')
     .eq('user_id', targetUserId)
     .maybeSingle();
 
@@ -399,14 +399,8 @@ export async function GET(request: Request) {
     const mediaItems = await fetchInstagramUserMedia(tokenResult.accessToken);
     if (mediaItems && mediaItems.length > 0) {
       // 1. Store recent media metadata in creator_profiles.instagram_profile_data
-      const rawProfileData = verifiedRow?.instagram_profile_data;
-      const existingProfileData: Record<string, unknown> =
-        typeof rawProfileData === 'object' && rawProfileData !== null && !Array.isArray(rawProfileData)
-          ? (rawProfileData as Record<string, unknown>)
-          : (profile.rawData || {});
-
       const updatedProfileData = {
-        ...existingProfileData,
+        ...(profile.rawData || {}),
         recent_media: mediaItems.map((m) => ({
           id: m.id,
           caption: m.caption || null,
