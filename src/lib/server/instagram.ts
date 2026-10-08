@@ -251,36 +251,62 @@ export async function fetchInstagramProfile(accessToken: string): Promise<Instag
  * Non-blocking: failure to fetch media never interrupts account verification.
  */
 export async function fetchInstagramUserMedia(accessToken: string): Promise<InstagramMediaItem[]> {
-  const fullFields = 'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count';
+  const fullFields =
+    'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count';
   const coreFields = 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp';
 
-  // 1. Try fetching with full fields including engagement
+  // 1. Try fetching with full fields including engagement metrics
   try {
     const res = await fetch(
-      `https://graph.instagram.com/v21.0/me/media?fields=${fullFields}&limit=12&access_token=${accessToken}`
+      `https://graph.instagram.com/v21.0/me/media?fields=${fullFields}&limit=25&access_token=${accessToken}`
     );
 
     if (res.ok) {
       const data = (await res.json()) as any;
-      const items = Array.isArray(data?.data) ? data.data : [];
-      console.log(`[Instagram Graph API] /me/media fetched ${items.length} media items with full fields.`);
+      let items = Array.isArray(data?.data) ? data.data : [];
+      console.log(`[Instagram Graph API] /me/media fetched ${items.length} raw media items.`);
 
-      return items.map((m: any) => ({
+      // Prioritize Reels/Videos and rank by balanced combination of engagement and recency
+      items.sort((a: any, b: any) => {
+        const isReelA = a.media_product_type === 'REELS' || a.media_type === 'VIDEO' ? 1 : 0;
+        const isReelB = b.media_product_type === 'REELS' || b.media_type === 'VIDEO' ? 1 : 0;
+        if (isReelA !== isReelB) return isReelB - isReelA;
+
+        const likesA = typeof a.like_count === 'number' ? a.like_count : 0;
+        const likesB = typeof b.like_count === 'number' ? b.like_count : 0;
+        const commentsA = typeof a.comments_count === 'number' ? a.comments_count : 0;
+        const commentsB = typeof b.comments_count === 'number' ? b.comments_count : 0;
+        const scoreA = likesA * 2 + commentsA * 4;
+        const scoreB = likesB * 2 + commentsB * 4;
+
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+
+        return scoreB + timeB / 10000000 - (scoreA + timeA / 10000000);
+      });
+
+      // Target top 12 relevant items
+      const selected = items.slice(0, 12);
+
+      return selected.map((m: any) => ({
         id: String(m.id),
         caption: m.caption || undefined,
         mediaType: m.media_type || 'VIDEO',
-        mediaProductType: m.media_product_type || undefined,
+        mediaProductType: m.media_product_type || (m.media_type === 'VIDEO' ? 'REELS' : 'FEED'),
         mediaUrl: m.media_url || undefined,
         permalink: m.permalink || undefined,
-        thumbnailUrl: m.thumbnail_url || m.media_url || undefined,
+        thumbnailUrl: m.thumbnail_url || (m.media_type === 'IMAGE' ? m.media_url : undefined),
         timestamp: m.timestamp || undefined,
-        likeCount: typeof m.like_count === 'number' ? m.like_count : undefined,
-        commentsCount: typeof m.comments_count === 'number' ? m.comments_count : undefined,
+        likeCount: typeof m.like_count === 'number' ? m.like_count : 0,
+        commentsCount: typeof m.comments_count === 'number' ? m.comments_count : 0,
+        viewsCount: typeof m.views === 'number' ? m.views : undefined,
       }));
     } else {
       const errorJson = (await res.json().catch(() => null)) as any;
       console.log(
-        `[Instagram Graph API] /me/media with full fields HTTP ${res.status}: ${errorJson?.error?.message || res.statusText}. Retrying with core fields...`
+        `[Instagram Graph API] /me/media with full fields HTTP ${res.status}: ${
+          errorJson?.error?.message || res.statusText
+        }. Retrying with core fields...`
       );
     }
   } catch (err) {
@@ -298,18 +324,25 @@ export async function fetchInstagramUserMedia(accessToken: string): Promise<Inst
       const items = Array.isArray(data?.data) ? data.data : [];
       console.log(`[Instagram Graph API] /me/media fallback fetched ${items.length} media items.`);
 
-      return items.map((m: any) => ({
+      return items.slice(0, 12).map((m: any) => ({
         id: String(m.id),
         caption: m.caption || undefined,
         mediaType: m.media_type || 'VIDEO',
+        mediaProductType: m.media_type === 'VIDEO' ? 'REELS' : 'FEED',
         mediaUrl: m.media_url || undefined,
         permalink: m.permalink || undefined,
-        thumbnailUrl: m.thumbnail_url || m.media_url || undefined,
+        thumbnailUrl: m.thumbnail_url || (m.media_type === 'IMAGE' ? m.media_url : undefined),
         timestamp: m.timestamp || undefined,
+        likeCount: 0,
+        commentsCount: 0,
       }));
     } else {
       const errData = (await fallbackRes.json().catch(() => null)) as any;
-      console.log(`[Instagram Graph API] /me/media fallback HTTP ${fallbackRes.status}: ${errData?.error?.message || fallbackRes.statusText}`);
+      console.log(
+        `[Instagram Graph API] /me/media fallback HTTP ${fallbackRes.status}: ${
+          errData?.error?.message || fallbackRes.statusText
+        }`
+      );
       return [];
     }
   } catch (coreErr) {

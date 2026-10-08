@@ -51,19 +51,29 @@ export function ReelCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
+  const [hasThumbnailError, setHasThumbnailError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const parsedIg = parseInstagramUrl(reel.reel_url || reel.video_url);
-  const targetUrl = parsedIg.isValid && parsedIg.canonicalUrl ? parsedIg.canonicalUrl : (reel.reel_url || reel.video_url || '');
+  const parsedIg = parseInstagramUrl(reel.reel_url || reel.permalink || reel.video_url);
+  const targetUrl =
+    parsedIg.isValid && parsedIg.canonicalUrl
+      ? parsedIg.canonicalUrl
+      : reel.permalink || reel.reel_url || reel.video_url || '';
   const isInstagram = Boolean(parsedIg.isValid || reel.instagram_media_id);
-  const formattedDate = formatDate(reel.created_at);
-  const thumbnail = reel.thumbnail_url || (reel.video_url?.startsWith('http') && !reel.video_url.includes('.mp4') ? reel.video_url : undefined);
+  const formattedDate = formatDate(reel.posted_at || reel.created_at);
+  const thumbnail =
+    reel.thumbnail_url ||
+    (reel.video_url?.startsWith('http') && !reel.video_url.includes('.mp4')
+      ? reel.video_url
+      : undefined);
 
   // Check if video_url is a direct playable media source (direct CDN video URL or mp4)
   const isPlayableDirectVideo = Boolean(
     reel.video_url &&
-    (reel.video_url.includes('.mp4') || reel.video_url.includes('fbcdn.net') || reel.video_url.includes('cdninstagram.com')) &&
-    !hasVideoError
+      (reel.video_url.includes('.mp4') ||
+        reel.video_url.includes('fbcdn.net') ||
+        reel.video_url.includes('cdninstagram.com')) &&
+      !hasVideoError
   );
 
   const handleTogglePlay = (e: React.MouseEvent) => {
@@ -115,7 +125,10 @@ export function ReelCard({
             loop
             playsInline
             onEnded={() => setIsPlaying(false)}
-            onError={() => setHasVideoError(true)}
+            onError={() => {
+              setHasVideoError(true);
+              setIsPlaying(false);
+            }}
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
               isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
             }`}
@@ -123,19 +136,31 @@ export function ReelCard({
         )}
 
         {/* Static Thumbnail / Poster */}
-        {thumbnail ? (
+        {thumbnail && !hasThumbnailError ? (
           <img
             src={thumbnail}
             alt={reel.title || 'Instagram Reel'}
+            onError={() => setHasThumbnailError(true)}
             className={`w-full h-full object-cover transition-transform duration-300 ${
               isPlaying ? 'opacity-0 pointer-events-none' : 'group-hover:scale-105'
             }`}
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-400 p-4 text-center">
-            <Play className="w-8 h-8 text-zinc-600 mb-2" />
-            <span className="text-[11px] font-mono">Instagram Reel</span>
+          <div className="w-full h-full flex flex-col items-center justify-between bg-gradient-to-b from-zinc-900 via-zinc-950 to-black text-zinc-400 p-4 text-center">
+            <div className="w-full pt-4 flex justify-center">
+              <div className="w-10 h-10 rounded-full bg-zinc-800/80 flex items-center justify-center border border-zinc-700">
+                <Play className="w-5 h-5 text-orange-400 ml-0.5" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs font-mono font-bold text-white block line-clamp-2">
+                {reel.title || 'Instagram Reel'}
+              </span>
+              <span className="text-[10px] font-mono text-zinc-500 block">
+                {likesDisplay ? `${likesDisplay} likes` : 'Verified Content'}
+              </span>
+            </div>
           </div>
         )}
 

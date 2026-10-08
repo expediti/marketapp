@@ -55,14 +55,14 @@ export function CreatorCard({ creator }: CreatorCardProps) {
           </div>
 
           {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified') ? (
-            <div className="flex items-center gap-1 text-[10px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-              <CheckCircle2 className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-              <span>IG Verified</span>
+            <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              <span>✓ Verified</span>
             </div>
           ) : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified' ? (
-            <div className="flex items-center gap-1 text-[10px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-              <CheckCircle2 className="w-3 h-3" />
-              <span>Verified</span>
+            <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              <span>✓ Verified</span>
             </div>
           ) : creator.verification_status === 'pending' ? (
             <div className="flex items-center gap-1 text-[10px] font-mono text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
@@ -127,21 +127,25 @@ export function CreatorCard({ creator }: CreatorCardProps) {
         {/* Metrics Row: Followers, Reach, Engagement */}
         <div className="flex items-center justify-between py-2 border-y border-[#ECECE6] dark:border-[#27272A] text-xs font-mono text-[#71717A] dark:text-[#A1A1AA] mb-4">
           <div>
-            <span className="font-bold text-[#121214] dark:text-white">{formatFollowers(creator.follower_count)}</span>
+            <span className="font-bold text-[#121214] dark:text-white">
+              {creator.follower_count > 0 ? formatFollowers(creator.follower_count) : '—'}
+            </span>
             <span className="text-[10px] ml-1 uppercase">
               {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified')
-                ? 'IG Verified'
-                : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified'
                 ? 'Verified'
-                : 'Self-Reported'}
+                : 'Followers'}
             </span>
           </div>
           <div className="text-center">
-            <span className="font-bold text-[#121214] dark:text-white">{(creator.average_reach / 1000).toFixed(0)}K</span>
+            <span className="font-bold text-[#121214] dark:text-white">
+              {creator.average_reach > 0 ? `${(creator.average_reach / 1000).toFixed(0)}K` : '—'}
+            </span>
             <span className="text-[10px] ml-1 uppercase">Reach</span>
           </div>
           <div className="text-right">
-            <span className="font-bold text-[#FF5416]">{creator.engagement_rate}%</span>
+            <span className="font-bold text-[#FF5416]">
+              {creator.engagement_rate > 0 ? `${creator.engagement_rate}%` : '—'}
+            </span>
             <span className="text-[10px] ml-1 uppercase">Eng.</span>
           </div>
         </div>

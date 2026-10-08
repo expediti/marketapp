@@ -1054,124 +1054,6 @@ export default function CreatorOnboardingPage() {
               Back
             </Button>
             <Button variant="primary" size="md" onClick={() => setStep(5)}>
-              <span>Next: Create Packages</span>
-              <ArrowRight className="w-4 h-4 ml-1.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 5: CREATE PACKAGES */}
-      {step === 5 && (
-        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <div>
-              <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Promotion Packages</h2>
-              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-                Define transparent deliverables and pricing for app and website founders.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" onClick={handleAddPackage}>
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              <span>Add Package</span>
-            </Button>
-          </div>
-
-          <div className="space-y-4">
-            {packages.map((pkg, idx) => (
-              <div
-                key={pkg.id}
-                className="p-4 bg-[#FBFBFA] dark:bg-zinc-900/60 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="editorial-label text-[#FF5416]">Package #{idx + 1}</span>
-                  <span className="font-mono font-bold text-[#121214] dark:text-white">
-                    ₹{pkg.price.toLocaleString('en-IN')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Package Name</label>
-                    <input
-                      type="text"
-                      value={pkg.name}
-                      onChange={(e) => {
-                        const updated = [...packages];
-                        updated[idx].name = e.target.value;
-                        setPackages(updated);
-                      }}
-                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Price (₹ INR)</label>
-                    <input
-                      type="number"
-                      value={pkg.price}
-                      onChange={(e) => {
-                        const updated = [...packages];
-                        updated[idx].price = Number(e.target.value);
-                        setPackages(updated);
-                      }}
-                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Delivery Time (Days)</label>
-                    <input
-                      type="number"
-                      value={pkg.delivery_days}
-                      onChange={(e) => {
-                        const updated = [...packages];
-                        updated[idx].delivery_days = Number(e.target.value);
-                        setPackages(updated);
-                      }}
-                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Revisions Allowed</label>
-                    <input
-                      type="number"
-                      value={pkg.revisions ?? 1}
-                      onChange={(e) => {
-                        const updated = [...packages];
-                        updated[idx].revisions = Number(e.target.value);
-                        setPackages(updated);
-                      }}
-                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-[#121214] dark:text-white block mb-1 text-xs">Description & Deliverables</label>
-                  <textarea
-                    rows={2}
-                    value={pkg.description}
-                    onChange={(e) => {
-                      const updated = [...packages];
-                      updated[idx].description = e.target.value;
-                      setPackages(updated);
-                    }}
-                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs text-[#121214] dark:text-white"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
-            <Button variant="outline" size="sm" onClick={() => setStep(4)}>
-              Back
-            </Button>
-            <Button variant="primary" size="md" onClick={() => setStep(6)}>
               <span>Next: Choose Your Work</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
@@ -1179,8 +1061,8 @@ export default function CreatorOnboardingPage() {
         </div>
       )}
 
-      {/* STEP 6: CHOOSE YOUR WORK (INSTAGRAM REEL SELECTION) */}
-      {step === 6 && (
+      {/* STEP 5: CHOOSE YOUR WORK (INSTAGRAM REEL SELECTION) */}
+      {step === 5 && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
             <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Choose Your Work</h2>
@@ -1351,6 +1233,124 @@ export default function CreatorOnboardingPage() {
             {reelUrlError && (
               <p className="text-xs text-red-600 dark:text-red-400 font-mono">{reelUrlError}</p>
             )}
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
+            <Button variant="outline" size="sm" onClick={() => setStep(4)}>
+              Back
+            </Button>
+            <Button variant="primary" size="md" onClick={() => setStep(6)}>
+              <span>Next: Promotion Packages</span>
+              <ArrowRight className="w-4 h-4 ml-1.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 6: CREATE PACKAGES & PUBLISH */}
+      {step === 6 && (
+        <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
+            <div>
+              <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Promotion Packages</h2>
+              <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
+                Define transparent deliverables and pricing for app and website founders.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleAddPackage}>
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              <span>Add Package</span>
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            {packages.map((pkg, idx) => (
+              <div
+                key={pkg.id}
+                className="p-4 bg-[#FBFBFA] dark:bg-zinc-900/60 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="editorial-label text-[#FF5416]">Package #{idx + 1}</span>
+                  <span className="font-mono font-bold text-[#121214] dark:text-white">
+                    ₹{pkg.price.toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Package Name</label>
+                    <input
+                      type="text"
+                      value={pkg.name}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].name = e.target.value;
+                        setPackages(updated);
+                      }}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-[#121214] dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Price (₹ INR)</label>
+                    <input
+                      type="number"
+                      value={pkg.price}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].price = Number(e.target.value);
+                        setPackages(updated);
+                      }}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Delivery Time (Days)</label>
+                    <input
+                      type="number"
+                      value={pkg.delivery_days}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].delivery_days = Number(e.target.value);
+                        setPackages(updated);
+                      }}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-[#121214] dark:text-white block mb-1">Revisions Allowed</label>
+                    <input
+                      type="number"
+                      value={pkg.revisions ?? 1}
+                      onChange={(e) => {
+                        const updated = [...packages];
+                        updated[idx].revisions = Number(e.target.value);
+                        setPackages(updated);
+                      }}
+                      className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded font-mono text-[#121214] dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-[#121214] dark:text-white block mb-1 text-xs">Description & Deliverables</label>
+                  <textarea
+                    rows={2}
+                    value={pkg.description}
+                    onChange={(e) => {
+                      const updated = [...packages];
+                      updated[idx].description = e.target.value;
+                      setPackages(updated);
+                    }}
+                    className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs text-[#121214] dark:text-white"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           {onboardingError && (

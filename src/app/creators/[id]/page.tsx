@@ -74,7 +74,7 @@ export default function CreatorDetailPage() {
   const storeCreator = getCreator(creatorId);
 
   useEffect(() => {
-    if (!storeCreator && isSupabaseConfigured && creatorId) {
+    if (isSupabaseConfigured && creatorId) {
       setIsFetchingDirect(true);
       Promise.all([
         supabase
@@ -86,7 +86,7 @@ export default function CreatorDetailPage() {
           .maybeSingle(),
         supabase.from('profiles').select('*').eq('id', creatorId).maybeSingle(),
         supabase.from('creator_packages').select('*').eq('creator_id', creatorId),
-        supabase.from('creator_reels').select('*').eq('creator_id', creatorId).eq('is_visible', true),
+        supabase.from('creator_reels').select('*').eq('creator_id', creatorId).eq('is_visible', true).order('sort_order', { ascending: true }),
       ])
         .then(([cpRes, profRes, pkgsRes, reelsRes]) => {
           if (cpRes.data) {
@@ -149,8 +149,17 @@ export default function CreatorDetailPage() {
                 description: r.description || undefined,
                 video_url: r.video_url,
                 reel_url: r.reel_url || undefined,
+                permalink: r.permalink || r.reel_url || undefined,
                 instagram_media_id: r.instagram_media_id || undefined,
                 thumbnail_url: r.thumbnail_url || undefined,
+                like_count: typeof r.like_count === 'number' ? r.like_count : undefined,
+                comments_count: typeof r.comments_count === 'number' ? r.comments_count : undefined,
+                view_count: typeof r.view_count === 'number' ? r.view_count : undefined,
+                views_count: typeof r.view_count === 'number' ? r.view_count : undefined,
+                media_type: r.media_type || undefined,
+                media_product_type: r.media_product_type || undefined,
+                posted_at: r.posted_at || undefined,
+                last_synced_at: r.last_synced_at || undefined,
                 type: r.type as any,
                 sort_order: r.sort_order || 0,
                 is_featured: r.is_featured || false,
@@ -164,9 +173,9 @@ export default function CreatorDetailPage() {
           setIsFetchingDirect(false);
         });
     }
-  }, [storeCreator, creatorId]);
+  }, [creatorId]);
 
-  const creator = storeCreator || dbCreator;
+  const creator = dbCreator || storeCreator;
 
   if (storeLoading || isFetchingDirect) {
     return (

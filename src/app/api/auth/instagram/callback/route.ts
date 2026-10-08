@@ -440,42 +440,53 @@ export async function GET(request: Request) {
 
       for (let idx = 0; idx < mediaItems.length; idx++) {
         const m = mediaItems[idx];
-        const title = m.caption ? (m.caption.length > 70 ? `${m.caption.slice(0, 67)}...` : m.caption) : `Instagram Reel #${idx + 1}`;
+        const title = m.caption
+          ? m.caption.length > 70
+            ? `${m.caption.slice(0, 67)}...`
+            : m.caption
+          : `Instagram Reel #${idx + 1}`;
         const description = m.caption || null;
-        const reelUrl = m.permalink || m.mediaUrl || null;
-        const videoUrl = m.permalink || m.mediaUrl || '';
-        const thumbnailUrl = m.thumbnailUrl || m.mediaUrl || null;
+        const permalink = m.permalink || null;
+        const reelUrl = m.permalink || null;
+        // Direct playable video CDN URL
+        const videoUrl = m.mediaUrl || m.permalink || '';
+        const thumbnailUrl = m.thumbnailUrl || (m.mediaType === 'IMAGE' ? m.mediaUrl : null);
 
         const existingId = existingMap.get(m.id);
+        const reelPayload = {
+          title,
+          description,
+          video_url: videoUrl,
+          reel_url: reelUrl,
+          permalink,
+          thumbnail_url: thumbnailUrl,
+          instagram_media_id: m.id,
+          media_type: m.mediaType || 'VIDEO',
+          media_product_type: m.mediaProductType || 'REELS',
+          like_count: m.likeCount ?? 0,
+          comments_count: m.commentsCount ?? 0,
+          view_count: m.viewsCount ?? 0,
+          posted_at: m.timestamp || null,
+          last_synced_at: now,
+          updated_at: now,
+        };
+
         if (existingId) {
           await serviceClient
             .from('creator_reels')
-            .update({
-              title,
-              description,
-              video_url: videoUrl,
-              reel_url: reelUrl,
-              thumbnail_url: thumbnailUrl,
-              sort_order: idx + 1,
-              updated_at: now,
-            })
+            .update(reelPayload as any)
             .eq('id', existingId);
         } else {
           await serviceClient
             .from('creator_reels')
             .insert({
+              ...reelPayload,
               creator_id: targetUserId,
-              title,
-              description,
-              video_url: videoUrl,
-              reel_url: reelUrl,
-              instagram_media_id: m.id,
-              thumbnail_url: thumbnailUrl,
               type: 'client_work',
               sort_order: idx + 1,
-              is_featured: idx === 0,
+              is_featured: existingMap.size === 0 && idx === 0,
               is_visible: true,
-            });
+            } as any);
         }
       }
 

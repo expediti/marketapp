@@ -340,6 +340,17 @@ export interface Database {
           is_visible: boolean;
           instagram_media_id: string | null;
           reel_url: string | null;
+          permalink: string | null;
+          like_count: number | null;
+          comments_count: number | null;
+          view_count: number | null;
+          reach: number | null;
+          shares_count: number | null;
+          saved_count: number | null;
+          media_type: string | null;
+          media_product_type: string | null;
+          posted_at: string | null;
+          last_synced_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -361,6 +372,17 @@ export interface Database {
           is_visible?: boolean;
           instagram_media_id?: string | null;
           reel_url?: string | null;
+          permalink?: string | null;
+          like_count?: number | null;
+          comments_count?: number | null;
+          view_count?: number | null;
+          reach?: number | null;
+          shares_count?: number | null;
+          saved_count?: number | null;
+          media_type?: string | null;
+          media_product_type?: string | null;
+          posted_at?: string | null;
+          last_synced_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -382,6 +404,17 @@ export interface Database {
           is_visible?: boolean;
           instagram_media_id?: string | null;
           reel_url?: string | null;
+          permalink?: string | null;
+          like_count?: number | null;
+          comments_count?: number | null;
+          view_count?: number | null;
+          reach?: number | null;
+          shares_count?: number | null;
+          saved_count?: number | null;
+          media_type?: string | null;
+          media_product_type?: string | null;
+          posted_at?: string | null;
+          last_synced_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1049,3 +1082,66 @@ export interface Database {
     };
   };
 }
+
+export type Tables<
+  PublicTableNameOrOptions extends
+    | keyof (Database['public']['Tables'])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions['schema']]['Tables'])
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions['schema']]['Tables'])[TableName] extends {
+      Row: infer R;
+    }
+    ? R
+    : never
+  : PublicTableNameOrOptions extends keyof (Database['public']['Tables'])
+    ? (Database['public']['Tables'])[PublicTableNameOrOptions] extends {
+        Row: infer R;
+      }
+      ? R
+      : never
+    : never;
+
+export type TablesInsert<
+  PublicTableNameOrOptions extends
+    | keyof (Database['public']['Tables'])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions['schema']]['Tables'])
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions['schema']]['Tables'])[TableName] extends {
+      Insert: infer I;
+    }
+    ? I
+    : never
+  : PublicTableNameOrOptions extends keyof (Database['public']['Tables'])
+    ? (Database['public']['Tables'])[PublicTableNameOrOptions] extends {
+        Insert: infer I;
+      }
+      ? I
+      : never
+    : never;
+
+export type TablesUpdate<
+  PublicTableNameOrOptions extends
+    | keyof (Database['public']['Tables'])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions['schema']]['Tables'])
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions['schema']]['Tables'])[TableName] extends {
+      Update: infer U;
+    }
+    ? U
+    : never
+  : PublicTableNameOrOptions extends keyof (Database['public']['Tables'])
+    ? (Database['public']['Tables'])[PublicTableNameOrOptions] extends {
+        Update: infer U;
+      }
+      ? U
+      : never
+    : never;

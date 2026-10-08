@@ -100,9 +100,18 @@ export interface CreatorReel {
   is_visible: boolean;
   instagram_media_id?: string | null;
   reel_url?: string | null;
+  permalink?: string | null;
   view_count?: number | null;
+  views_count?: number | null;
   like_count?: number | null;
   comments_count?: number | null;
+  reach?: number | null;
+  shares_count?: number | null;
+  saved_count?: number | null;
+  media_type?: string | null;
+  media_product_type?: string | null;
+  posted_at?: string | null;
+  last_synced_at?: string | null;
   created_at: string;
   updated_at?: string;
 }
