@@ -1,7 +1,7 @@
 import { getServerRuntimeSecret } from '@/lib/server/razorpay';
 
 export const INSTAGRAM_PRODUCTION_REDIRECT_URI =
-  'https://marketapp.expeditionthe0.workers.dev/api/auth/instagram/callback';
+  'https://marketmyidea.online/api/auth/instagram/callback';
 
 export interface InstagramCredentials {
   appId: string;
@@ -37,6 +37,10 @@ export interface InstagramMediaItem {
   timestamp?: string;
   likeCount?: number;
   commentsCount?: number;
+  viewsCount?: number;
+  reach?: number;
+  saved?: number;
+  shares?: number;
 }
 
 /**

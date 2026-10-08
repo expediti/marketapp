@@ -310,13 +310,13 @@ export default function CreatorDetailPage() {
                     : (creator.city || creator.profile?.city || 'India')}
                 </span>
                 {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified') ? (
-                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-                    <InstagramIcon className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                    <span>Instagram Verified {creator.instagram_username ? `@${creator.instagram_username}` : ''}</span>
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Verified {creator.instagram_username ? `@${creator.instagram_username}` : ''}</span>
                   </div>
                 ) : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified' ? (
-                  <div className="flex items-center gap-1 text-[11px] font-mono text-[#047857] dark:text-[#34D399] bg-[#ECFDF5] dark:bg-[#064E3B]/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-[#065F46]">
-                    <CheckCircle2 className="w-3 h-3" />
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Verified Creator</span>
                   </div>
                 ) : creator.verification_status === 'pending' ? (
@@ -325,7 +325,7 @@ export default function CreatorDetailPage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-[#71717A] dark:text-zinc-400 bg-[#F4F4F0] dark:bg-zinc-800 px-2 py-0.5 rounded border border-[#E5E5DE] dark:border-zinc-700">
-                    <span>Unverified • Self-Reported Metrics</span>
+                    <span>Unverified Profile</span>
                   </div>
                 )}
               </div>
@@ -386,29 +386,29 @@ export default function CreatorDetailPage() {
               <span>{formatNumber(creator.follower_count)}</span>
               {(creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified') && (
                 <span title="Meta Graph API Verified" className="inline-flex items-center">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 </span>
               )}
             </div>
             <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
               {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified')
-                ? 'IG Verified Followers'
-                : creator.verification_status === 'verified_manual' || creator.verification_status === 'verified'
-                ? 'Verified Followers'
-                : 'Self-Reported Followers'}
+                ? 'Instagram Followers'
+                : 'Followers'}
             </div>
           </div>
 
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
             <div className="font-mono text-xl sm:text-2xl font-bold text-[#121214] dark:text-white">
-              {formatNumber(creator.average_reach)}
+              {creator.average_reach > 0 ? formatNumber(creator.average_reach) : 'Connected'}
             </div>
-            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">Average Reach</div>
+            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
+              {creator.average_reach > 0 ? 'Average Reach' : 'Platform Reach'}
+            </div>
           </div>
 
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
             <div className="font-mono text-xl sm:text-2xl font-bold text-[#FF5416]">
-              {creator.engagement_rate}%
+              {creator.engagement_rate > 0 ? `${creator.engagement_rate}%` : 'Active'}
             </div>
             <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">Engagement</div>
           </div>
@@ -425,9 +425,9 @@ export default function CreatorDetailPage() {
       {/* TABS NAVIGATION */}
       <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-[#27272A] pb-2 font-mono text-xs overflow-x-auto">
         {[
-          { key: 'work', label: `Work Samples & Reels (${reels.length})`, icon: Film },
+          { key: 'work', label: `Work & Reels (${reels.length})`, icon: Film },
           { key: 'packages', label: `Packages (${creator.packages?.length || 0})`, icon: Package },
-          { key: 'audience', label: 'Audience Demographics', icon: Users },
+          { key: 'audience', label: 'Audience Intelligence', icon: Users },
           { key: 'about', label: 'About & Details', icon: Info },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -448,44 +448,105 @@ export default function CreatorDetailPage() {
         })}
       </div>
 
-      {/* TAB 1: WORK (RESPONSIVE REELS GRID) */}
-      {activeTab === 'work' && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <div>
-              <span className="editorial-label text-[#FF5416]">Content Samples</span>
-              <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-0.5">
-                Work & Video Reels
-              </h2>
-              <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-0.5">
-                Watch previous promotional videos, app walkthroughs, and sample reels.
-              </p>
-            </div>
-            <span className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
-              {reels.length} video{reels.length === 1 ? '' : 's'} available
-            </span>
-          </div>
+      {/* TAB 1: WORK (FEATURED REEL + MORE REELS GRID) */}
+      {activeTab === 'work' && (() => {
+        const visibleReels = reels.filter((r) => r.is_visible !== false);
+        const featuredReel = visibleReels.find((r) => r.is_featured) || (visibleReels.length > 0 ? visibleReels[0] : null);
+        const otherReels = featuredReel ? visibleReels.filter((r) => r.id !== featuredReel.id) : visibleReels;
 
-          {reels.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {reels.map((reel) => (
-                <div key={reel.id} className="w-full max-w-[300px] mx-auto sm:max-w-none">
-                  <ReelCard reel={reel} showCreatorInfo={false} />
-                  {reel.description && (
-                    <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-2 font-mono line-clamp-2">
-                      {reel.description}
-                    </p>
-                  )}
+        return (
+          <div className="space-y-8">
+            {featuredReel && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="editorial-label text-[#FF5416]">Primary Showcase</span>
+                    <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
+                    <h2 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                      Featured Reel
+                    </h2>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                    Primary Content Showcase
+                  </span>
                 </div>
-              ))}
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 shadow-sm">
+                  <div className="md:col-span-5 max-w-[280px] sm:max-w-[320px] mx-auto w-full">
+                    <ReelCard reel={featuredReel} showCreatorInfo={false} isFeatured={true} />
+                  </div>
+                  <div className="md:col-span-7 space-y-4 pt-2">
+                    <div>
+                      <span className="editorial-label text-[#FF5416]">Featured Selection</span>
+                      <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-1">
+                        {featuredReel.title}
+                      </h3>
+                      {featuredReel.description && (
+                        <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-2 leading-relaxed whitespace-pre-line">
+                          {featuredReel.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl space-y-2 text-xs font-mono">
+                      <div className="text-[#71717A] dark:text-zinc-400">
+                        This creator has designated this content sample as their primary collaboration style showcase.
+                      </div>
+                      <div className="pt-2 flex flex-wrap items-center gap-3">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openRequestModal()}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                          <span>Book Similar Promotion</span>
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Other Selected Reels */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
+                <div>
+                  <span className="editorial-label text-[#FF5416]">Content Portfolio</span>
+                  <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-0.5">
+                    {featuredReel ? 'More from Instagram' : 'Work & Video Reels'}
+                  </h2>
+                  <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-0.5">
+                    Previous promotional videos, app walkthroughs, and verified Instagram samples.
+                  </p>
+                </div>
+                <span className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
+                  {otherReels.length} video{otherReels.length === 1 ? '' : 's'} available
+                </span>
+              </div>
+
+              {otherReels.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {otherReels.map((reel) => (
+                    <div key={reel.id} className="w-full max-w-[300px] mx-auto sm:max-w-none">
+                      <ReelCard reel={reel} showCreatorInfo={false} />
+                      {reel.description && (
+                        <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-2 font-mono line-clamp-2">
+                          {reel.description}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : !featuredReel ? (
+                <div className="p-12 text-center bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl text-xs font-mono text-[#71717A] dark:text-zinc-400">
+                  Instagram content will appear once connected and synced.
+                </div>
+              ) : null}
             </div>
-          ) : (
-            <div className="p-12 text-center bg-white dark:bg-[#121214] border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-2xl text-xs font-mono text-[#71717A]">
-              Work samples coming soon.
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* TAB 2: PACKAGES */}
       {activeTab === 'packages' && (
@@ -513,16 +574,16 @@ export default function CreatorDetailPage() {
         </div>
       )}
 
-      {/* TAB 3: AUDIENCE DEMOGRAPHICS */}
+      {/* TAB 3: AUDIENCE INTELLIGENCE */}
       {activeTab === 'audience' && (
         <div className="space-y-6">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <span className="editorial-label text-[#FF5416]">Audience Insights</span>
+            <span className="editorial-label text-[#FF5416]">Audience Intelligence</span>
             <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-0.5">
-              Follower Distribution & Locations
+              Demographics & Reach Analysis
             </h2>
             <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-0.5">
-              Audience demographics to verify reach alignment for your app.
+              Audience breakdown to verify target user alignment for your app or service.
             </p>
           </div>
 
@@ -530,43 +591,55 @@ export default function CreatorDetailPage() {
             {/* Top Locations */}
             <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 space-y-4">
               <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Top Cities</h3>
-              <div className="space-y-3">
-                {creator.audience_locations.map((loc) => (
-                  <div key={loc.city} className="space-y-1">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span className="text-[#121214] dark:text-white font-medium">{loc.city}</span>
-                      <span className="text-[#71717A] dark:text-[#A1A1AA]">{loc.percentage}%</span>
+              {creator.audience_locations && creator.audience_locations.length > 0 ? (
+                <div className="space-y-3">
+                  {creator.audience_locations.map((loc) => (
+                    <div key={loc.city} className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono">
+                        <span className="text-[#121214] dark:text-white font-medium">{loc.city}</span>
+                        <span className="text-[#71717A] dark:text-[#A1A1AA]">{loc.percentage}%</span>
+                      </div>
+                      <div className="w-full bg-[#F4F4F0] dark:bg-[#27272A] h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-[#FF5416] h-full rounded-full transition-all duration-500"
+                          style={{ width: `${loc.percentage}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-[#F4F4F0] dark:bg-[#27272A] h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-[#FF5416] h-full rounded-full"
-                        style={{ width: `${loc.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs font-mono text-[#71717A] dark:text-zinc-400 py-4 text-center">
+                  Location insights available upon verified connection.
+                </p>
+              )}
             </div>
 
             {/* Age Distribution */}
             <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 space-y-4">
               <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Age Distribution</h3>
-              <div className="space-y-3">
-                {Object.entries(creator.audience_age).map(([range, pct]) => (
-                  <div key={range} className="space-y-1">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span className="text-[#121214] dark:text-white font-medium">{range} years</span>
-                      <span className="text-[#71717A] dark:text-[#A1A1AA]">{pct}%</span>
+              {creator.audience_age && Object.keys(creator.audience_age).length > 0 ? (
+                <div className="space-y-3">
+                  {Object.entries(creator.audience_age).map(([range, pct]) => (
+                    <div key={range} className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono">
+                        <span className="text-[#121214] dark:text-white font-medium">{range} years</span>
+                        <span className="text-[#71717A] dark:text-[#A1A1AA]">{pct}%</span>
+                      </div>
+                      <div className="w-full bg-[#F4F4F0] dark:bg-[#27272A] h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-[#121214] dark:bg-white h-full rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-[#F4F4F0] dark:bg-[#27272A] h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-[#121214] dark:bg-white h-full rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs font-mono text-[#71717A] dark:text-zinc-400 py-4 text-center">
+                  Age insights available upon verified connection.
+                </p>
+              )}
             </div>
 
             {/* Performance Stats */}
@@ -574,21 +647,23 @@ export default function CreatorDetailPage() {
               <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Reach Intelligence</h3>
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Average Reach</span>
+                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Follower Reach</span>
                   <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                    {formatNumber(creator.average_reach)}
+                    {formatNumber(creator.follower_count)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Estimated Views</span>
+                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Average Reach</span>
                   <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                    {formatNumber(Math.round(creator.average_reach * 1.35))}
+                    {creator.average_reach > 0 ? formatNumber(creator.average_reach) : 'Available via IG'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
                   <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Gender Split</span>
                   <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                    {creator.audience_gender.female}% F / {creator.audience_gender.male}% M
+                    {creator.audience_gender?.female || creator.audience_gender?.male
+                      ? `${creator.audience_gender.female || 0}% F / ${creator.audience_gender.male || 0}% M`
+                      : 'Not specified'}
                   </span>
                 </div>
               </div>

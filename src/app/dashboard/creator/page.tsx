@@ -502,81 +502,6 @@ function CreatorDashboardContent() {
       ? completedOrders
       : creatorOrders;
 
-  const handleUploadReel = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadError(null);
-    setIsUploading(true);
-    setUploadProgress(10);
-
-    const validation = reelStorageService.validateReelFile(file);
-    if (!validation.valid) {
-      setUploadError(validation.error || 'Invalid file format');
-      setIsUploading(false);
-      setUploadProgress(0);
-      return;
-    }
-
-    const res = await reelStorageService.uploadReel(file, creatorId, (pct) =>
-      setUploadProgress(pct)
-    );
-    if (!res.success || !res.videoUrl) {
-      setUploadError(res.error || 'Failed to upload video');
-      setIsUploading(false);
-      setUploadProgress(0);
-      return;
-    }
-
-    const reelPayload = {
-      creator_id: creatorId,
-      title: newReelTitle.trim() || file.name.replace(/\.[^/.]+$/, ''),
-      video_url: res.videoUrl,
-      storage_path: res.storagePath,
-      mime_type: file.type,
-      file_size_bytes: file.size,
-      type: newReelType,
-      sort_order: reels.length + 1,
-      is_featured: reels.length === 0,
-      is_visible: true,
-    };
-
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('creator_reels')
-        .insert(reelPayload)
-        .select('*')
-        .single();
-
-      if (!error && data) {
-        setReels((prev) => [data as unknown as CreatorReel, ...prev]);
-      } else {
-        setReels((prev) => [
-          {
-            ...reelPayload,
-            id: `reel_${Date.now()}`,
-            created_at: new Date().toISOString(),
-          },
-          ...prev,
-        ]);
-      }
-    } else {
-      setReels((prev) => [
-        {
-          ...reelPayload,
-          id: `reel_${Date.now()}`,
-          created_at: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-    }
-
-    setNewReelTitle('');
-    setIsUploading(false);
-    setUploadProgress(0);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   const handleDeleteReel = async (reelId: string) => {
     if (isSupabaseConfigured) {
       await supabase.from('creator_reels').delete().eq('id', reelId).eq('creator_id', creatorId);
@@ -590,14 +515,26 @@ function CreatorDashboardContent() {
     const nextFeatured = !current.is_featured;
 
     if (isSupabaseConfigured) {
+      if (nextFeatured) {
+        // Clear featured from all other reels
+        await supabase
+          .from('creator_reels')
+          .update({ is_featured: false })
+          .eq('creator_id', creatorId);
+      }
       await supabase
         .from('creator_reels')
-        .update({ is_featured: nextFeatured })
+        .update({ is_featured: nextFeatured, is_visible: true })
         .eq('id', reelId)
         .eq('creator_id', creatorId);
     }
     setReels((prev) =>
-      prev.map((r) => (r.id === reelId ? { ...r, is_featured: nextFeatured } : r))
+      prev.map((r) => {
+        if (r.id === reelId) {
+          return { ...r, is_featured: nextFeatured, is_visible: nextFeatured ? true : r.is_visible };
+        }
+        return nextFeatured ? { ...r, is_featured: false } : r;
+      })
     );
   };
 
@@ -1597,24 +1534,6 @@ function CreatorDashboardContent() {
                   <InstagramIcon className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
                   <span>{isAddingReelUrl ? 'Cancel' : 'Add Instagram Reel'}</span>
                 </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  className="hidden"
-                  onChange={handleUploadReel}
-                  disabled={isUploading}
-                />
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1" />
-                  <span>{isUploading ? `Uploading (${uploadProgress}%)` : 'Upload MP4'}</span>
-                </Button>
               </div>
             </div>
 
@@ -1677,7 +1596,7 @@ function CreatorDashboardContent() {
 
             {reels.length === 0 ? (
               <p className="text-xs text-[#71717A] text-center py-6 border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-lg">
-                No showcase reels added yet. Add Instagram Reel URLs or upload short MP4 clips to display on your profile.
+                No showcase reels added yet. Synced Instagram Reels will appear here, or you can add an Instagram Reel link above.
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">

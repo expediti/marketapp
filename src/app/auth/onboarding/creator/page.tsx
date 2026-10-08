@@ -184,6 +184,17 @@ export default function CreatorOnboardingPage() {
               setPayoutUpiId(creatorProf.payout_upi_id);
             }
           }
+
+          // Fetch any existing/synced Reels for this creator
+          const { data: creatorReelsData } = await supabase
+            .from('creator_reels')
+            .select('*')
+            .eq('creator_id', user.id)
+            .order('sort_order', { ascending: true });
+
+          if (creatorReelsData && creatorReelsData.length > 0) {
+            setReels(creatorReelsData as unknown as CreatorReel[]);
+          }
         }
       } catch (err) {
         console.error('Error fetching user for onboarding:', err);
@@ -231,11 +242,8 @@ export default function CreatorOnboardingPage() {
     },
   ]);
 
-  // Step 6: Show Your Work (Reel Upload - Max 19MB)
+  // Step 6: Choose Your Work (Synced Instagram Reels)
   const [reels, setReels] = useState<CreatorReel[]>([]);
-  const [isUploadingReel, setIsUploadingReel] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [newReelTitle, setNewReelTitle] = useState('');
   const [newReelType, setNewReelType] = useState<ReelType>('client_work');
 
@@ -258,58 +266,6 @@ export default function CreatorOnboardingPage() {
       setProfileImage(res.imageUrl);
     }
     setIsUploadingAvatar(false);
-  };
-
-  const handleReelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadError(null);
-    setIsUploadingReel(true);
-    setUploadProgress(10);
-
-    // Pre-validation of 19MB limit & video format
-    const validation = reelStorageService.validateReelFile(file);
-    if (!validation.valid) {
-      setUploadError(validation.error || 'Invalid video file');
-      setIsUploadingReel(false);
-      setUploadProgress(0);
-      return;
-    }
-
-    const uploadRes = await reelStorageService.uploadReel(
-      file,
-      'temp_onboarding',
-      (pct) => setUploadProgress(pct)
-    );
-
-    if (!uploadRes.success || !uploadRes.videoUrl) {
-      setUploadError(uploadRes.error || 'Failed to upload video');
-      setIsUploadingReel(false);
-      setUploadProgress(0);
-      return;
-    }
-
-    const newReel: CreatorReel = {
-      id: `reel_${Date.now()}`,
-      creator_id: 'temp',
-      title: newReelTitle.trim() || file.name.replace(/\.[^/.]+$/, ''),
-      video_url: uploadRes.videoUrl,
-      storage_path: uploadRes.storagePath,
-      mime_type: file.type,
-      file_size_bytes: file.size,
-      type: newReelType,
-      sort_order: reels.length + 1,
-      is_featured: reels.length === 0,
-      is_visible: true,
-      created_at: new Date().toISOString(),
-    };
-
-    setReels([...reels, newReel]);
-    setNewReelTitle('');
-    setIsUploadingReel(false);
-    setUploadProgress(0);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeReel = (reelId: string) => {
@@ -958,20 +914,17 @@ export default function CreatorOnboardingPage() {
         </div>
       )}
 
-      {/* STEP 4: AUDIENCE METRICS & INSTAGRAM (OPTIONAL) */}
+          {/* STEP 4: INSTAGRAM VERIFICATION */}
       {step === 4 && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
             <div className="flex items-center gap-2">
               <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
-                Audience Reach & Metrics
+                Instagram Connection & Verification
               </h2>
-              <span className="text-[11px] font-mono text-[#71717A] bg-[#F4F4F0] dark:bg-zinc-800 px-2 py-0.5 rounded border border-[#E5E5DE] dark:border-zinc-700">
-                Instagram Optional
-              </span>
             </div>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-              Enter your follower and audience metrics. You can optionally connect Instagram for automatic verification or enter your numbers manually.
+              Connect your professional Instagram creator or business account to automatically verify your identity, follower metrics, and showcase Reels.
             </p>
           </div>
 
@@ -981,51 +934,55 @@ export default function CreatorOnboardingPage() {
               <div className="text-xs text-amber-900 dark:text-amber-200 space-y-0.5">
                 <p className="font-semibold">Instagram Connection Notice</p>
                 <p>
-                  Instagram couldn&apos;t be connected right now ({igError}). You can enter your metrics manually below and finish onboarding, or connect Instagram anytime later from your Settings.
+                  Instagram couldn&apos;t be connected ({igError}). You can proceed to complete your profile and reconnect anytime from your creator settings.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Optional Instagram Connect Card */}
-          <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
-                  <InstagramIcon className="w-5 h-5" />
+          {/* Instagram Connect & Status Card */}
+          <div className="p-5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                  <InstagramIcon className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="text-xs font-bold text-[#121214] dark:text-white font-mono">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-[#121214] dark:text-white font-mono">
                       {isInstagramConnected
                         ? `@${instagramUsername || 'connected'}`
                         : 'Instagram Verification'}
                     </h4>
                     {isInstagramConnected && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5416]" />
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        <span>Verified</span>
+                      </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                  <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
                     {isInstagramConnected
-                      ? 'Meta Graph API Verified & Connected'
+                      ? 'Authenticated via Meta Graph API. Your metrics and Reels are automatically synced.'
                       : (currentUser?.email || '').toLowerCase().trim() === 'khormasti104@gmail.com'
-                      ? 'Connect your professional creator account for verified badges.'
-                      : 'Coming soon — Instagram verification is currently being finalized.'}
-                  </span>
+                      ? 'Connect your professional creator account for instant verification.'
+                      : 'Instagram verification is currently in pilot access.'}
+                  </p>
                 </div>
               </div>
 
               <div>
                 {isInstagramConnected ? (
-                  <span className="text-xs px-2.5 py-1 rounded bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 font-mono font-medium border border-green-200 dark:border-green-800">
-                    Verified ✓
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-mono text-xs font-semibold border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Connected</span>
                   </span>
                 ) : (currentUser?.email || '').toLowerCase().trim() === 'khormasti104@gmail.com' ? (
                   <a
                     href="/api/auth/instagram/authorize?returnTo=%2Fauth%2Fonboarding%2Fcreator"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold font-mono transition-colors shadow-sm"
                   >
-                    <InstagramIcon className="w-3.5 h-3.5" />
+                    <InstagramIcon className="w-4 h-4" />
                     <span>Connect Instagram</span>
                   </a>
                 ) : (
@@ -1034,76 +991,59 @@ export default function CreatorOnboardingPage() {
                     disabled
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#E5E5DE] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 text-xs font-semibold font-mono cursor-not-allowed border border-[#D4D4CE] dark:border-zinc-700"
                   >
-                    <span>Coming Soon</span>
+                    <span>Pilot Access Only</span>
                   </button>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Core Metrics Entry (Self-Declared or Verified) */}
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-[#121214] dark:text-white uppercase tracking-wider">
-                Platform Performance Metrics
-              </span>
-              <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
-                {isInstagramConnected ? 'Source: Meta Graph API (Verified)' : 'Source: Self-Declared (Manual)'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Followers Count <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  value={followerCount}
-                  onChange={(e) => setFollowerCount(Number(e.target.value) || 0)}
-                  placeholder="e.g. 15000"
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
-                />
-                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
-                  Total followers across platforms
+            {/* Sourced Metrics Info */}
+            <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3 bg-white dark:bg-zinc-800/60 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                <span className="text-[10px] uppercase font-mono tracking-wider text-[#71717A] dark:text-zinc-400 block">
+                  Followers
+                </span>
+                <span className="font-mono text-sm font-bold text-[#121214] dark:text-white mt-0.5 block">
+                  {isInstagramConnected && followerCount > 0
+                    ? followerCount.toLocaleString('en-IN')
+                    : isInstagramConnected
+                    ? 'Synced from API'
+                    : 'Requires Instagram'}
+                </span>
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-500 mt-0.5 block">
+                  {isInstagramConnected ? 'Meta API Verified' : 'Auto-fetched on connection'}
                 </span>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Average Reach (Per Reel)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={averageReach}
-                  onChange={(e) => setAverageReach(Number(e.target.value) || 0)}
-                  placeholder="e.g. 8500"
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
-                />
-                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
-                  Estimated average views / impressions
+              <div className="p-3 bg-white dark:bg-zinc-800/60 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                <span className="text-[10px] uppercase font-mono tracking-wider text-[#71717A] dark:text-zinc-400 block">
+                  Average Reach
+                </span>
+                <span className="font-mono text-sm font-bold text-[#121214] dark:text-white mt-0.5 block">
+                  {isInstagramConnected && averageReach > 0
+                    ? averageReach.toLocaleString('en-IN')
+                    : isInstagramConnected
+                    ? 'Calculated from media'
+                    : 'Requires Instagram'}
+                </span>
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-500 mt-0.5 block">
+                  {isInstagramConnected ? 'Meta API Verified' : 'Auto-fetched on connection'}
                 </span>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Engagement Rate (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={engagementRate}
-                  onChange={(e) => setEngagementRate(Number(e.target.value) || 0)}
-                  placeholder="e.g. 4.5"
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
-                />
-                <span className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1 block">
-                  Average likes & comments / views ratio
+              <div className="p-3 bg-white dark:bg-zinc-800/60 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                <span className="text-[10px] uppercase font-mono tracking-wider text-[#71717A] dark:text-zinc-400 block">
+                  Engagement Rate
+                </span>
+                <span className="font-mono text-sm font-bold text-[#121214] dark:text-white mt-0.5 block">
+                  {isInstagramConnected && engagementRate > 0
+                    ? `${engagementRate.toFixed(1)}%`
+                    : isInstagramConnected
+                    ? 'Calculated from media'
+                    : 'Requires Instagram'}
+                </span>
+                <span className="text-[10px] text-[#71717A] dark:text-zinc-500 mt-0.5 block">
+                  {isInstagramConnected ? 'Meta API Verified' : 'Auto-fetched on connection'}
                 </span>
               </div>
             </div>
@@ -1232,171 +1172,193 @@ export default function CreatorOnboardingPage() {
               Back
             </Button>
             <Button variant="primary" size="md" onClick={() => setStep(6)}>
-              <span>Next: Show Your Work (Upload Reel)</span>
+              <span>Next: Choose Your Work</span>
               <ArrowRight className="w-4 h-4 ml-1.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* STEP 6: SHOW YOUR WORK (19MB REEL UPLOAD) */}
+      {/* STEP 6: CHOOSE YOUR WORK (INSTAGRAM REEL SELECTION) */}
       {step === 6 && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-6 sm:p-8 space-y-6 shadow-sm">
           <div className="border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
-            <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Show Your Work</h2>
+            <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">Choose Your Work</h2>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-              Upload at least one short reel sample (existing brand campaign or creative demo). Max file size: 19 MB.
+              Your recent Instagram Reels are fetched automatically. Choose which ones you want businesses to see on your profile, and select one primary Featured Reel.
             </p>
           </div>
 
-          {/* Current Reels Preview */}
-          {reels.length > 0 && (
-            <div className="space-y-3">
-              <span className="text-xs font-semibold text-[#121214] dark:text-white block">Uploaded Video Samples:</span>
-              {reels.map((reel) => (
-                <div
-                  key={reel.id}
-                  className="flex items-center justify-between p-3.5 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-16 bg-black rounded overflow-hidden relative shrink-0">
-                      <ReelVideo src={reel.video_url} autoPlay={true} loop={true} muted={true} playsInline={true} className="w-full h-full" />
-                    </div>
+          {/* Reels Selection Grid */}
+          {reels.length > 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-semibold text-[#121214] dark:text-white">
+                  Fetched Reels ({reels.length})
+                </span>
+                <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                  {reels.filter((r) => r.is_visible !== false).length} visible •{' '}
+                  {reels.find((r) => r.is_featured)?.title || '1 featured'}
+                </span>
+              </div>
 
-                    <div>
-                      <h4 className="font-mono text-xs font-bold text-[#121214] dark:text-white">{reel.title}</h4>
-                      <span className="text-[10px] font-mono text-[#71717A] dark:text-zinc-400 block mt-0.5">
-                        {reel.file_size_bytes ? `${(reel.file_size_bytes / (1024 * 1024)).toFixed(1)} MB` : '19MB limit verified'}
-                      </span>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {reels.map((reel) => {
+                  const isFeatured = Boolean(reel.is_featured);
+                  const isVisible = reel.is_visible !== false;
 
-                  <button
-                    type="button"
-                    onClick={() => removeReel(reel.id)}
-                    className="p-1.5 text-[#71717A] hover:text-red-600 transition-colors"
-                    aria-label="Remove reel"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                  return (
+                    <div
+                      key={reel.id}
+                      className={`relative rounded-xl border p-3 flex flex-col justify-between transition-all ${
+                        isFeatured
+                          ? 'border-[#FF5416] bg-[#FFF2EC]/30 dark:bg-[#FF5416]/10 ring-1 ring-[#FF5416]'
+                          : isVisible
+                          ? 'border-[#E5E5DE] dark:border-zinc-700 bg-[#FBFBFA] dark:bg-zinc-900/80'
+                          : 'border-[#E5E5DE]/60 dark:border-zinc-800 bg-[#F4F4F0]/40 dark:bg-zinc-950/40 opacity-60'
+                      }`}
+                    >
+                      <div className="flex gap-3">
+                        <div className="w-16 h-24 bg-black rounded-lg overflow-hidden shrink-0 relative">
+                          <ReelVideo
+                            src={reel.video_url || reel.reel_url || ''}
+                            poster={reel.thumbnail_url}
+                            autoPlay={false}
+                            loop={false}
+                            muted={true}
+                            playsInline={true}
+                            className="w-full h-full object-cover"
+                          />
+                          {isFeatured && (
+                            <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-[#FF5416] text-white text-[9px] font-mono font-bold tracking-wider uppercase shadow">
+                              Featured
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <h4 className="font-bold text-xs text-[#121214] dark:text-white line-clamp-2">
+                            {reel.title || 'Instagram Reel'}
+                          </h4>
+                          {reel.view_count !== undefined && reel.view_count !== null && (
+                            <span className="text-[11px] font-mono text-[#71717A] dark:text-zinc-400 block">
+                              {reel.view_count.toLocaleString('en-IN')} views
+                            </span>
+                          )}
+                          {reel.like_count !== undefined && reel.like_count !== null && (
+                            <span className="text-[10px] font-mono text-[#71717A] dark:text-zinc-500 block">
+                              {reel.like_count.toLocaleString('en-IN')} likes
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2.5 mt-2 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between text-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReels(
+                              reels.map((r) => ({
+                                ...r,
+                                is_featured: r.id === reel.id,
+                                is_visible: r.id === reel.id ? true : r.is_visible,
+                              }))
+                            );
+                          }}
+                          className={`px-2 py-1 rounded text-[11px] font-mono font-medium transition-colors ${
+                            isFeatured
+                              ? 'bg-[#FF5416] text-white'
+                              : 'bg-[#F4F4F0] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-300 hover:text-black dark:hover:text-white'
+                          }`}
+                        >
+                          {isFeatured ? '★ Featured' : 'Set as Featured'}
+                        </button>
+
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] font-mono text-[#71717A] dark:text-zinc-400">
+                          <input
+                            type="checkbox"
+                            checked={isVisible}
+                            disabled={isFeatured}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setReels(
+                                reels.map((r) =>
+                                  r.id === reel.id ? { ...r, is_visible: checked } : r
+                                )
+                              );
+                            }}
+                            className="rounded border-zinc-300 text-[#FF5416] focus:ring-[#FF5416]"
+                          />
+                          <span>Show in Portfolio</span>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 border border-dashed border-[#E5E5DE] dark:border-zinc-700 rounded-xl text-center space-y-3 bg-[#FBFBFA] dark:bg-zinc-900/40">
+              <div className="w-12 h-12 mx-auto rounded-full bg-[#FFF2EC] dark:bg-[#FF5416]/10 flex items-center justify-center text-[#FF5416]">
+                <InstagramIcon className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-[#121214] dark:text-white font-mono">
+                  No Instagram Reels Synced Yet
+                </h4>
+                <p className="text-xs text-[#71717A] dark:text-zinc-400 max-w-md mx-auto">
+                  Connect your Instagram in Step 4 to automatically fetch your recent Reels, or add an Instagram Reel link directly below.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Reel Upload Component with 19MB Enforcement */}
-          <div className="p-5 bg-[#F4F4F0]/60 dark:bg-zinc-900/60 border border-dashed border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="editorial-label text-[#FF5416]">Upload Reel (Max 19 MB)</span>
-              <span className="text-[11px] font-mono text-zinc-500">Short-form vertical video</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="font-semibold text-[#121214] dark:text-white block mb-1">Reel Title / Focus</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Fintech App UI Walkthrough"
-                  value={newReelTitle}
-                  onChange={(e) => setNewReelTitle(e.target.value)}
-                  className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-[#121214] dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-[#121214] dark:text-white block mb-1">Content Sample Type</label>
-                <select
-                  value={newReelType}
-                  onChange={(e) => setNewReelType(e.target.value as ReelType)}
-                  className="w-full py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md font-mono text-xs text-[#121214] dark:text-white"
-                >
-                  <option value="client_work">Promotional Campaign</option>
-                  <option value="demo">Sample / Demo Reel</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Upload Button & Progress */}
-            <div className="space-y-3 pt-2">
+          {/* Add Instagram Reel Link directly */}
+          <div className="p-4 bg-[#F4F4F0]/60 dark:bg-zinc-900/60 border border-[#E5E5DE] dark:border-zinc-700 rounded-xl space-y-2">
+            <span className="text-xs font-semibold text-[#121214] dark:text-white flex items-center gap-1.5">
+              <InstagramIcon className="w-3.5 h-3.5 text-[#FF5416]" />
+              <span>Add Specific Instagram Reel by URL</span>
+            </span>
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/mp4,video/webm,video/quicktime"
-                onChange={handleReelUpload}
-                className="hidden"
-                id="reel-file-upload-step"
+                type="text"
+                placeholder="Reel Title (e.g. App Walkthrough)"
+                value={newReelTitle}
+                onChange={(e) => setNewReelTitle(e.target.value)}
+                className="w-full sm:w-1/3 py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white"
               />
-
-              <div className="flex flex-col sm:flex-row items-center gap-3">
-                <label
-                  htmlFor="reel-file-upload-step"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#FF5416] text-white hover:bg-[#E04408] text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{isUploadingReel ? `Uploading (${uploadProgress}%)...` : 'Select Short Video (MP4 / WebM)'}</span>
-                </label>
-
-                <span className="text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                  Strictly under 19 MB • 9:16 vertical recommended
-                </span>
-              </div>
-
-              {isUploadingReel && (
-                <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-1.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#FF5416] h-full transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              )}
-
-              {uploadError && (
-                <p className="text-xs text-red-600 dark:text-red-400 font-mono flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>{uploadError}</span>
-                </p>
-              )}
-
-              {/* Or Add Instagram Reel Link directly without video file upload */}
-              <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 space-y-2">
-                <span className="text-xs font-semibold text-[#121214] dark:text-white flex items-center gap-1.5">
-                  <InstagramIcon className="w-3.5 h-3.5 text-[#FF5416]" />
-                  <span>Or Add Instagram Reel Link</span>
-                </span>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="https://www.instagram.com/reel/..."
-                    value={instagramReelUrl}
-                    onChange={(e) => {
-                      setInstagramReelUrl(e.target.value);
-                      if (reelUrlError) setReelUrlError(null);
-                    }}
-                    className="flex-1 py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddInstagramReel}
-                    disabled={!instagramReelUrl.trim()}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    <span>Add Reel</span>
-                  </Button>
-                </div>
-                {reelUrlError && (
-                  <p className="text-xs text-red-600 dark:text-red-400 font-mono">{reelUrlError}</p>
-                )}
-              </div>
-              {onboardingError && (
-                <div className="p-3.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{onboardingError}</span>
-                </div>
-              )}
+              <input
+                type="url"
+                placeholder="https://www.instagram.com/reel/..."
+                value={instagramReelUrl}
+                onChange={(e) => {
+                  setInstagramReelUrl(e.target.value);
+                  if (reelUrlError) setReelUrlError(null);
+                }}
+                className="flex-1 py-2 px-3 bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md text-xs text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddInstagramReel}
+                disabled={!instagramReelUrl.trim()}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                <span>Add Reel</span>
+              </Button>
             </div>
+            {reelUrlError && (
+              <p className="text-xs text-red-600 dark:text-red-400 font-mono">{reelUrlError}</p>
+            )}
           </div>
+
+          {onboardingError && (
+            <div className="p-3.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{onboardingError}</span>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-[#27272A]">
             <Button variant="outline" size="sm" onClick={() => setStep(5)} disabled={isSaving}>

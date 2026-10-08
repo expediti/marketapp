@@ -100,7 +100,7 @@ function renderErrorPage(step: string, errorDetails: string, contextData: Record
 
 /**
  * GET /api/auth/instagram/callback
- * Production Callback URL: https://marketapp.expeditionthe0.workers.dev/api/auth/instagram/callback
+ * Production Callback URL: https://marketmyidea.online/api/auth/instagram/callback
  */
 export async function GET(request: Request) {
   const logPrefix = `[Instagram Callback ${INSTAGRAM_CALLBACK_VERSION}]`;
