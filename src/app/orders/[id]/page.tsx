@@ -321,7 +321,7 @@ export default function OrderWorkspacePage() {
           {showEvents && (
             <div className="p-4 border-t border-[#ECECE6] dark:border-zinc-800 space-y-2 text-xs">
               {(!order.events || order.events.length === 0) ? (
-                <p className="text-[#71717A] text-center py-2">No activity events recorded yet.</p>
+                <p className="text-[#71717A] dark:text-zinc-400 text-center py-2">No activity events recorded yet.</p>
               ) : (
                 order.events.map((ev) => (
                   <div
@@ -330,9 +330,9 @@ export default function OrderWorkspacePage() {
                   >
                     <div>
                       <span className="font-semibold text-[#121214] dark:text-white">{ev.to_status}</span>
-                      {ev.reason && <p className="text-[#71717A] mt-0.5">{ev.reason}</p>}
+                      {ev.reason && <p className="text-[#71717A] dark:text-zinc-400 mt-0.5">{ev.reason}</p>}
                     </div>
-                    <span className="text-[10px] text-[#A1A1AA] shrink-0">
+                    <span className="text-[10px] text-[#A1A1AA] dark:text-zinc-500 shrink-0">
                       {new Date(ev.created_at).toLocaleDateString('en-IN')}
                     </span>
                   </div>

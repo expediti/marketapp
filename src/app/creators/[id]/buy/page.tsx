@@ -97,16 +97,16 @@ export default function PackagePurchasePage() {
       <div className="space-y-4">
         <Link
           href={`/creators/${creator.user_id}`}
-          className="inline-flex items-center gap-1.5 text-xs font-mono text-[#71717A] hover:text-[#121214]"
+          className="inline-flex items-center gap-1.5 text-xs font-mono text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to {creator.profile?.display_name}</span>
         </Link>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
           <div>
             <span className="editorial-label text-[#FF5416]">Collaboration Checkout</span>
-            <h1 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] mt-0.5">
+            <h1 className="font-mono text-2xl sm:text-3xl font-bold text-[#121214] dark:text-white mt-0.5">
               Book Package with {creator.profile?.display_name}
             </h1>
           </div>
@@ -122,10 +122,10 @@ export default function PackagePurchasePage() {
                 key={s.num}
                 type="button"
                 onClick={() => setCurrentStep(s.num as 1 | 2 | 3)}
-                className={`px-3 py-1 rounded border transition-colors ${
+                className={`px-3 py-1 rounded-lg border transition-colors ${
                   currentStep === s.num
-                    ? 'bg-[#121214] text-white border-[#121214] font-bold'
-                    : 'bg-[#FBFBFA] text-[#71717A] border-[#E5E5DE]'
+                    ? 'bg-[#121214] dark:bg-white text-white dark:text-zinc-900 border-[#121214] dark:border-white font-bold'
+                    : 'bg-[#FBFBFA] dark:bg-zinc-900 text-[#71717A] dark:text-zinc-400 border-[#E5E5DE] dark:border-zinc-800'
                 }`}
               >
                 {s.num}. {s.label}
@@ -137,43 +137,43 @@ export default function PackagePurchasePage() {
 
       {/* STEP 1: PACKAGE SUMMARY */}
       {currentStep === 1 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-          <div className="border-b border-[#ECECE6] pb-4">
-            <span className="editorial-label text-[#71717A]">Step 01 of 03</span>
-            <h3 className="font-mono text-xl font-bold text-[#121214] mt-1">Package Deliverables</h3>
+        <div className="bg-white dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <span className="editorial-label text-[#71717A] dark:text-zinc-400">Step 01 of 03</span>
+            <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-1">Package Deliverables</h3>
           </div>
 
-          <div className="p-5 bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg space-y-4">
+          <div className="p-5 bg-[#FBFBFA] dark:bg-zinc-950/60 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl space-y-4">
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-xs font-mono uppercase text-[#FF5416] font-bold">
                   {creator.profile?.display_name} • {creator.profile?.city}
                 </span>
-                <h4 className="font-mono text-2xl font-bold text-[#121214] mt-1">
+                <h4 className="font-mono text-2xl font-bold text-[#121214] dark:text-white mt-1">
                   {selectedPkg.name}
                 </h4>
               </div>
-              <span className="font-mono text-2xl font-bold text-[#121214]">
+              <span className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
                 ₹{selectedPkg.price.toLocaleString('en-IN')}
               </span>
             </div>
 
-            <p className="text-sm text-[#52525B] leading-relaxed">
+            <p className="text-sm text-[#52525B] dark:text-zinc-300 leading-relaxed">
               {selectedPkg.description}
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-[#ECECE6] text-xs font-mono text-[#71717A]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-[#ECECE6] dark:border-zinc-800 text-xs font-mono text-[#71717A] dark:text-zinc-400">
               <div>
                 <span className="block text-[10px] uppercase">Delivery Time</span>
-                <strong className="text-[#121214]">{selectedPkg.delivery_days} Days</strong>
+                <strong className="text-[#121214] dark:text-white">{selectedPkg.delivery_days} Days</strong>
               </div>
               <div>
                 <span className="block text-[10px] uppercase">Revisions</span>
-                <strong className="text-[#121214]">{selectedPkg.revision_count} Included</strong>
+                <strong className="text-[#121214] dark:text-white">{selectedPkg.revision_count} Included</strong>
               </div>
               <div>
                 <span className="block text-[10px] uppercase">Security</span>
-                <strong className="text-[#047857]">Payment Protected</strong>
+                <strong className="text-[#047857] dark:text-emerald-400">Payment Protected</strong>
               </div>
             </div>
           </div>
@@ -189,18 +189,18 @@ export default function PackagePurchasePage() {
 
       {/* STEP 2: CAMPAIGN BRIEF FORM */}
       {currentStep === 2 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-          <div className="border-b border-[#ECECE6] pb-4">
-            <span className="editorial-label text-[#71717A]">Step 02 of 03</span>
-            <h3 className="font-mono text-xl font-bold text-[#121214] mt-1">Campaign Specification</h3>
-            <p className="text-xs text-[#71717A] mt-1">
+        <div className="bg-white dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <span className="editorial-label text-[#71717A] dark:text-zinc-400">Step 02 of 03</span>
+            <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-1">Campaign Specification</h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
               Provide clear guidance to ensure the creator understands your requirements before accepting.
             </p>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">
+              <label className="text-xs font-semibold text-[#121214] dark:text-zinc-200 block mb-1">
                 What are you promoting? (Product or Brand Name)
               </label>
               <input
@@ -209,12 +209,12 @@ export default function PackagePurchasePage() {
                 placeholder="e.g. FocusTimer Mobile App"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#FF5416]"
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">
+              <label className="text-xs font-semibold text-[#121214] dark:text-zinc-200 block mb-1">
                 Campaign Objective
               </label>
               <input
@@ -223,12 +223,12 @@ export default function PackagePurchasePage() {
                 placeholder="e.g. Drive app installs from tech-savvy Indian professionals"
                 value={objective}
                 onChange={(e) => setObjective(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#FF5416]"
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#121214] block mb-1">
+              <label className="text-xs font-semibold text-[#121214] dark:text-zinc-200 block mb-1">
                 Required Talking Points & Deliverable Specs
               </label>
               <textarea
@@ -237,13 +237,13 @@ export default function PackagePurchasePage() {
                 placeholder="e.g. 30-45s vertical reel demonstrating core features, smooth UI, and quick download steps"
                 value={requirements}
                 onChange={(e) => setRequirements(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#FF5416]"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-[#15803D] block mb-1">
+                <label className="text-xs font-semibold text-[#15803D] dark:text-emerald-400 block mb-1">
                   Brand Dos
                 </label>
                 <textarea
@@ -251,12 +251,12 @@ export default function PackagePurchasePage() {
                   placeholder="e.g. Tag official handle, show live app screen, speak clearly"
                   value={dos}
                   onChange={(e) => setDos(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#BBF7D0] rounded-md focus:outline-none focus:border-[#15803D]"
+                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#BBF7D0] dark:border-emerald-900/60 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#15803D]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[#B91C1C] block mb-1">
+                <label className="text-xs font-semibold text-[#B91C1C] dark:text-red-400 block mb-1">
                   Brand Don&apos;ts
                 </label>
                 <textarea
@@ -264,14 +264,14 @@ export default function PackagePurchasePage() {
                   placeholder="e.g. Don't use robotic voiceovers, don't mention competitors"
                   value={donts}
                   onChange={(e) => setDonts(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] border border-[#FECACA] rounded-md focus:outline-none focus:border-[#B91C1C]"
+                  className="w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#FECACA] dark:border-red-900/60 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#B91C1C]"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-[#121214] block mb-1">
+                <label className="text-xs font-semibold text-[#121214] dark:text-zinc-200 block mb-1">
                   Target Publication Deadline
                 </label>
                 <input
@@ -279,12 +279,12 @@ export default function PackagePurchasePage() {
                   required
                   value={deadline}
                   onChange={(e) => setDeadline(e.target.value)}
-                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[#121214] block mb-1">
+                <label className="text-xs font-semibold text-[#121214] dark:text-zinc-200 block mb-1">
                   Fulfillment / Shipping Notes
                 </label>
                 <input
@@ -292,13 +292,13 @@ export default function PackagePurchasePage() {
                   value={additionalNotes}
                   onChange={(e) => setAdditionalNotes(e.target.value)}
                   placeholder="e.g. Courier tracking info or promo codes"
-                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] border border-[#E5E5DE] rounded-md focus:outline-none focus:border-[#FF5416]"
+                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white placeholder-[#71717A] dark:placeholder-zinc-500 focus:outline-none focus:border-[#FF5416]"
                 />
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
+          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
             <Button variant="outline" size="sm" onClick={() => setCurrentStep(1)}>
               Back
             </Button>
@@ -312,43 +312,43 @@ export default function PackagePurchasePage() {
 
       {/* STEP 3: PAYMENT & ORDER SUMMARY */}
       {currentStep === 3 && (
-        <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-          <div className="border-b border-[#ECECE6] pb-4">
-            <span className="editorial-label text-[#71717A]">Step 03 of 03</span>
-            <h3 className="font-mono text-xl font-bold text-[#121214] mt-1">Platform Payment Review</h3>
-            <p className="text-xs text-[#71717A] mt-1">
+        <div className="bg-white dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-6 sm:p-8 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
+            <span className="editorial-label text-[#71717A] dark:text-zinc-400">Step 03 of 03</span>
+            <h3 className="font-mono text-xl font-bold text-[#121214] dark:text-white mt-1">Platform Payment Review</h3>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
               Platform records protect your order and funds are released only after you review and approve the content.
             </p>
           </div>
 
           {/* Pricing breakdown */}
-          <div className="bg-[#FBFBFA] border border-[#E5E5DE] rounded-lg p-5 space-y-3 font-mono">
-            <div className="flex justify-between text-xs text-[#52525B]">
+          <div className="bg-[#FBFBFA] dark:bg-zinc-950/60 border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-3 font-mono">
+            <div className="flex justify-between text-xs text-[#52525B] dark:text-zinc-300">
               <span>Deliverable ({selectedPkg.name}):</span>
-              <span>₹{basePrice.toLocaleString('en-IN')}</span>
+              <span className="text-[#121214] dark:text-white">₹{basePrice.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between text-xs text-[#52525B]">
+            <div className="flex justify-between text-xs text-[#52525B] dark:text-zinc-300">
               <span>Market My App Platform Fee (5%):</span>
-              <span>₹{platformFee.toLocaleString('en-IN')}</span>
+              <span className="text-[#121214] dark:text-white">₹{platformFee.toLocaleString('en-IN')}</span>
             </div>
-            <div className="pt-3 border-t border-[#ECECE6] flex justify-between text-base font-bold text-[#121214]">
+            <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 flex justify-between text-base font-bold text-[#121214] dark:text-white">
               <span>Total Amount:</span>
-              <span className="text-[#FF5416]">₹{totalAmount.toLocaleString('en-IN')}</span>
+              <span className="text-[#FF5416] dark:text-orange-500">₹{totalAmount.toLocaleString('en-IN')}</span>
             </div>
           </div>
 
           {/* Platform Guarantee Notice */}
-          <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg p-4 flex items-start gap-3 text-xs text-[#065F46]">
-            <ShieldCheck className="w-5 h-5 text-[#047857] shrink-0 mt-0.5" />
+          <div className="bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-900/60 rounded-xl p-4 flex items-start gap-3 text-xs text-[#065F46] dark:text-emerald-300">
+            <ShieldCheck className="w-5 h-5 text-[#047857] dark:text-emerald-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <span className="font-bold block">Platform Protection Guarantee</span>
+              <span className="font-bold block text-emerald-900 dark:text-emerald-300">Platform Protection Guarantee</span>
               <p>
                 The creator will receive this payout only after you review and approve the delivered Reel or story proof. If agreed requirements are missing, included revisions or System Review are available.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6]">
+          <div className="flex items-center justify-between pt-4 border-t border-[#ECECE6] dark:border-zinc-800">
             <Button variant="outline" size="sm" onClick={() => setCurrentStep(2)}>
               Edit Brief
             </Button>

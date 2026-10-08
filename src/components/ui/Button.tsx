@@ -21,11 +21,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       primary:
         'bg-[#FF5416] hover:bg-[#E8460A] text-white shadow-sm hover:shadow active:translate-y-[1px]',
       secondary:
-        'bg-[#F4F4F0] hover:bg-[#ECECE6] text-[#121214] border border-[#E5E5DE] active:translate-y-[1px]',
+        'bg-[#F4F4F0] hover:bg-[#ECECE6] text-[#121214] border border-[#E5E5DE] active:translate-y-[1px] dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100 dark:border-zinc-700',
       outline:
-        'bg-transparent hover:bg-[#F4F4F0] text-[#121214] border border-[#D4D4D0] active:translate-y-[1px]',
+        'bg-transparent hover:bg-[#F4F4F0] text-[#121214] border border-[#D4D4D0] active:translate-y-[1px] dark:text-zinc-200 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white',
       ghost:
-        'bg-transparent hover:bg-[#F4F4F0] text-[#71717A] hover:text-[#121214]',
+        'bg-transparent hover:bg-[#F4F4F0] text-[#71717A] hover:text-[#121214] dark:text-zinc-400 dark:hover:text-white dark:hover:bg-zinc-800',
       danger:
         'bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-sm active:translate-y-[1px]',
     };

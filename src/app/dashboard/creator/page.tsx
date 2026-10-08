@@ -1716,7 +1716,7 @@ function CreatorDashboardContent() {
                             type="button"
                             onClick={() => handleToggleFeatured(reel.id)}
                             className={`px-2 py-0.5 rounded text-[10px] ${
-                              reel.is_featured ? 'bg-[#FFF2EC] text-[#FF5416]' : 'text-[#71717A]'
+                              reel.is_featured ? 'bg-[#FFF2EC] dark:bg-orange-950/40 text-[#FF5416] dark:text-orange-400 font-bold' : 'text-[#71717A] dark:text-zinc-400 hover:text-black dark:hover:text-white'
                             }`}
                           >
                             {reel.is_featured ? 'Featured' : 'Feature'}
@@ -1724,7 +1724,7 @@ function CreatorDashboardContent() {
                           <button
                             type="button"
                             onClick={() => handleToggleVisibility(reel.id)}
-                            className="p-1 text-[#71717A]"
+                            className="p-1 text-[#71717A] dark:text-zinc-400 hover:text-black dark:hover:text-white"
                             title={reel.is_visible ? 'Visible' : 'Hidden'}
                           >
                             {reel.is_visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -1733,7 +1733,7 @@ function CreatorDashboardContent() {
                         <button
                           type="button"
                           onClick={() => handleDeleteReel(reel.id)}
-                          className="p-1 text-[#71717A] hover:text-red-600"
+                          className="p-1 text-[#71717A] dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
                           title="Delete reel"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

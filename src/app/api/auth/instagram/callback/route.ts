@@ -380,10 +380,16 @@ export async function GET(request: Request) {
   // Step 11: Non-blocking sync for user media / reels & user profile avatar
   try {
     if (profile.profilePictureUrl) {
-      await serviceClient
-        .from('profiles')
-        .update({ avatar_url: profile.profilePictureUrl, updated_at: now })
-        .eq('id', targetUserId);
+      await Promise.all([
+        serviceClient
+          .from('profiles')
+          .update({ avatar_url: profile.profilePictureUrl, updated_at: now })
+          .eq('id', targetUserId),
+        serviceClient
+          .from('creator_profiles')
+          .update({ profile_image_path: profile.profilePictureUrl, updated_at: now })
+          .eq('user_id', targetUserId),
+      ]);
     }
   } catch (profErr) {
     console.warn(`${logPrefix} Profile avatar update note:`, profErr);
@@ -392,26 +398,89 @@ export async function GET(request: Request) {
   try {
     const mediaItems = await fetchInstagramUserMedia(tokenResult.accessToken);
     if (mediaItems && mediaItems.length > 0) {
-      const reelRows = mediaItems.map((m, idx) => ({
-        creator_id: targetUserId,
-        title: m.caption ? m.caption.slice(0, 80) : `Instagram Reel #${idx + 1}`,
-        video_url: m.mediaUrl || m.permalink || '',
-        reel_url: m.permalink || m.mediaUrl || null,
-        instagram_media_id: m.id,
-        thumbnail_url: m.thumbnailUrl || null,
-        type: 'client_work',
-        sort_order: idx + 1,
-        is_featured: idx === 0,
-        is_visible: true,
-      }));
+      // 1. Store recent media metadata in creator_profiles.instagram_profile_data
+      const existingProfileData = verifiedRow?.instagram_profile_data || profile.rawData || {};
+      const updatedProfileData = {
+        ...existingProfileData,
+        recent_media: mediaItems.map((m) => ({
+          id: m.id,
+          caption: m.caption || null,
+          media_type: m.mediaType,
+          media_product_type: m.mediaProductType || null,
+          permalink: m.permalink || null,
+          thumbnail_url: m.thumbnailUrl || null,
+          timestamp: m.timestamp || null,
+          like_count: m.likeCount ?? null,
+          comments_count: m.commentsCount ?? null,
+        })),
+        last_media_synced_at: now,
+      };
 
       await serviceClient
+        .from('creator_profiles')
+        .update({
+          instagram_profile_data: updatedProfileData,
+          updated_at: now,
+        })
+        .eq('user_id', targetUserId);
+
+      // 2. Resiliently upsert into creator_reels table
+      const { data: existingReels } = await serviceClient
         .from('creator_reels')
-        .upsert(reelRows, { onConflict: 'creator_id,instagram_media_id' as any })
-        .then(({ error: rErr }) => {
-          if (rErr) console.log(`${logPrefix} creator_reels sync note:`, rErr.message);
-          else console.log(`${logPrefix} Synced ${reelRows.length} reels to creator_reels`);
-        });
+        .select('id, instagram_media_id')
+        .eq('creator_id', targetUserId);
+
+      const existingMap = new Map<string, string>();
+      if (Array.isArray(existingReels)) {
+        for (const r of existingReels) {
+          if (r.instagram_media_id) {
+            existingMap.set(r.instagram_media_id, r.id);
+          }
+        }
+      }
+
+      for (let idx = 0; idx < mediaItems.length; idx++) {
+        const m = mediaItems[idx];
+        const title = m.caption ? (m.caption.length > 70 ? `${m.caption.slice(0, 67)}...` : m.caption) : `Instagram Reel #${idx + 1}`;
+        const description = m.caption || null;
+        const reelUrl = m.permalink || m.mediaUrl || null;
+        const videoUrl = m.permalink || m.mediaUrl || '';
+        const thumbnailUrl = m.thumbnailUrl || m.mediaUrl || null;
+
+        const existingId = existingMap.get(m.id);
+        if (existingId) {
+          await serviceClient
+            .from('creator_reels')
+            .update({
+              title,
+              description,
+              video_url: videoUrl,
+              reel_url: reelUrl,
+              thumbnail_url: thumbnailUrl,
+              sort_order: idx + 1,
+              updated_at: now,
+            })
+            .eq('id', existingId);
+        } else {
+          await serviceClient
+            .from('creator_reels')
+            .insert({
+              creator_id: targetUserId,
+              title,
+              description,
+              video_url: videoUrl,
+              reel_url: reelUrl,
+              instagram_media_id: m.id,
+              thumbnail_url: thumbnailUrl,
+              type: 'client_work',
+              sort_order: idx + 1,
+              is_featured: idx === 0,
+              is_visible: true,
+            });
+        }
+      }
+
+      console.log(`${logPrefix} Successfully synced ${mediaItems.length} media items to creator_reels & profile data.`);
     }
   } catch (mediaErr) {
     console.log(`${logPrefix} Media sync skipped:`, mediaErr);

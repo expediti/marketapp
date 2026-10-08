@@ -30,10 +30,13 @@ export interface InstagramMediaItem {
   id: string;
   caption?: string;
   mediaType: string;
+  mediaProductType?: string;
   mediaUrl?: string;
   permalink?: string;
   thumbnailUrl?: string;
   timestamp?: string;
+  likeCount?: number;
+  commentsCount?: number;
 }
 
 /**
@@ -240,36 +243,73 @@ export async function fetchInstagramProfile(accessToken: string): Promise<Instag
 }
 
 /**
- * Fetches recent user media/reels from Instagram Graph API.
+ * Fetches recent user media/reels from Instagram Graph API (up to 12 items).
  * Non-blocking: failure to fetch media never interrupts account verification.
  */
 export async function fetchInstagramUserMedia(accessToken: string): Promise<InstagramMediaItem[]> {
+  const fullFields = 'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count';
+  const coreFields = 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp';
+
+  // 1. Try fetching with full fields including engagement
   try {
     const res = await fetch(
-      `https://graph.instagram.com/v21.0/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp&limit=10&access_token=${accessToken}`
+      `https://graph.instagram.com/v21.0/me/media?fields=${fullFields}&limit=12&access_token=${accessToken}`
     );
 
-    if (!res.ok) {
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const items = Array.isArray(data?.data) ? data.data : [];
+      console.log(`[Instagram Graph API] /me/media fetched ${items.length} media items with full fields.`);
+
+      return items.map((m: any) => ({
+        id: String(m.id),
+        caption: m.caption || undefined,
+        mediaType: m.media_type || 'VIDEO',
+        mediaProductType: m.media_product_type || undefined,
+        mediaUrl: m.media_url || undefined,
+        permalink: m.permalink || undefined,
+        thumbnailUrl: m.thumbnail_url || m.media_url || undefined,
+        timestamp: m.timestamp || undefined,
+        likeCount: typeof m.like_count === 'number' ? m.like_count : undefined,
+        commentsCount: typeof m.comments_count === 'number' ? m.comments_count : undefined,
+      }));
+    } else {
       const errorJson = (await res.json().catch(() => null)) as any;
-      console.log(`[Instagram Graph API] /me/media HTTP ${res.status}: ${errorJson?.error?.message || res.statusText}`);
+      console.log(
+        `[Instagram Graph API] /me/media with full fields HTTP ${res.status}: ${errorJson?.error?.message || res.statusText}. Retrying with core fields...`
+      );
+    }
+  } catch (err) {
+    console.warn('[Instagram Graph API] /me/media full fields query error:', err);
+  }
+
+  // 2. Fallback to core fields
+  try {
+    const fallbackRes = await fetch(
+      `https://graph.instagram.com/v21.0/me/media?fields=${coreFields}&limit=12&access_token=${accessToken}`
+    );
+
+    if (fallbackRes.ok) {
+      const data = (await fallbackRes.json()) as any;
+      const items = Array.isArray(data?.data) ? data.data : [];
+      console.log(`[Instagram Graph API] /me/media fallback fetched ${items.length} media items.`);
+
+      return items.map((m: any) => ({
+        id: String(m.id),
+        caption: m.caption || undefined,
+        mediaType: m.media_type || 'VIDEO',
+        mediaUrl: m.media_url || undefined,
+        permalink: m.permalink || undefined,
+        thumbnailUrl: m.thumbnail_url || m.media_url || undefined,
+        timestamp: m.timestamp || undefined,
+      }));
+    } else {
+      const errData = (await fallbackRes.json().catch(() => null)) as any;
+      console.log(`[Instagram Graph API] /me/media fallback HTTP ${fallbackRes.status}: ${errData?.error?.message || fallbackRes.statusText}`);
       return [];
     }
-
-    const data = (await res.json()) as any;
-    const items = Array.isArray(data?.data) ? data.data : [];
-    console.log(`[Instagram Graph API] /me/media fetched ${items.length} media items.`);
-
-    return items.map((m: any) => ({
-      id: String(m.id),
-      caption: m.caption || undefined,
-      mediaType: m.media_type || 'VIDEO',
-      mediaUrl: m.media_url || undefined,
-      permalink: m.permalink || undefined,
-      thumbnailUrl: m.thumbnail_url || undefined,
-      timestamp: m.timestamp || undefined,
-    }));
-  } catch (err) {
-    console.log('[Instagram Graph API] /me/media fetch skipped:', err);
+  } catch (coreErr) {
+    console.log('[Instagram Graph API] /me/media fallback skipped:', coreErr);
     return [];
   }
 }

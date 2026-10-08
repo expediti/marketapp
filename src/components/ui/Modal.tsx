@@ -50,22 +50,22 @@ export function Modal({
 
       {/* Modal Dialog */}
       <div
-        className={`relative w-full ${maxWidthStyles[maxWidth]} bg-white border border-[#E5E5DE] rounded-lg shadow-xl z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-150`}
+        className={`relative w-full ${maxWidthStyles[maxWidth]} bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl shadow-xl z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-150`}
       >
-        <div className="flex items-center justify-between border-b border-[#E5E5DE] px-6 py-4 bg-[#FBFBFA]">
+        <div className="flex items-center justify-between border-b border-[#E5E5DE] dark:border-zinc-800 px-6 py-4 bg-[#FBFBFA] dark:bg-zinc-900/60">
           <div>
-            <h3 className="font-semibold text-base text-[#121214] tracking-tight">{title}</h3>
-            {subtitle && <p className="text-xs text-[#71717A] mt-0.5">{subtitle}</p>}
+            <h3 className="font-semibold text-base text-[#121214] dark:text-white tracking-tight">{title}</h3>
+            {subtitle && <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
-            className="text-[#71717A] hover:text-[#121214] p-1 rounded hover:bg-[#F4F4F0] transition-colors"
+            className="text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white p-1 rounded hover:bg-[#F4F4F0] dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
+        <div className="p-6 max-h-[80vh] overflow-y-auto text-[#121214] dark:text-zinc-200">{children}</div>
       </div>
     </div>
   );
