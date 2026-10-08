@@ -5,16 +5,20 @@ import { buildInstagramAuthUrl, getInstagramCredentials } from '@/lib/server/ins
 export const dynamic = 'force-dynamic';
 
 function getOrigin(request: Request): string {
+  const host = request.headers.get('host');
+  if (host && (host.includes('localhost') || host.includes('127.0.0.1'))) {
+    return `http://${host}`;
+  }
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (siteUrl && !siteUrl.includes('localhost')) {
+    return siteUrl;
+  }
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
   if (forwardedHost) {
     return `${forwardedProto}://${forwardedHost}`;
   }
-  const host = request.headers.get('host');
-  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
-    return `https://${host}`;
-  }
-  return new URL(request.url).origin;
+  return 'https://marketmyidea.online';
 }
 
 /**

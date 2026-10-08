@@ -79,7 +79,29 @@ export function ConversationChat({
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+  const isUserNearBottomRef = useRef(true);
+  const prevConvIdRef = useRef<string | null>(null);
+
+  const scrollMessageContainerToBottom = (smooth = false) => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+    if (smooth) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+  };
+
+  const handleMessageContainerScroll = () => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    isUserNearBottomRef.current = distanceToBottom < 120;
+  };
 
   // Compact Order panel state
   const [isOrderPanelOpen, setIsOrderPanelOpen] = useState(false);
@@ -177,10 +199,17 @@ export function ConversationChat({
     ? activeConversation?.creator?.display_name || 'Creator'
     : activeConversation?.business?.business_name || 'Advertiser';
 
-  // Scroll to bottom when messages update
+  // Scroll internal message container without affecting window/document scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [convMessages.length, convProposals.length]);
+    const isNewConv = prevConvIdRef.current !== selectedConvId;
+    prevConvIdRef.current = selectedConvId;
+
+    if (isNewConv || isUserNearBottomRef.current) {
+      requestAnimationFrame(() => {
+        scrollMessageContainerToBottom(false);
+      });
+    }
+  }, [convMessages.length, convProposals.length, selectedConvId]);
 
   // Open proposal modal for brand new proposal
   const handleOpenNewProposalModal = () => {
@@ -412,6 +441,10 @@ export function ConversationChat({
       } else {
         setWarning(null);
       }
+      // Immediately scroll internal viewport to bottom for user's own sent message
+      requestAnimationFrame(() => {
+        scrollMessageContainerToBottom(true);
+      });
     } catch (err) {
       console.error('Failed to send message:', err);
     } finally {
@@ -792,7 +825,11 @@ export function ConversationChat({
           )}
 
           {/* 3. MESSAGES SCROLLABLE AREA */}
-          <div className="flex-1 overflow-y-auto min-h-0 p-3 sm:p-4 space-y-3.5 bg-[#FAF9F5] dark:bg-zinc-950/40 overscroll-contain">
+          <div
+            ref={messageContainerRef}
+            onScroll={handleMessageContainerScroll}
+            className="flex-1 overflow-y-auto min-h-0 p-3 sm:p-4 space-y-3.5 bg-[#FAF9F5] dark:bg-zinc-950/40 overscroll-contain"
+          >
             {feedItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-xs text-[#71717A] dark:text-zinc-400 p-6 space-y-2">
                 <Lock className="w-6 h-6 text-[#A1A1AA] mx-auto" />
@@ -994,7 +1031,6 @@ export function ConversationChat({
                 );
               })
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* 4. COMPOSER (STICKY AT BOTTOM) */}

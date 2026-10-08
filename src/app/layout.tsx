@@ -24,10 +24,28 @@ const fontMono = JetBrains_Mono({
   display: 'swap',
 });
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  'https://marketmyidea.online';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: 'Market My App — Audience Distribution & Discovery Platform',
   description:
     'Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets. Built for developers, founders, and small businesses.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: 'Market My App — Audience Distribution & Discovery Platform',
+    description:
+      'Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets. Built for developers, founders, and small businesses.',
+    url: siteUrl,
+    siteName: 'Market My App',
+    locale: 'en_IN',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({

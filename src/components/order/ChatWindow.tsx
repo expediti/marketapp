@@ -14,17 +14,38 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
   const { messages, sendMessage, currentUser, activeRole } = useMarketplace();
   const [inputText, setInputText] = useState('');
   const [warning, setWarning] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+  const isUserNearBottomRef = useRef(true);
 
   const orderMessages = messages[orderId] || [];
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollMessageContainerToBottom = (smooth = false) => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+    if (smooth) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+  };
+
+  const handleMessageContainerScroll = () => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    isUserNearBottomRef.current = distanceToBottom < 100;
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [orderMessages]);
+    if (isUserNearBottomRef.current) {
+      requestAnimationFrame(() => {
+        scrollMessageContainerToBottom(false);
+      });
+    }
+  }, [orderMessages.length]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +59,9 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
     } else {
       setWarning(null);
     }
+    requestAnimationFrame(() => {
+      scrollMessageContainerToBottom(true);
+    });
   };
 
   return (
@@ -78,7 +102,11 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
       )}
 
       {/* Messages List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#FAF9F5]">
+      <div
+        ref={messageContainerRef}
+        onScroll={handleMessageContainerScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#FAF9F5]"
+      >
         {orderMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-xs text-[#71717A] p-6">
             <Lock className="w-6 h-6 text-[#A1A1AA] mb-2" />
@@ -130,7 +158,6 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
             );
           })
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Bar */}

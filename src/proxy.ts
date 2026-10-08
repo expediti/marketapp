@@ -5,8 +5,14 @@ export async function proxy(request: NextRequest) {
   const url = request.nextUrl;
   const code = url.searchParams.get('code');
 
-  // If an OAuth authorization code arrives at root or another page, route to /auth/callback
-  if (code && url.pathname !== '/auth/callback') {
+  // If an OAuth authorization code arrives at root or another UI page, route to /auth/callback
+  // Dedicated API callbacks (such as /api/auth/instagram/callback) must pass directly through
+  if (
+    code &&
+    url.pathname !== '/auth/callback' &&
+    url.pathname !== '/api/auth/instagram/callback' &&
+    !url.pathname.startsWith('/api/')
+  ) {
     const callbackUrl = new URL('/auth/callback', request.url);
     url.searchParams.forEach((value, key) => {
       callbackUrl.searchParams.set(key, value);

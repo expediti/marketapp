@@ -27,8 +27,9 @@ export async function POST(request: Request) {
 
     const confirmationCode = `MMI-DEL-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
     const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
-      'https://marketapp.expeditionthe0.workers.dev';
+      'https://marketmyidea.online';
 
     let instagramUserId: string | null = null;
 
@@ -80,7 +81,8 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    'https://marketapp.expeditionthe0.workers.dev';
+    'https://marketmyidea.online';
   return NextResponse.redirect(`${baseUrl}/delete-account`);
 }

@@ -24,16 +24,20 @@ function extractProjectRef(url: string | undefined): string {
 }
 
 function getOrigin(request: Request): string {
+  const host = request.headers.get('host');
+  if (host && (host.includes('localhost') || host.includes('127.0.0.1'))) {
+    return `http://${host}`;
+  }
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (siteUrl && !siteUrl.includes('localhost')) {
+    return siteUrl;
+  }
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
   if (forwardedHost) {
     return `${forwardedProto}://${forwardedHost}`;
   }
-  const host = request.headers.get('host');
-  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
-    return `https://${host}`;
-  }
-  return new URL(request.url).origin;
+  return 'https://marketmyidea.online';
 }
 
 interface StatePayload {
@@ -56,7 +60,7 @@ function parseState(rawState: string | null): StatePayload | null {
   return null;
 }
 
-function renderErrorPage(step: string, errorDetails: string, contextData: Record<string, any>): Response {
+function renderErrorPage(step: string, errorDetails: string, contextData: Record<string, any>, returnOrigin: string = 'https://marketmyidea.online'): Response {
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -82,7 +86,7 @@ function renderErrorPage(step: string, errorDetails: string, contextData: Record
     <h3>Diagnostic Context</h3>
     <pre>${JSON.stringify(contextData, null, 2)}</pre>
     <div style="margin-top: 1.5rem;">
-      <a href="/dashboard/creator">← Return to Creator Dashboard</a>
+      <a href="${returnOrigin}/dashboard/creator">← Return to Creator Dashboard</a>
     </div>
   </div>
 </body>
