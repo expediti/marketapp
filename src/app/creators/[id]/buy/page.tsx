@@ -328,7 +328,7 @@ export default function PackagePurchasePage() {
               <span className="text-[#121214] dark:text-white">₹{basePrice.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-xs text-[#52525B] dark:text-zinc-300">
-              <span>Market My App Platform Fee (5%):</span>
+              <span>Market My Idea Platform Fee (5%):</span>
               <span className="text-[#121214] dark:text-white">₹{platformFee.toLocaleString('en-IN')}</span>
             </div>
             <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 flex justify-between text-base font-bold text-[#121214] dark:text-white">

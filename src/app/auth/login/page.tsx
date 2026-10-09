@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 import { ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 
 function GoogleIcon() {
@@ -151,10 +152,15 @@ function LoginForm() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-16 sm:py-24 space-y-8">
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-3">
+        <div className="flex justify-center mb-1">
+          <Link href="/" className="inline-flex">
+            <BrandLogo size="lg" />
+          </Link>
+        </div>
         <span className="editorial-label text-[#FF5416]">Account Access</span>
         <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white tracking-tight">
-          Log In to Market My App
+          Log In to Market My Idea
         </h1>
         <p className="text-xs text-[#71717A] dark:text-zinc-400">
           Access your campaign workspace, collaboration requests, and reels.

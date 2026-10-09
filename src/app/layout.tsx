@@ -31,18 +31,30 @@ const siteUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: 'Market My App — Audience Distribution & Discovery Platform',
+  title: 'Market My Idea — Audience Distribution & Discovery Platform',
   description:
     'Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets. Built for developers, founders, and small businesses.',
   alternates: {
     canonical: '/',
   },
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
+  manifest: '/site.webmanifest',
   openGraph: {
-    title: 'Market My App — Audience Distribution & Discovery Platform',
+    title: 'Market My Idea — Audience Distribution & Discovery Platform',
     description:
       'Find creators and communities that already reach the people you want to reach — without agency-scale marketing budgets. Built for developers, founders, and small businesses.',
     url: siteUrl,
-    siteName: 'Market My App',
+    siteName: 'Market My Idea',
     locale: 'en_IN',
     type: 'website',
   },

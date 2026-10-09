@@ -338,7 +338,7 @@ export default function HomePage() {
           <div className="max-w-2xl space-y-2">
             <span className="editorial-label text-[#FF5416]">Structured Process</span>
             <h2 className="font-mono text-2xl sm:text-3xl font-extrabold text-[#121214] dark:text-white">
-              How Distribution Works on Market My App
+              How Distribution Works on Market My Idea
             </h2>
             <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
               A transparent, milestone-driven collaboration process that eliminates ambiguity and protects both parties.
@@ -492,19 +492,19 @@ export default function HomePage() {
             Frequently Asked Questions
           </h2>
           <p className="text-xs sm:text-sm text-[#71717A] dark:text-[#A1A1AA]">
-            How audience distribution and platform protection work on Market My App.
+            How audience distribution and platform protection work on Market My Idea.
           </p>
         </div>
 
         <div className="space-y-3">
           {[
             {
-              q: 'What types of things can I promote on Market My App?',
+              q: 'What types of things can I promote on Market My Idea?',
               a: 'You can promote mobile apps (Android/iOS), web SaaS platforms, developer tools, digital products, local services, physical goods, and regional businesses.',
             },
             {
               q: 'How is this different from a typical influencer marketing agency?',
-              a: 'Agencies charge high monthly retainer fees and take high percentage margins. Market My App lets you discover existing audiences directly with fixed, transparent pricing and no agency overhead.',
+              a: 'Agencies charge high monthly retainer fees and take high percentage margins. Market My Idea lets you discover existing audiences directly with fixed, transparent pricing and no agency overhead.',
             },
             {
               q: 'Can I message a creator or community leader immediately?',

@@ -1,5 +1,5 @@
 /**
- * Instagram Service Abstraction Layer for "Market My App"
+ * Instagram Service Abstraction Layer for "Market My Idea"
  *
  * Prepares the platform for future Meta Graph API / Instagram Basic Display & Insights OAuth.
  *

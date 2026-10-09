@@ -333,7 +333,7 @@ export default function CreatorOnboardingPage() {
       let uid = activeUser?.id || 'new_influencer';
       let userEmail =
         activeUser?.email ||
-        `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyapp.in`;
+        `${(displayName || 'creator').toLowerCase().replace(/\s+/g, '')}@marketmyidea.online`;
 
       if (isSupabaseConfigured && activeUser) {
         uid = activeUser.id;

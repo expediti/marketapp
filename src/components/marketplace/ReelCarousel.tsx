@@ -14,7 +14,7 @@ interface ReelCarouselProps {
 export function ReelCarousel({
   reels,
   title = 'See the kind of content influencers create.',
-  subtitle = 'Watch short-form promotional reels, app walkthroughs, and portfolio samples created by Indian influencers on Market My App.',
+  subtitle = 'Watch short-form promotional reels, app walkthroughs, and portfolio samples created by Indian influencers on Market My Idea.',
 }: ReelCarouselProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 

@@ -1279,7 +1279,7 @@ function BusinessDashboardContent() {
 
                 <div className="space-y-3 text-xs text-[#52525B] dark:text-[#A1A1AA] leading-relaxed font-mono">
                   <p>
-                    Are you sure you want to delete your <strong>Market My App</strong> business account? This action is <strong>irreversible</strong>.
+                    Are you sure you want to delete your <strong>Market My Idea</strong> business account? This action is <strong>irreversible</strong>.
                   </p>
                   <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg text-[11px] text-red-700 dark:text-red-300 space-y-1">
                     <p className="font-bold">• Your business profile and active campaigns will be removed.</p>

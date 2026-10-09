@@ -81,7 +81,7 @@ export function ChatWindow({ orderId }: ChatWindowProps) {
       {/* Safety Notice */}
       <div className="bg-[#FAF9F6] dark:bg-zinc-950/70 border-b border-[#E5E5DE] dark:border-zinc-800 px-4 py-2 flex items-center gap-2 text-[10px] font-mono text-[#52525B] dark:text-zinc-400">
         <span>
-          Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable.
+          Keep collaboration details and payments within Market My Idea so your order, delivery and transaction records remain protected and traceable.
         </span>
       </div>
 

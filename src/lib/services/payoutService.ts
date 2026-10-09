@@ -4,18 +4,18 @@
  * ============================================================================
  * 
  * IMPORTANT ARCHITECTURAL RULES:
- * - Creator payouts in Market My App are strictly MANUAL.
+ * - Creator payouts in Market My Idea are strictly MANUAL.
  * - DO NOT implement automatic payouts.
  * - DO NOT implement RazorpayX API payouts.
  * - DO NOT implement escrow.
  * - DO NOT implement Razorpay Route / Linked Accounts.
  * - DO NOT trigger any payout automatically when an order becomes COMPLETED.
  * 
- * The actual payout is manually initiated by the Market My App platform owner:
+ * The actual payout is manually initiated by the Market My Idea platform owner:
  * 
  * Flow:
  * Order completed
- *   → Market My App owner decides payout amount
+ *   → Market My Idea owner decides payout amount
  *   → Owner manually creates payout in RazorpayX Dashboard
  *   → Owner uses creator's stored UPI ID (payout_upi_id)
  *   → Owner authorizes the payout

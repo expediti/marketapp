@@ -1721,7 +1721,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (emailRegex.test(text) || phoneRegex.test(text)) {
       return {
         allowed: false,
-        reason: 'Keep collaboration details and payments within Market My App so your order, delivery and transaction records remain protected and traceable. Avoid sharing external personal contact information.',
+        reason: 'Keep collaboration details and payments within Market My Idea so your order, delivery and transaction records remain protected and traceable. Avoid sharing external personal contact information.',
       };
     }
     return { allowed: true };

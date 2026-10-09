@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/Button';
 import { ArrowRight, ShieldCheck, Zap, Sparkles, CheckCircle2, HeartHandshake, Users, Radio } from 'lucide-react';
 
 export const metadata = {
-  title: 'About Us | Market My App',
+  title: 'About Us | Market My Idea',
   description:
-    'Market My App is a distribution and discovery platform connecting developers, founders, and small businesses with existing audiences across creators and communities.',
+    'Market My Idea is a distribution and discovery platform connecting developers, founders, and small businesses with existing audiences across creators and communities.',
 };
 
 export default function AboutPage() {
@@ -44,7 +44,7 @@ export default function AboutPage() {
             &ldquo;Find creators and communities that already have the audience you need.&rdquo;
           </h3>
           <p className="text-xs text-[#D4D4D8] leading-relaxed">
-            Market My App solves distribution by organizing verified creators, channels, and communities with clear fixed pricing, structured requests, and protected milestone transactions.
+            Market My Idea solves distribution by organizing verified creators, channels, and communities with clear fixed pricing, structured requests, and protected milestone transactions.
           </p>
           <ul className="text-xs text-[#A1A1AA] space-y-2 font-mono pt-2">
             <li className="flex items-center gap-2">

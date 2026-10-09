@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/Button';
 import { Check, ShieldCheck, ArrowRight, Wallet, CheckCircle2, Zap } from 'lucide-react';
 
 export const metadata = {
-  title: 'Pricing | Market My App',
+  title: 'Pricing | Market My Idea',
   description:
-    'Transparent distribution economics with zero subscription fees. Pay only when a collaboration deal happens with Market My App.',
+    'Transparent distribution economics with zero subscription fees. Pay only when a collaboration deal happens with Market My Idea.',
 };
 
 export default function PricingPage() {
@@ -19,7 +19,7 @@ export default function PricingPage() {
           No Subscriptions. Pay Only When Deals Happen.
         </h1>
         <p className="text-sm sm:text-base text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
-          Market My App doesn&apos;t charge recurring subscription fees or upfront listing charges. You only pay when a distribution collaboration happens.
+          Market My Idea doesn&apos;t charge recurring subscription fees or upfront listing charges. You only pay when a distribution collaboration happens.
         </p>
       </div>
 

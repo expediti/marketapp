@@ -1,5 +1,5 @@
 /**
- * Razorpay Standard Checkout Client Module for Market My App
+ * Razorpay Standard Checkout Client Module for Market My Idea
  * 
  * Safely manages script loading and Standard Checkout lifecycle.
  * NEVER requires or exposes RAZORPAY_KEY_SECRET to the browser.
@@ -93,7 +93,7 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
         key: key_id,
         amount: amount,
         currency: currency || 'INR',
-        name: 'Market My App',
+        name: 'Market My Idea',
         description: `Order #${order_number}`,
         order_id: razorpayOrderId,
         prefill: {
@@ -101,7 +101,7 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
           email: params.customerEmail || '',
         },
         theme: {
-          color: '#FF5416', // Market My App brand primary
+          color: '#FF5416', // Market My Idea brand primary
         },
         handler: async function (response: {
           razorpay_payment_id: string;

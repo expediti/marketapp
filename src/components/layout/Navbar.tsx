@@ -7,6 +7,7 @@ import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { SearchModal } from '@/components/layout/SearchModal';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 import {
   Menu,
   X,
@@ -106,13 +107,8 @@ function NavbarContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           {/* Left: Brand Logo & Primary Nav */}
           <div className="flex items-center gap-8">
-            <Link href={currentUser ? dashboardHref : '/'} className="flex items-center gap-2 group">
-              <div className="w-7 h-7 rounded-lg bg-[#FF5416] flex items-center justify-center text-white font-mono font-black text-xs shadow-xs">
-                M
-              </div>
-              <span className="font-mono text-lg sm:text-xl font-bold tracking-tight text-[#121214] dark:text-white">
-                Market My App
-              </span>
+            <Link href={currentUser ? dashboardHref : '/'} className="flex items-center group">
+              <BrandLogo size="md" priority />
             </Link>
 
             {/* Single Primary Desktop Navigation */}
@@ -367,11 +363,8 @@ export function Navbar() {
     <Suspense
       fallback={
         <header className="sticky top-0 z-40 bg-[#FBFBFA]/95 dark:bg-[#09090B]/95 border-b border-[#E5E5DE] dark:border-[#27272A] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#FF5416] flex items-center justify-center text-white font-mono font-black text-xs">
-              M
-            </div>
-            <span className="font-mono text-lg font-bold">Market My App</span>
+          <div className="flex items-center">
+            <BrandLogo size="md" priority />
           </div>
         </header>
       }

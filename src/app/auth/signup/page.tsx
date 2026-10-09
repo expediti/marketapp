@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useMarketplace } from '@/lib/store/marketplaceStore';
 import { Button } from '@/components/ui/Button';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 import {
   ArrowRight,
   Film,
@@ -227,8 +228,13 @@ function SignupContent() {
   return (
     <div className="max-w-xl mx-auto px-4 sm:px-6 py-12 sm:py-20 space-y-8">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <span className="editorial-label text-[#FF5416]">Market My App</span>
+      <div className="text-center space-y-3">
+        <div className="flex justify-center mb-1">
+          <Link href="/" className="inline-flex">
+            <BrandLogo size="lg" />
+          </Link>
+        </div>
+        <span className="editorial-label text-[#FF5416]">Market My Idea</span>
         <h1 className="font-mono text-3xl font-extrabold text-[#121214] dark:text-white tracking-tight">
           Create Your Account
         </h1>

@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 
 export function Footer() {
   return (
@@ -8,11 +9,8 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-10 pb-12 border-b border-[#27272A]">
           {/* Brand info */}
           <div className="md:col-span-2 space-y-4">
-            <Link href="/" className="flex items-center gap-1.5 group">
-              <span className="font-mono text-xl font-bold tracking-tight text-white">
-                MARKET MY APP
-              </span>
-              <span className="w-2 h-2 rounded-full bg-[#FF5416]" />
+            <Link href="/" className="inline-flex items-center group">
+              <BrandLogo variant="dark" size="lg" priority />
             </Link>
             <p className="text-sm text-[#A1A1AA] max-w-sm leading-relaxed">
               Audience distribution and discovery platform for local developers, founders, and small businesses. Find creators and communities that already reach the people you want to reach.
@@ -112,7 +110,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
           <div>
-            © {new Date().getFullYear()} Market My App. Audience Distribution Platform.
+            © {new Date().getFullYear()} Market My Idea. Audience Distribution Platform.
           </div>
           <div className="flex items-center gap-6">
             <Link href="/contact" className="hover:text-[#A1A1AA] transition-colors">

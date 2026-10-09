@@ -24,7 +24,7 @@ export default function HowItWorksPage() {
       <div className="text-center space-y-3 max-w-2xl mx-auto">
         <span className="editorial-label text-[#FF5416]">Clear Distribution System</span>
         <h1 className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white tracking-tight">
-          How Market My App Works
+          How Market My Idea Works
         </h1>
         <p className="text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
           A structured, milestone-based platform connecting developers, founders, and local businesses with distribution partners that already reach their target audience.

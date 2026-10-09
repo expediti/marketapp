@@ -192,7 +192,7 @@ export default function RoleSelectPage() {
           Choose Your Account Type
         </h1>
         <p className="text-sm text-[#71717A] dark:text-zinc-400 max-w-lg mx-auto">
-          Welcome{userName ? `, ${userName}` : ''}! Select how you plan to use Market My App.
+          Welcome{userName ? `, ${userName}` : ''}! Select how you plan to use Market My Idea.
           This customizes your onboarding experience and platform features.
         </p>
       </div>
