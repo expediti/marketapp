@@ -80,7 +80,7 @@ export default function CreatorDetailPage() {
         supabase
           .from('creator_profiles')
           .select(
-            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, instagram_profile_url, submitted_reels, primary_reel_url, claimed_followers, reviewed_follower_count, reviewed_engagement_rate, reviewed_avg_reel_views, reviewed_at, reviewed_by, review_notes, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
           )
           .eq('user_id', creatorId)
           .maybeSingle(),
@@ -94,6 +94,21 @@ export default function CreatorDetailPage() {
             const prof = profRes.data;
             const pkgs = pkgsRes.data || [];
             const rls = reelsRes.data || [];
+
+            const manualReelsFallback = (rls.length === 0 && Array.isArray(cp.submitted_reels))
+              ? (cp.submitted_reels as any[]).map((url: any, idx: number) => ({
+                  id: `submitted_reel_${idx}`,
+                  creator_id: cp.user_id,
+                  title: `Featured Reel #${idx + 1}`,
+                  video_url: String(url || ''),
+                  reel_url: String(url || ''),
+                  permalink: String(url || ''),
+                  is_featured: String(url) === cp.primary_reel_url || idx === 0,
+                  is_visible: true,
+                  created_at: cp.created_at,
+                }))
+              : [];
+
             setDbCreator({
               id: cp.id || cp.user_id,
               user_id: cp.user_id,
@@ -120,12 +135,22 @@ export default function CreatorDetailPage() {
               audience_age: (cp.audience_age as any) || {},
               audience_gender: (cp.audience_gender as any) || {},
               audience_locations: Array.isArray(cp.audience_locations) ? (cp.audience_locations as any[]) : [],
-              follower_count: cp.follower_count || 0,
+              follower_count: cp.reviewed_follower_count || cp.follower_count || 0,
               average_reach: cp.average_reach || 0,
-              engagement_rate: Number(cp.engagement_rate) || 0,
+              engagement_rate: Number(cp.reviewed_engagement_rate ?? cp.engagement_rate) || 0,
               instagram_connected: cp.instagram_connected || false,
               instagram_verified: cp.instagram_verified || false,
               instagram_username: cp.instagram_username || null,
+              instagram_profile_url: cp.instagram_profile_url || null,
+              submitted_reels: (cp.submitted_reels as any) || null,
+              primary_reel_url: cp.primary_reel_url || null,
+              claimed_followers: cp.claimed_followers ?? null,
+              reviewed_follower_count: cp.reviewed_follower_count ?? null,
+              reviewed_engagement_rate: cp.reviewed_engagement_rate ?? null,
+              reviewed_avg_reel_views: cp.reviewed_avg_reel_views ?? null,
+              reviewed_at: cp.reviewed_at || null,
+              reviewed_by: cp.reviewed_by || null,
+              review_notes: cp.review_notes || null,
               metrics_source: cp.metrics_source || 'platform_manual',
               verification_status: cp.verification_status as any,
               packages: pkgs.map((p) => ({
@@ -142,7 +167,7 @@ export default function CreatorDetailPage() {
                 revision_count: p.revision_count ?? 1,
                 active: p.active ?? true,
               })),
-              reels: rls.map((r) => ({
+              reels: (rls.length > 0 ? rls : manualReelsFallback).map((r: any) => ({
                 id: r.id,
                 creator_id: r.creator_id,
                 title: r.title,
@@ -308,7 +333,7 @@ export default function CreatorDetailPage() {
               </div>
             )}
 
-            <div className="space-y-1">
+              <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="editorial-label text-[#FF5416]">{creator.niche}</span>
                 <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
@@ -318,6 +343,23 @@ export default function CreatorDetailPage() {
                     ? `${creator.city || creator.profile?.city}, ${creator.state}`
                     : (creator.city || creator.profile?.city || 'India')}
                 </span>
+
+                {(creator.instagram_profile_url || creator.instagram_username) && (
+                  <>
+                    <span className="text-[#D4D4D0] dark:text-[#3F3F46]">•</span>
+                    <a
+                      href={creator.instagram_profile_url || `https://www.instagram.com/${creator.instagram_username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-mono text-purple-700 dark:text-purple-400 hover:text-[#FF5416] transition-colors"
+                      title="Open Instagram Profile"
+                    >
+                      <InstagramIcon className="w-3.5 h-3.5" />
+                      <span>@{creator.instagram_username || (creator.instagram_profile_url ? creator.instagram_profile_url.replace(/.*instagram\.com\//, '').replace(/\/.*$/, '').replace(/@/, '') : 'instagram')}</span>
+                    </a>
+                  </>
+                )}
+
                 {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified') ? (
                   <div className="flex items-center gap-1.5 text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -327,10 +369,19 @@ export default function CreatorDetailPage() {
                   <div className="flex items-center gap-1.5 text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Verified Creator</span>
+                    {creator.reviewed_at && (
+                      <span className="text-[10px] opacity-75 font-normal">
+                        • Verified {new Date(creator.reviewed_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
                   </div>
-                ) : creator.verification_status === 'pending' ? (
+                ) : creator.verification_status === 'pending_review' || creator.verification_status === 'pending' ? (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
                     <span>Verification Pending</span>
+                  </div>
+                ) : creator.verification_status === 'resubmission_required' ? (
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-800">
+                    <span>Resubmission Required</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-[#71717A] dark:text-zinc-400 bg-[#F4F4F0] dark:bg-zinc-800 px-2 py-0.5 rounded border border-[#E5E5DE] dark:border-zinc-700">
@@ -393,25 +444,27 @@ export default function CreatorDetailPage() {
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
             <div className="font-mono text-xl sm:text-2xl font-bold text-[#121214] dark:text-white flex items-center justify-center gap-1">
               <span>{formatNumber(creator.follower_count)}</span>
-              {(creator.instagram_connected || creator.metrics_source === 'instagram_meta_verified') && (
-                <span title="Meta Graph API Verified" className="inline-flex items-center">
+              {(creator.verification_status === 'verified' || creator.verification_status === 'verified_manual' || creator.verification_status === 'verified_oauth') && (
+                <span title="Reviewed & Verified by MarketMyIdea" className="inline-flex items-center">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 </span>
               )}
             </div>
             <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
-              {creator.verification_status === 'verified_oauth' || (creator.instagram_connected && creator.metrics_source === 'instagram_meta_verified')
-                ? 'Instagram Followers'
+              {creator.verification_status === 'verified' || creator.verification_status === 'verified_manual' || creator.verification_status === 'verified_oauth'
+                ? 'Reviewed Followers'
                 : 'Followers'}
             </div>
           </div>
 
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
             <div className="font-mono text-xl sm:text-2xl font-bold text-[#121214] dark:text-white">
-              {creator.average_reach > 0 ? formatNumber(creator.average_reach) : 'Connected'}
+              {creator.reviewed_avg_reel_views
+                ? formatNumber(creator.reviewed_avg_reel_views)
+                : (reels.length > 0 ? `${reels.length} Reel${reels.length === 1 ? '' : 's'}` : 'Showcase')}
             </div>
             <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
-              {creator.average_reach > 0 ? 'Average Reach' : 'Platform Reach'}
+              {creator.reviewed_avg_reel_views ? 'Avg Reel Views' : 'Content Portfolio'}
             </div>
           </div>
 
@@ -419,7 +472,9 @@ export default function CreatorDetailPage() {
             <div className="font-mono text-xl sm:text-2xl font-bold text-[#FF5416]">
               {creator.engagement_rate > 0 ? `${creator.engagement_rate}%` : 'Active'}
             </div>
-            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">Engagement</div>
+            <div className="editorial-label text-[#71717A] dark:text-[#A1A1AA] mt-1">
+              {creator.reviewed_engagement_rate ? 'Reviewed Engagement' : 'Engagement Rate'}
+            </div>
           </div>
 
           <div className="bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl p-3.5 text-center">
@@ -653,26 +708,30 @@ export default function CreatorDetailPage() {
 
             {/* Performance Stats */}
             <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 space-y-4">
-              <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Reach Intelligence</h3>
+              <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">Reach & Verification</h3>
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Follower Reach</span>
+                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Followers</span>
                   <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
                     {formatNumber(creator.follower_count)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Average Reach</span>
+                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Avg Reel Views</span>
                   <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                    {creator.average_reach > 0 ? formatNumber(creator.average_reach) : 'Available via IG'}
+                    {creator.reviewed_avg_reel_views
+                      ? formatNumber(creator.reviewed_avg_reel_views)
+                      : (reels.length > 0 ? `${reels.length} Reel Samples` : 'Showcase')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#18181B] border border-[#E5E5DE] dark:border-[#27272A] rounded-xl">
-                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Gender Split</span>
-                  <span className="font-mono font-bold text-sm text-[#121214] dark:text-white">
-                    {creator.audience_gender?.female || creator.audience_gender?.male
-                      ? `${creator.audience_gender.female || 0}% F / ${creator.audience_gender.male || 0}% M`
-                      : 'Not specified'}
+                  <span className="text-xs text-[#71717A] dark:text-[#A1A1AA]">Status</span>
+                  <span className="font-mono font-bold text-xs text-[#121214] dark:text-white">
+                    {creator.verification_status === 'verified' || creator.verification_status === 'verified_manual' || creator.verification_status === 'verified_oauth'
+                      ? 'Verified Creator ✓'
+                      : creator.verification_status === 'pending_review' || creator.verification_status === 'pending'
+                      ? 'Pending Review'
+                      : 'Unverified'}
                   </span>
                 </div>
               </div>

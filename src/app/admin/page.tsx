@@ -8,7 +8,7 @@ import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
-import { DisputeResolution, CreatorReel } from '@/types/marketplace';
+import { DisputeResolution, CreatorReel, CreatorProfile, VerificationStatus } from '@/types/marketplace';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -27,6 +27,9 @@ import {
   Trash2,
   Building,
   User,
+  BadgeCheck,
+  Clock,
+  X,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +48,8 @@ export default function AdminDashboardPage() {
     adminRefundOrder,
     adminToggleCreatorStatus,
     adminModerateReel,
+    adminVerifyCreatorManual,
+    refreshData,
   } = useMarketplace();
 
   useEffect(() => {
@@ -68,6 +73,75 @@ export default function AdminDashboardPage() {
   const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Creator manual verification review state
+  const [selectedCreatorForReview, setSelectedCreatorForReview] = useState<CreatorProfile | null>(null);
+  const [reviewFollowerCount, setReviewFollowerCount] = useState<string>('');
+  const [reviewEngagementRate, setReviewEngagementRate] = useState<string>('');
+  const [reviewAvgReelViews, setReviewAvgReelViews] = useState<string>('');
+  const [reviewNotes, setReviewNotes] = useState<string>('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewActionError, setReviewActionError] = useState<string | null>(null);
+  const [reviewActionSuccess, setReviewActionSuccess] = useState<string | null>(null);
+
+  const openCreatorReviewModal = (c: CreatorProfile) => {
+    setSelectedCreatorForReview(c);
+    setReviewFollowerCount(
+      c.reviewed_follower_count != null
+        ? String(c.reviewed_follower_count)
+        : (c.claimed_followers != null ? String(c.claimed_followers) : String(c.follower_count || ''))
+    );
+    setReviewEngagementRate(
+      c.reviewed_engagement_rate != null
+        ? String(c.reviewed_engagement_rate)
+        : String(c.engagement_rate || '')
+    );
+    setReviewAvgReelViews(
+      c.reviewed_avg_reel_views != null
+        ? String(c.reviewed_avg_reel_views)
+        : ''
+    );
+    setReviewNotes(c.review_notes || '');
+    setReviewActionError(null);
+    setReviewActionSuccess(null);
+  };
+
+  const handleExecuteVerification = async (targetStatus: VerificationStatus) => {
+    if (!selectedCreatorForReview) return;
+    setIsSubmittingReview(true);
+    setReviewActionError(null);
+    setReviewActionSuccess(null);
+
+    try {
+      const followersNum = reviewFollowerCount.trim() ? Number(reviewFollowerCount.replace(/[^0-9]/g, '')) : undefined;
+      const engRateNum = reviewEngagementRate.trim() ? Number(reviewEngagementRate) : undefined;
+      const viewsNum = reviewAvgReelViews.trim() ? Number(reviewAvgReelViews.replace(/[^0-9]/g, '')) : undefined;
+
+      const res = await adminVerifyCreatorManual(selectedCreatorForReview.user_id, {
+        status: targetStatus,
+        reviewedFollowerCount: followersNum,
+        reviewedEngagementRate: engRateNum,
+        reviewedAvgReelViews: viewsNum,
+        reviewNotes: reviewNotes.trim() || undefined,
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to apply verification decision');
+      }
+
+      setReviewActionSuccess(`Verification status successfully updated to ${targetStatus}`);
+      if (refreshData) {
+        await refreshData();
+      }
+      setTimeout(() => {
+        setSelectedCreatorForReview(null);
+      }, 1000);
+    } catch (err: any) {
+      setReviewActionError(err?.message || 'Failed to update verification status.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
 
   // Financial aggregations
   const totalGMV = orders.reduce((sum, o) => sum + o.total_amount, 0);
@@ -457,63 +531,116 @@ export default function AdminDashboardPage() {
       {/* CREATORS DIRECTORY TAB */}
       {activeTab === 'creators' && (
         <div className="bg-white border border-[#E5E5DE] rounded-xl p-6 space-y-4 shadow-sm">
-          <div className="border-b border-[#ECECE6] pb-3">
-            <span className="editorial-label text-[#71717A]">Verification Governance</span>
-            <h3 className="font-mono text-base font-bold text-[#121214] mt-0.5">
-              Creator Verification Status & Portfolios
-            </h3>
+          <div className="border-b border-[#ECECE6] pb-3 flex items-center justify-between">
+            <div>
+              <span className="editorial-label text-[#71717A]">Verification Governance</span>
+              <h3 className="font-mono text-base font-bold text-[#121214] mt-0.5">
+                Manual Instagram Creator Verification ({creators.length})
+              </h3>
+            </div>
           </div>
 
           <div className="divide-y divide-[#ECECE6]">
-            {creators.map((c) => (
-              <div key={c.user_id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <strong className="font-mono text-sm text-[#121214]">{c.profile?.display_name}</strong>
-                    <span className="text-xs font-mono text-[#71717A]">({c.profile?.city})</span>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase ${
-                        c.verification_status === 'verified'
-                          ? 'bg-[#ECFDF5] text-[#047857] border-[#A7F3D0]'
-                          : 'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA]'
-                      }`}
-                    >
-                      {c.verification_status}
-                    </span>
+            {creators.map((c) => {
+              const hasSubmitted = Boolean(c.instagram_profile_url || (c.submitted_reels && c.submitted_reels.length > 0));
+              const isVerified = c.verification_status === 'verified' || c.verification_status === 'verified_manual' || c.verification_status === 'verified_oauth';
+              const isPending = c.verification_status === 'pending_review' || c.verification_status === 'pending';
+              const isResubmission = c.verification_status === 'resubmission_required';
+              const isRejected = c.verification_status === 'rejected';
+
+              return (
+                <div key={c.user_id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="font-mono text-sm text-[#121214]">{c.profile?.display_name}</strong>
+                      <span className="text-xs font-mono text-[#71717A]">({c.profile?.city || c.city || 'India'})</span>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${
+                          isVerified
+                            ? 'bg-[#ECFDF5] text-[#047857] border-[#A7F3D0]'
+                            : isPending
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : isResubmission
+                            ? 'bg-orange-50 text-orange-800 border-orange-200'
+                            : isRejected
+                            ? 'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA]'
+                            : 'bg-[#F4F4F0] text-[#71717A] border-[#E5E5DE]'
+                        }`}
+                      >
+                        {c.verification_status || 'unverified'}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[#52525B]">
+                      <span>{c.niche}</span>
+                      <span>•</span>
+                      <span>
+                        Followers: <strong>{c.reviewed_follower_count != null ? `${c.reviewed_follower_count.toLocaleString('en-IN')} (Reviewed)` : `${(c.claimed_followers || c.follower_count || 0).toLocaleString('en-IN')} (Claimed)`}</strong>
+                      </span>
+                      {c.reviewed_engagement_rate != null && (
+                        <>
+                          <span>•</span>
+                          <span>Eng: <strong>{c.reviewed_engagement_rate}%</strong></span>
+                        </>
+                      )}
+                      {c.reviewed_avg_reel_views != null && (
+                        <>
+                          <span>•</span>
+                          <span>Avg Views: <strong>{c.reviewed_avg_reel_views.toLocaleString('en-IN')}</strong></span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Instagram Link & Reels snippet */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono">
+                      {c.instagram_profile_url ? (
+                        <a
+                          href={c.instagram_profile_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-purple-700 hover:text-[#FF5416] bg-purple-50 px-2 py-0.5 rounded border border-purple-200"
+                        >
+                          <span>Profile: {c.instagram_profile_url.replace(/.*instagram\.com\//, '').replace(/\/.*$/, '')}</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <span className="text-zinc-400">No profile link</span>
+                      )}
+
+                      {c.submitted_reels && c.submitted_reels.length > 0 ? (
+                        <span className="text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
+                          {c.submitted_reels.length} Reel{c.submitted_reels.length === 1 ? '' : 's'} Submitted
+                        </span>
+                      ) : null}
+
+                      {c.review_notes && (
+                        <span className="text-zinc-500 italic truncate max-w-xs" title={c.review_notes}>
+                          Note: "{c.review_notes}"
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs font-mono text-[#52525B] mt-1">
-                    {c.niche} • {c.follower_count.toLocaleString('en-IN')} Followers • {c.reels?.length || 0} reels uploaded
-                  </p>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <Link href={`/creators/${c.user_id}`}>
-                    <Button variant="outline" size="sm">
-                      Public View
-                    </Button>
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link href={`/creators/${c.user_id}`}>
+                      <Button variant="outline" size="sm">
+                        Public View
+                      </Button>
+                    </Link>
 
-                  {c.verification_status === 'verified' ? (
                     <Button
-                      variant="secondary"
+                      variant={isPending ? 'primary' : 'secondary'}
                       size="sm"
-                      onClick={() => adminToggleCreatorStatus(c.user_id, false)}
-                      className="text-[#B91C1C]"
+                      onClick={() => openCreatorReviewModal(c)}
+                      className={isPending ? 'bg-[#FF5416] text-white hover:bg-[#E04810]' : ''}
                     >
-                      Suspend
+                      <BadgeCheck className="w-3.5 h-3.5 mr-1" />
+                      <span>{isPending ? 'Review & Verify' : 'Edit Review'}</span>
                     </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => adminToggleCreatorStatus(c.user_id, true)}
-                    >
-                      Approve
-                    </Button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -581,6 +708,224 @@ export default function AdminDashboardPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* CREATOR VERIFICATION REVIEW MODAL */}
+      {selectedCreatorForReview && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E5E5DE] rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] pb-3">
+              <div className="flex items-center gap-2">
+                <BadgeCheck className="w-5 h-5 text-[#FF5416]" />
+                <h3 className="font-mono text-base font-bold text-[#121214]">
+                  Creator Manual Verification Review
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCreatorForReview(null)}
+                className="text-[#71717A] hover:text-[#121214]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {reviewActionError && (
+              <div className="p-3 rounded-lg bg-red-50 text-red-800 border border-red-200 text-xs font-mono">
+                {reviewActionError}
+              </div>
+            )}
+
+            {reviewActionSuccess && (
+              <div className="p-3 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono">
+                {reviewActionSuccess}
+              </div>
+            )}
+
+            {/* Creator Overview & Submitted Links */}
+            <div className="p-4 bg-[#FBFBFA] border border-[#ECECE6] rounded-xl space-y-3 text-xs font-mono">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-sm text-[#121214] block">
+                    {selectedCreatorForReview.profile?.display_name}
+                  </span>
+                  <span className="text-[#71717A]">
+                    {selectedCreatorForReview.niche} • {selectedCreatorForReview.city || selectedCreatorForReview.profile?.city || 'India'}
+                  </span>
+                </div>
+                <span className="text-[11px] px-2 py-0.5 rounded bg-zinc-200 text-zinc-800 font-bold uppercase">
+                  Current: {selectedCreatorForReview.verification_status || 'unverified'}
+                </span>
+              </div>
+
+              {/* Submitted Profile URL */}
+              <div className="pt-2 border-t border-[#ECECE6] space-y-1">
+                <span className="text-[10px] text-[#71717A] uppercase font-bold block">Submitted Instagram Profile</span>
+                {selectedCreatorForReview.instagram_profile_url ? (
+                  <a
+                    href={selectedCreatorForReview.instagram_profile_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-purple-700 hover:text-[#FF5416] font-bold text-xs underline"
+                  >
+                    <span>{selectedCreatorForReview.instagram_profile_url}</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                ) : (
+                  <span className="text-zinc-400 italic">No Instagram profile URL provided</span>
+                )}
+              </div>
+
+              {/* Submitted Reels */}
+              <div className="pt-2 border-t border-[#ECECE6] space-y-1">
+                <span className="text-[10px] text-[#71717A] uppercase font-bold block">Submitted Featured Reels (Click to open on Instagram)</span>
+                {selectedCreatorForReview.submitted_reels && selectedCreatorForReview.submitted_reels.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {selectedCreatorForReview.submitted_reels.map((reelUrl, idx) => {
+                      const isPrimary = reelUrl === selectedCreatorForReview.primary_reel_url || idx === 0;
+                      return (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPrimary ? 'bg-orange-100 text-orange-800' : 'bg-zinc-200 text-zinc-700'}`}>
+                            {isPrimary ? 'Primary Reel' : `Reel #${idx + 1}`}
+                          </span>
+                          <a
+                            href={reelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:underline truncate max-w-md text-xs"
+                          >
+                            <span className="truncate">{reelUrl}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-zinc-400 italic">No reels submitted</span>
+                )}
+              </div>
+            </div>
+
+            {/* Admin Review Inputs */}
+            <div className="space-y-3 text-xs font-mono">
+              <span className="editorial-label text-[#FF5416]">Administrator Observation & Metric Review</span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#121214] mb-1">
+                    Observed Followers *
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewFollowerCount}
+                    onChange={(e) => setReviewFollowerCount(e.target.value)}
+                    placeholder="e.g. 52000"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] bg-white text-[#121214] focus:outline-none focus:border-[#FF5416]"
+                  />
+                  <span className="text-[10px] text-[#71717A] mt-0.5 block">
+                    Claimed: {selectedCreatorForReview.claimed_followers || selectedCreatorForReview.follower_count || 0}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#121214] mb-1">
+                    Reviewed Eng. Rate (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={reviewEngagementRate}
+                    onChange={(e) => setReviewEngagementRate(e.target.value)}
+                    placeholder="e.g. 4.5"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] bg-white text-[#121214] focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#121214] mb-1">
+                    Reviewed Avg Views
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewAvgReelViews}
+                    onChange={(e) => setReviewAvgReelViews(e.target.value)}
+                    placeholder="e.g. 25000"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] bg-white text-[#121214] focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#121214] mb-1">
+                  Internal Review Notes / Feedback to Creator
+                </label>
+                <textarea
+                  rows={2}
+                  value={reviewNotes}
+                  onChange={(e) => setReviewNotes(e.target.value)}
+                  placeholder="e.g. Verified profile handle and recent reel analytics. High engagement in tech vertical."
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] bg-white text-[#121214] focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+            </div>
+
+            {/* Decision Action Buttons */}
+            <div className="pt-3 border-t border-[#ECECE6] flex flex-wrap items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedCreatorForReview(null)}
+              >
+                Cancel
+              </Button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSubmittingReview}
+                  onClick={() => handleExecuteVerification('unverified')}
+                  className="text-zinc-700"
+                >
+                  Revoke / Unverify
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSubmittingReview}
+                  onClick={() => handleExecuteVerification('rejected')}
+                  className="bg-red-600 hover:bg-red-700 text-white text-xs"
+                >
+                  Reject
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSubmittingReview}
+                  onClick={() => handleExecuteVerification('resubmission_required')}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                >
+                  Request Resubmission
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSubmittingReview}
+                  onClick={() => handleExecuteVerification('verified')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  <span>Approve & Verify</span>
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

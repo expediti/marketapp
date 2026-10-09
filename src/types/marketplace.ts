@@ -6,7 +6,15 @@ export type UserRole =
   | 'promoter'
   | 'admin';
 
-export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'verified_manual' | 'verified_oauth' | 'rejected';
+export type VerificationStatus =
+  | 'unverified'
+  | 'pending'
+  | 'pending_review'
+  | 'verified'
+  | 'verified_manual'
+  | 'verified_oauth'
+  | 'rejected'
+  | 'resubmission_required';
 
 export type OrderStatus =
   | 'DRAFT'
@@ -172,6 +180,17 @@ export interface CreatorProfile {
   audience_age: { '18-24': number; '25-34': number; '35+': number };
   audience_locations: AudienceLocation[];
   verification_status: VerificationStatus;
+  instagram_profile_url?: string | null;
+  submitted_reels?: string[] | Array<{ url: string; is_primary?: boolean; title?: string }> | any[] | null;
+  primary_reel_url?: string | null;
+  claimed_followers?: number | null;
+  claimed_engagement_rate?: number | null;
+  reviewed_follower_count?: number | null;
+  reviewed_engagement_rate?: number | null;
+  reviewed_avg_reel_views?: number | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  review_notes?: string | null;
   packages?: CreatorPackage[];
   samples?: CreatorSample[];
   reels?: CreatorReel[];

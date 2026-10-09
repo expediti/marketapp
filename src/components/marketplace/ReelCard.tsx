@@ -62,10 +62,9 @@ export function ReelCard({
   const isInstagram = Boolean(parsedIg.isValid || reel.instagram_media_id);
   const formattedDate = formatDate(reel.posted_at || reel.created_at);
   const thumbnail =
-    reel.thumbnail_url ||
-    (reel.video_url?.startsWith('http') && !reel.video_url.includes('.mp4')
-      ? reel.video_url
-      : undefined);
+    reel.thumbnail_url && (reel.thumbnail_url.startsWith('http') || reel.thumbnail_url.startsWith('/'))
+      ? reel.thumbnail_url
+      : undefined;
 
   // Check if video_url is a direct playable media source (direct CDN video URL or mp4)
   const isPlayableDirectVideo = Boolean(

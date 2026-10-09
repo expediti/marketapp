@@ -33,9 +33,14 @@ import {
   ExternalLink,
   Edit2,
   X,
+  BadgeCheck,
+  Clock,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
-import { parseInstagramUrl } from '@/lib/utils/instagram';
+import { parseInstagramUrl, parseInstagramProfileUrl } from '@/lib/utils/instagram';
+import { INSTAGRAM_OAUTH_ENABLED } from '@/lib/config/features';
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -76,6 +81,17 @@ interface DbCreatorState {
   instagram_connected?: boolean | null;
   instagram_verified?: boolean | null;
   instagram_username?: string | null;
+  instagram_profile_url?: string | null;
+  submitted_reels?: string[] | null;
+  primary_reel_url?: string | null;
+  claimed_followers?: number | null;
+  reviewed_follower_count?: number | null;
+  reviewed_engagement_rate?: number | null;
+  reviewed_avg_reel_views?: number | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  review_notes?: string | null;
+  verification_status?: string | null;
   metrics_source?: string | null;
 }
 
@@ -109,6 +125,7 @@ function CreatorDashboardContent() {
     declineCollaborationRequest,
     campaigns = [],
     refreshData,
+    submitCreatorManualVerification,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -121,6 +138,14 @@ function CreatorDashboardContent() {
 
   const [userEmail, setUserEmail] = useState<string>('');
   const [igNotice, setIgNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Manual Instagram Verification State
+  const [manualProfileUrl, setManualProfileUrl] = useState('');
+  const [manualReels, setManualReels] = useState<string[]>(['', '', '']);
+  const [manualPrimaryIndex, setManualPrimaryIndex] = useState<number>(0);
+  const [manualClaimedFollowers, setManualClaimedFollowers] = useState<string>('');
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+  const [manualStatusMsg, setManualStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Reels management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -327,6 +352,23 @@ function CreatorDashboardContent() {
         creator_packages: loadedPackages,
       });
       setPayoutUpiId(loadedCreatorProfile.payout_upi_id || '');
+      setManualProfileUrl(
+        loadedCreatorProfile.instagram_profile_url ||
+          (loadedCreatorProfile.instagram_username ? `https://www.instagram.com/${loadedCreatorProfile.instagram_username}` : '')
+      );
+      const submitted = Array.isArray(loadedCreatorProfile.submitted_reels) ? loadedCreatorProfile.submitted_reels : [];
+      setManualReels([
+        submitted[0] || '',
+        submitted[1] || '',
+        submitted[2] || '',
+      ]);
+      const primaryIndex = submitted.findIndex((r: string) => r === loadedCreatorProfile.primary_reel_url);
+      setManualPrimaryIndex(primaryIndex >= 0 ? primaryIndex : 0);
+      setManualClaimedFollowers(
+        loadedCreatorProfile.claimed_followers != null
+          ? String(loadedCreatorProfile.claimed_followers)
+          : (loadedCreatorProfile.follower_count != null ? String(loadedCreatorProfile.follower_count) : '')
+      );
     } else {
       setDbCreator({
         user_id: authUserId || 'unknown',
@@ -384,6 +426,80 @@ function CreatorDashboardContent() {
       }
     }
   }, [tabParam, searchParams, loadDbCreator, refreshData]);
+
+  const handleSubmitManualVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setManualStatusMsg(null);
+
+    // Validate Instagram Profile URL
+    const parsedProfile = parseInstagramProfileUrl(manualProfileUrl);
+    if (!parsedProfile || !parsedProfile.isValid) {
+      setManualStatusMsg({
+        type: 'error',
+        text: 'Please enter a valid Instagram profile URL (e.g. https://www.instagram.com/your_username)',
+      });
+      return;
+    }
+
+    // Validate submitted Reels
+    const validReels: string[] = [];
+    for (let i = 0; i < manualReels.length; i++) {
+      const url = manualReels[i].trim();
+      if (!url) continue;
+      const parsedReel = parseInstagramUrl(url);
+      if (!parsedReel.isValid || parsedReel.type !== 'reel') {
+        setManualStatusMsg({
+          type: 'error',
+          text: `Reel #${i + 1} is invalid: please enter a valid Instagram Reel URL (e.g. https://www.instagram.com/reel/XXXXX/)`,
+        });
+        return;
+      }
+      validReels.push(parsedReel.normalizedUrl || url);
+    }
+
+    if (validReels.length === 0) {
+      setManualStatusMsg({
+        type: 'error',
+        text: 'Please provide at least 1 valid Instagram Reel URL as a featured work sample.',
+      });
+      return;
+    }
+
+    const primaryUrl = validReels[manualPrimaryIndex] || validReels[0];
+    const claimedNum = manualClaimedFollowers.trim()
+      ? Number(manualClaimedFollowers.replace(/[^0-9]/g, ''))
+      : undefined;
+
+    setIsSubmittingManual(true);
+    try {
+      const res = await submitCreatorManualVerification({
+        profileUrl: parsedProfile.profileUrl || manualProfileUrl.trim(),
+        submittedReels: validReels,
+        primaryReelUrl: primaryUrl,
+        claimedFollowers: claimedNum,
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to submit verification');
+      }
+
+      setManualStatusMsg({
+        type: 'success',
+        text: 'Verification details submitted successfully! MarketMyIdea administrators will review your profile within 24-48 hours.',
+      });
+      await loadDbCreator();
+      if (refreshData) {
+        await refreshData();
+      }
+    } catch (err: any) {
+      setManualStatusMsg({
+        type: 'error',
+        text: err?.message || 'Failed to submit verification details. Please try again.',
+      });
+    } finally {
+      setIsSubmittingManual(false);
+    }
+  };
 
   const handleSavePayoutUpi = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -1312,52 +1428,243 @@ function CreatorDashboardContent() {
                 </span>
               </div>
 
-              {/* Instagram Connection */}
-              <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
-                    <InstagramIcon className="w-4 h-4" />
+              {/* Instagram Connection & Manual Verification */}
+              {INSTAGRAM_OAUTH_ENABLED ? (
+                <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                      <InstagramIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-[#121214] dark:text-white">
+                        {dbCreator?.instagram_connected
+                          ? `@${dbCreator?.instagram_username || 'connected'}`
+                          : 'Instagram Verification'}
+                      </h4>
+                      <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                        {dbCreator?.instagram_connected
+                          ? 'Meta Verified connection active'
+                          : 'Connect Instagram to auto-verify followers.'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-xs text-[#121214] dark:text-white">
-                      {dbCreator?.instagram_connected
-                        ? `@${dbCreator?.instagram_username || 'connected'}`
-                        : 'Instagram Verification'}
-                    </h4>
-                    <p className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                      {dbCreator?.instagram_connected
-                        ? 'Meta Verified connection active'
-                        : userEmail.toLowerCase().trim() === 'khormasti104@gmail.com'
-                        ? 'Connect Instagram to auto-verify followers.'
-                        : 'Coming soon — Instagram verification is currently being finalized.'}
-                    </p>
-                  </div>
-                </div>
 
-                <div>
-                  {dbCreator?.instagram_connected ? (
-                    <span className="text-[11px] px-2.5 py-1 rounded bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold border border-[#A7F3D0] dark:border-emerald-800">
-                      Connected ✓
-                    </span>
-                  ) : userEmail.toLowerCase().trim() === 'khormasti104@gmail.com' ? (
-                    <a
-                      href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors"
-                    >
-                      <InstagramIcon className="w-3.5 h-3.5" />
-                      <span>Connect Instagram</span>
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#E5E5DE] dark:bg-zinc-800 text-[#71717A] dark:text-zinc-400 text-xs font-semibold cursor-not-allowed border border-[#D4D4CE] dark:border-zinc-700"
-                    >
-                      <span>Coming Soon</span>
-                    </button>
-                  )}
+                  <div>
+                    {dbCreator?.instagram_connected ? (
+                      <span className="text-[11px] px-2.5 py-1 rounded bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold border border-[#A7F3D0] dark:border-emerald-800">
+                        Connected ✓
+                      </span>
+                    ) : (
+                      <a
+                        href="/api/auth/instagram/authorize?returnTo=%2Fdashboard%2Fcreator"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors"
+                      >
+                        <InstagramIcon className="w-3.5 h-3.5" />
+                        <span>Connect Instagram</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="sm:col-span-2 p-4 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#ECECE6] dark:border-zinc-800">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                        <InstagramIcon className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-xs text-[#121214] dark:text-white block">
+                          Manual Instagram Verification
+                        </span>
+                        <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                          {dbCreator?.instagram_profile_url || (dbCreator?.instagram_username ? `@${dbCreator.instagram_username}` : 'No profile link submitted')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      {dbCreator?.verification_status === 'verified' ||
+                      dbCreator?.verification_status === 'verified_manual' ||
+                      dbCreator?.verification_status === 'verified_oauth' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#ECFDF5] text-[#047857] dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold text-[11px] border border-[#A7F3D0] dark:border-emerald-800">
+                          <BadgeCheck className="w-3.5 h-3.5" />
+                          <span>Verified Creator ✓</span>
+                        </span>
+                      ) : dbCreator?.verification_status === 'pending_review' || dbCreator?.verification_status === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 font-semibold text-[11px] border border-amber-200 dark:border-amber-800">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Pending Review</span>
+                        </span>
+                      ) : dbCreator?.verification_status === 'resubmission_required' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-orange-50 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 font-semibold text-[11px] border border-orange-200 dark:border-orange-800">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Resubmission Required</span>
+                        </span>
+                      ) : dbCreator?.verification_status === 'rejected' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300 font-semibold text-[11px] border border-red-200 dark:border-red-800">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Verification Rejected</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-semibold text-[11px] border border-zinc-200 dark:border-zinc-700">
+                          <span>Unverified</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Reviewed Metrics Banner if verified */}
+                  {dbCreator?.reviewed_at && (
+                    <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 rounded-lg text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                          <BadgeCheck className="w-4 h-4 text-emerald-600" />
+                          Admin-Reviewed Metrics
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                          Verified on {safeFormatDate(dbCreator.reviewed_at)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
+                        <div>
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">Followers</span>
+                          <span className="font-bold text-zinc-900 dark:text-white">
+                            {dbCreator.reviewed_follower_count?.toLocaleString('en-IN') || '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">Engagement Rate</span>
+                          <span className="font-bold text-zinc-900 dark:text-white">
+                            {dbCreator.reviewed_engagement_rate ? `${dbCreator.reviewed_engagement_rate}%` : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">Avg Reel Views</span>
+                          <span className="font-bold text-zinc-900 dark:text-white">
+                            {dbCreator.reviewed_avg_reel_views?.toLocaleString('en-IN') || '—'}
+                          </span>
+                        </div>
+                      </div>
+                      {dbCreator.review_notes && (
+                        <p className="text-[11px] text-zinc-600 dark:text-zinc-300 pt-1 border-t border-emerald-200/60 dark:border-emerald-800/30">
+                          <strong>Admin Note:</strong> {dbCreator.review_notes}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Resubmission / Rejection Note */}
+                  {(dbCreator?.verification_status === 'resubmission_required' || dbCreator?.verification_status === 'rejected') && dbCreator?.review_notes && (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-900 dark:text-amber-200">
+                      <strong>Reviewer Feedback:</strong> {dbCreator.review_notes}
+                    </div>
+                  )}
+
+                  {/* Manual Submission Form */}
+                  <form onSubmit={handleSubmitManualVerification} className="space-y-3 pt-2">
+                    {manualStatusMsg && (
+                      <div
+                        className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border ${
+                          manualStatusMsg.type === 'success'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                            : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+                        }`}
+                      >
+                        {manualStatusMsg.type === 'success' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        )}
+                        <span className="flex-1">{manualStatusMsg.text}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#121214] dark:text-white mb-1">
+                          Instagram Profile URL *
+                        </label>
+                        <input
+                          type="url"
+                          required
+                          value={manualProfileUrl}
+                          onChange={(e) => setManualProfileUrl(e.target.value)}
+                          placeholder="https://www.instagram.com/your_username"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#121214] dark:text-white mb-1">
+                          Current Follower Count (Self-reported)
+                        </label>
+                        <input
+                          type="text"
+                          value={manualClaimedFollowers}
+                          onChange={(e) => setManualClaimedFollowers(e.target.value)}
+                          placeholder="e.g. 25000"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                        />
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 block">
+                          Claimed value; verified by admin upon review.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-semibold text-[#121214] dark:text-white">
+                          Featured Work Samples (Instagram Reels, 1 required, max 3)
+                        </label>
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          Select radio for Primary Reel
+                        </span>
+                      </div>
+
+                      {[0, 1, 2].map((idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-[11px] font-mono shrink-0 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="primary_reel_select"
+                              checked={manualPrimaryIndex === idx}
+                              onChange={() => setManualPrimaryIndex(idx)}
+                              className="accent-[#FF5416]"
+                            />
+                            <span>{idx === 0 ? 'Reel 1 *' : `Reel ${idx + 1}`}</span>
+                          </label>
+                          <input
+                            type="url"
+                            value={manualReels[idx] || ''}
+                            required={idx === 0}
+                            onChange={(e) => {
+                              const copy = [...manualReels];
+                              copy[idx] = e.target.value;
+                              setManualReels(copy);
+                            }}
+                            placeholder={idx === 0 ? 'https://www.instagram.com/reel/XXXXXX/ (Required primary reel)' : `https://www.instagram.com/reel/XXXXXX/ (Optional sample ${idx + 1})`}
+                            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-[#E5E5DE] dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between">
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400 max-w-sm">
+                        Submitting updates sets your verification status to <strong>Pending Review</strong>.
+                      </p>
+                      <Button
+                        type="submit"
+                        disabled={isSubmittingManual}
+                        size="sm"
+                        className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-semibold px-4 py-1.5"
+                      >
+                        {isSubmittingManual ? 'Submitting...' : 'Submit for Verification'}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               <div className="sm:col-span-2 p-3 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
                 <span className="text-[#71717A] dark:text-zinc-400 block text-[10px] uppercase mb-1">Bio</span>

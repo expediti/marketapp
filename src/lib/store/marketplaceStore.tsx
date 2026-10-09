@@ -18,6 +18,7 @@ import {
   Conversation,
   DealProposal,
   DealProposalStatus,
+  VerificationStatus,
 } from '@/types/marketplace';
 import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
@@ -151,6 +152,32 @@ interface MarketplaceContextType {
   adminReleasePayout: (orderId: string) => Promise<void>;
   adminRefundOrder: (orderId: string) => Promise<void>;
   adminToggleCreatorStatus: (creatorId: string, verify: boolean) => void;
+  adminVerifyCreatorManual: (
+    creatorIdOrParams:
+      | string
+      | {
+          creatorId: string;
+          status: VerificationStatus;
+          reviewedFollowers?: number;
+          reviewedEngagement?: number;
+          reviewedViews?: number;
+          reviewNotes?: string;
+        },
+    optionalPayload?: {
+      status: VerificationStatus;
+      reviewedFollowerCount?: number;
+      reviewedEngagementRate?: number;
+      reviewedAvgReelViews?: number;
+      reviewNotes?: string;
+    }
+  ) => Promise<{ success: boolean; error?: string }>;
+  submitCreatorManualVerification: (data: {
+    profileUrl: string;
+    submittedReels?: string[];
+    reels?: Array<{ url: string; is_primary?: boolean; title?: string }> | string[];
+    primaryReelUrl?: string;
+    claimedFollowers?: number;
+  }) => Promise<{ success: boolean; error?: string }>;
   
   // Reel / Work Portfolio Actions
   addCreatorReel: (creatorId: string, reel: Omit<CreatorReel, 'id' | 'created_at'>) => void;
@@ -214,7 +241,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         supabase
           .from('creator_profiles')
           .select(
-            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, metrics_source, metrics_verified_at, verification_status, created_at, updated_at'
+            'id, user_id, display_name, bio, profile_image_path, country, state, city, languages, categories, niche, audience_age, audience_gender, audience_locations, follower_count, average_reach, engagement_rate, instagram_connected, instagram_user_id, instagram_verified, instagram_username, metrics_source, metrics_verified_at, verification_status, instagram_profile_url, submitted_reels, primary_reel_url, claimed_followers, claimed_engagement_rate, reviewed_follower_count, reviewed_engagement_rate, reviewed_avg_reel_views, reviewed_at, reviewed_by, review_notes, created_at, updated_at'
           ),
         supabase.from('profiles').select('*'),
         supabase.from('creator_packages').select('*'),
@@ -271,6 +298,17 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
           instagram_username: cp.instagram_username || null,
           metrics_source: (cp.metrics_source as any) || 'platform_manual',
           verification_status: (cp.verification_status as any) || 'unverified',
+          instagram_profile_url: cp.instagram_profile_url || null,
+          submitted_reels: Array.isArray(cp.submitted_reels) ? cp.submitted_reels : [],
+          primary_reel_url: cp.primary_reel_url || null,
+          claimed_followers: cp.claimed_followers ?? null,
+          claimed_engagement_rate: cp.claimed_engagement_rate ? Number(cp.claimed_engagement_rate) : null,
+          reviewed_follower_count: cp.reviewed_follower_count ?? null,
+          reviewed_engagement_rate: cp.reviewed_engagement_rate ? Number(cp.reviewed_engagement_rate) : null,
+          reviewed_avg_reel_views: cp.reviewed_avg_reel_views ?? null,
+          reviewed_at: cp.reviewed_at || null,
+          reviewed_by: cp.reviewed_by || null,
+          review_notes: cp.review_notes || null,
           packages: pkgs.map((p) => ({
             id: p.id,
             creator_id: p.creator_id,
@@ -3194,6 +3232,222 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     ]);
   };
 
+  const adminVerifyCreatorManual = async (
+    creatorIdOrParams:
+      | string
+      | {
+          creatorId: string;
+          status: VerificationStatus;
+          reviewedFollowers?: number;
+          reviewedEngagement?: number;
+          reviewedViews?: number;
+          reviewNotes?: string;
+        },
+    optionalPayload?: {
+      status: VerificationStatus;
+      reviewedFollowerCount?: number;
+      reviewedEngagementRate?: number;
+      reviewedAvgReelViews?: number;
+      reviewNotes?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> => {
+    let creatorId: string;
+    let status: VerificationStatus;
+    let reviewedFollowers: number | undefined;
+    let reviewedEngagement: number | undefined;
+    let reviewedViews: number | undefined;
+    let reviewNotes: string | undefined;
+
+    if (typeof creatorIdOrParams === 'string') {
+      creatorId = creatorIdOrParams;
+      status = optionalPayload?.status || 'verified';
+      reviewedFollowers = optionalPayload?.reviewedFollowerCount;
+      reviewedEngagement = optionalPayload?.reviewedEngagementRate;
+      reviewedViews = optionalPayload?.reviewedAvgReelViews;
+      reviewNotes = optionalPayload?.reviewNotes;
+    } else {
+      creatorId = creatorIdOrParams.creatorId;
+      status = creatorIdOrParams.status;
+      reviewedFollowers = creatorIdOrParams.reviewedFollowers;
+      reviewedEngagement = creatorIdOrParams.reviewedEngagement;
+      reviewedViews = creatorIdOrParams.reviewedViews;
+      reviewNotes = creatorIdOrParams.reviewNotes;
+    }
+
+    try {
+      // Call protected server-side admin API endpoint
+      if (isSupabaseConfigured) {
+        const session = (await supabase.auth.getSession()).data.session;
+        const token = session?.access_token;
+        if (token) {
+          const response = await fetch('/api/admin/creators/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              creatorId,
+              status,
+              reviewedFollowers,
+              reviewedEngagement,
+              reviewedViews,
+              reviewNotes,
+            }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to verify creator on server.');
+          }
+        }
+      }
+
+      const now = new Date().toISOString();
+      const isApproved = status === 'verified' || status === 'verified_manual';
+
+      setCreators((prev) =>
+        prev.map((c) => {
+          if (c.user_id !== creatorId) return c;
+          return {
+            ...c,
+            verification_status: status,
+            instagram_verified: isApproved,
+            reviewed_follower_count: reviewedFollowers ?? c.reviewed_follower_count,
+            reviewed_engagement_rate: reviewedEngagement ?? c.reviewed_engagement_rate,
+            reviewed_avg_reel_views: reviewedViews ?? c.reviewed_avg_reel_views,
+            follower_count:
+              reviewedFollowers !== undefined && reviewedFollowers !== null && reviewedFollowers > 0
+                ? reviewedFollowers
+                : c.follower_count,
+            engagement_rate:
+              reviewedEngagement !== undefined && reviewedEngagement !== null
+                ? reviewedEngagement
+                : c.engagement_rate,
+            metrics_source: 'platform_manual',
+            metrics_verified_at: isApproved ? now : c.metrics_verified_at,
+            reviewed_at: now,
+            reviewed_by: currentUser?.id,
+            review_notes: reviewNotes ?? c.review_notes,
+          };
+        })
+      );
+
+      setAdminActions((prev) => [
+        {
+          id: `act_${Date.now()}`,
+          admin_id: currentUser?.id || 'admin',
+          action: `MANUAL_VERIFY_${status.toUpperCase()}`,
+          target_type: 'creator_profiles',
+          target_id: creatorId,
+          metadata: {
+            status,
+            reviewedFollowers,
+            reviewedEngagement,
+            reviewedViews,
+            reviewNotes,
+          },
+          created_at: now,
+        },
+        ...prev,
+      ]);
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('adminVerifyCreatorManual error:', err);
+      return { success: false, error: err?.message || 'Failed to apply verification status' };
+    }
+  };
+
+  const submitCreatorManualVerification = async (data: {
+    profileUrl: string;
+    submittedReels?: string[];
+    reels?: Array<{ url: string; is_primary?: boolean; title?: string }> | string[];
+    primaryReelUrl?: string;
+    claimedFollowers?: number;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) return { success: false, error: 'Must be logged in to submit verification' };
+
+    const now = new Date().toISOString();
+    let rawReels: string[] = [];
+    if (Array.isArray(data.submittedReels)) {
+      rawReels = data.submittedReels;
+    } else if (Array.isArray(data.reels)) {
+      rawReels = data.reels.map((r) => (typeof r === 'string' ? r : r.url));
+    }
+    const cleanReels = rawReels.map((u) => u.trim()).filter(Boolean);
+    const primaryUrl = data.primaryReelUrl || cleanReels[0] || null;
+
+    try {
+      if (isSupabaseConfigured) {
+        // 1. Call database RPC or update creator_profiles
+        const { error: profileError } = await supabase
+          .from('creator_profiles')
+          .update({
+            instagram_profile_url: data.profileUrl.trim(),
+            submitted_reels: cleanReels,
+            primary_reel_url: primaryUrl,
+            claimed_followers: data.claimedFollowers || null,
+            verification_status: 'pending_review',
+            updated_at: now,
+          })
+          .eq('user_id', currentUser.id);
+
+        if (profileError) {
+          console.error('Error submitting creator verification to Supabase:', profileError);
+          return { success: false, error: profileError.message || 'Failed to submit verification links.' };
+        }
+
+        // 2. Ensure creator_reels table contains submitted reels
+        for (let i = 0; i < cleanReels.length; i++) {
+          const reelUrl = cleanReels[i];
+          const isPrimary = reelUrl === primaryUrl;
+          const { error: reelError } = await supabase
+            .from('creator_reels')
+            .upsert(
+              {
+                creator_id: currentUser.id,
+                reel_url: reelUrl,
+                video_url: reelUrl,
+                title: `Featured Reel #${i + 1}`,
+                is_featured: isPrimary,
+                is_visible: true,
+                sort_order: i + 1,
+                type: 'client_work',
+                updated_at: now,
+              },
+              { onConflict: 'creator_id, reel_url' }
+            );
+
+          if (reelError) {
+            console.warn('Note on reel upsert:', reelError.message);
+          }
+        }
+      }
+
+      // Update local state
+      setCreators((prev) =>
+        prev.map((c) => {
+          if (c.user_id !== currentUser.id) return c;
+          return {
+            ...c,
+            instagram_profile_url: data.profileUrl.trim(),
+            submitted_reels: cleanReels,
+            primary_reel_url: primaryUrl,
+            claimed_followers: data.claimedFollowers || c.claimed_followers,
+            verification_status: 'pending_review' as VerificationStatus,
+            updated_at: now,
+          };
+        })
+      );
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('submitCreatorManualVerification error:', err);
+      return { success: false, error: err?.message || 'Failed to submit verification links.' };
+    }
+  };
+
   const onboardCreator = (profileData: Partial<CreatorProfile>) => {
     const targetUserId = profileData.user_id || profileData.id || currentUser?.id;
     if (!targetUserId) return;
@@ -3421,6 +3675,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         adminReleasePayout,
         adminRefundOrder,
         adminToggleCreatorStatus,
+        adminVerifyCreatorManual,
+        submitCreatorManualVerification,
         addCreatorReel,
         deleteCreatorReel,
         toggleFeaturedReel,
