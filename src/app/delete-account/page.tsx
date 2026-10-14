@@ -148,10 +148,10 @@ function DeleteAccountContent() {
           <div className="p-4 bg-[#FAF9F5] dark:bg-zinc-900 rounded-xl border border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#121214] dark:text-white">
               <Mail className="w-4 h-4 text-[#FF5416]" />
-              <span>support@gmail.com</span>
+              <span>contact@marketmyidea.online</span>
             </div>
             <a
-              href="mailto:support@gmail.com?subject=Account%20Deletion%20Request"
+              href="mailto:contact@marketmyidea.online?subject=Account%20Deletion%20Request"
               className="text-xs font-mono font-bold text-[#FF5416] hover:underline"
             >
               Send Request →

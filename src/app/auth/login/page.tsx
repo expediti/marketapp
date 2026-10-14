@@ -260,11 +260,26 @@ function LoginForm() {
         </form>
       </div>
 
-      <div className="text-center text-xs font-mono text-[#71717A] dark:text-zinc-400">
-        <span>Don&apos;t have an account yet? </span>
-        <Link href="/auth/signup" className="text-[#FF5416] hover:underline font-bold">
-          Sign up
-        </Link>
+      <div className="text-center text-xs font-mono text-[#71717A] dark:text-zinc-400 space-y-2">
+        <div>
+          Don&apos;t have an account yet?{' '}
+          <Link href="/auth/signup" className="text-[#FF5416] hover:underline font-bold">
+            Sign up
+          </Link>
+        </div>
+        <div className="text-[11px] text-[#71717A] dark:text-zinc-500 space-x-3">
+          <Link href="/terms" className="hover:underline">
+            Terms
+          </Link>
+          <span>•</span>
+          <Link href="/privacy" className="hover:underline">
+            Privacy
+          </Link>
+          <span>•</span>
+          <Link href="/contact" className="hover:underline">
+            Support
+          </Link>
+        </div>
       </div>
     </div>
   );

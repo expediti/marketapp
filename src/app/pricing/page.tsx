@@ -31,7 +31,7 @@ export default function PricingPage() {
             <div>
               <span className="editorial-label text-[#FF5416]">For Businesses & Builders</span>
               <div className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white mt-2">
-                Free to Browse <span className="text-xs font-normal text-[#71717A] dark:text-[#A1A1AA] block mt-1">+ 6% Platform Protection Fee at Checkout</span>
+                Free to Browse <span className="text-xs font-normal text-[#71717A] dark:text-[#A1A1AA] block mt-1">+ 5% Platform Protection Fee at Checkout</span>
               </div>
               <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] mt-3 leading-relaxed">
                 Browse partner profiles and fixed packages for free. Pay only for the package you select with transparent milestone protection.
@@ -49,7 +49,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-[#047857] dark:text-[#34D399] shrink-0 mt-0.5" />
-                <span>Small 6% platform protection fee added at checkout</span>
+                <span>Transparent 5% platform protection fee added at checkout</span>
               </li>
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-[#047857] dark:text-[#34D399] shrink-0 mt-0.5" />
@@ -72,7 +72,7 @@ export default function PricingPage() {
             <div>
               <span className="editorial-label text-[#71717A] dark:text-[#A1A1AA]">For Distribution Partners</span>
               <div className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] dark:text-white mt-2">
-                Free to Join <span className="text-xs font-normal text-[#71717A] dark:text-[#A1A1AA] block mt-1">6% Platform Fee on Completed Payouts</span>
+                Free to Join <span className="text-xs font-normal text-[#71717A] dark:text-[#A1A1AA] block mt-1">5% Platform Fee on Completed Payouts</span>
               </div>
               <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] mt-3 leading-relaxed">
                 Creating a profile and listing packages is completely free. You set your own rates and keep the vast majority of your deal earnings.
@@ -90,7 +90,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-[#047857] dark:text-[#34D399] shrink-0 mt-0.5" />
-                <span>6% platform fee deducted only when an order completes</span>
+                <span>5% platform fee deducted only when an order completes</span>
               </li>
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-[#047857] dark:text-[#34D399] shrink-0 mt-0.5" />
@@ -160,6 +160,18 @@ export default function PricingPage() {
             <p className="text-[11px] text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
               The partner is paid out directly to their verified Indian bank account or UPI ID.
             </p>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-[#ECECE6] dark:border-[#27272A] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
+          <div>
+            All transactions in INR (₹) • 5% platform protection fee • Zero subscription charges
+          </div>
+          <div>
+            Questions? Email{' '}
+            <a href="mailto:contact@marketmyidea.online" className="text-[#FF5416] hover:underline font-bold">
+              contact@marketmyidea.online
+            </a>
           </div>
         </div>
       </div>

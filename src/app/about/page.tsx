@@ -78,6 +78,19 @@ export default function AboutPage() {
         </p>
       </div>
 
+      {/* Verified Business Identity */}
+      <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-8 space-y-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-[#FF5416]" />
+          <h3 className="font-mono text-lg font-bold text-[#121214] dark:text-white">
+            Marketplace Operator & Identity
+          </h3>
+        </div>
+        <p className="text-xs sm:text-sm text-[#52525B] dark:text-[#A1A1AA] leading-relaxed">
+          <strong>MarketMyIdea</strong> is an independent digital distribution and influencer marketing platform owned and operated by sole proprietor <strong>Amit Kumar Sharma</strong>, based in <strong>Jeonathpur, Uttar Pradesh, India</strong>. All payments are processed in Indian Rupees (INR) with complete transparency, milestone verification, and dedicated customer support at <a href="mailto:contact@marketmyidea.online" className="text-[#FF5416] hover:underline font-mono">contact@marketmyidea.online</a>.
+        </p>
+      </div>
+
       {/* CTA */}
       <div className="bg-[#121214] text-white border border-[#27272A] rounded-2xl p-8 flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="space-y-1">

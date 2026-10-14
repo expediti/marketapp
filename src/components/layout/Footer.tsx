@@ -1,22 +1,40 @@
 import React from 'react';
 import Link from 'next/link';
 import { BrandLogo } from '@/components/brand/BrandLogo';
+import { BUSINESS_INFO } from '@/lib/config/businessInfo';
+import { MapPin, Mail, User } from 'lucide-react';
 
 export function Footer() {
   return (
     <footer className="bg-[#121214] text-[#D4D4D8] border-t border-[#27272A] pt-14 pb-12 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-10 pb-12 border-b border-[#27272A]">
-          {/* Brand info */}
+          {/* Brand info & Verified Identity */}
           <div className="md:col-span-2 space-y-4">
             <Link href="/" className="inline-flex items-center group">
               <BrandLogo variant="dark" size="lg" priority />
             </Link>
             <p className="text-sm text-[#A1A1AA] max-w-sm leading-relaxed">
-              Audience distribution and discovery platform for local developers, founders, and small businesses. Find creators and communities that already reach the people you want to reach.
+              Audience distribution and influencer marketing marketplace connecting developers, founders, and businesses with authentic creators and communities.
             </p>
-            <div className="pt-2 text-xs font-mono text-[#71717A]">
-              CURRENCY: INR (₹) • AUDIENCE DISCOVERY & DISTRIBUTION
+            <div className="pt-2 space-y-1.5 text-xs font-mono text-[#71717A]">
+              <div className="flex items-center gap-1.5 text-[#A1A1AA]">
+                <User className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
+                <span>Legal Operator: <strong className="text-white">{BUSINESS_INFO.proprietorName}</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[#A1A1AA]">
+                <MapPin className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
+                <span>{BUSINESS_INFO.address.fullDisplayAddress}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[#A1A1AA]">
+                <Mail className="w-3.5 h-3.5 text-[#FF5416] shrink-0" />
+                <a
+                  href={`mailto:${BUSINESS_INFO.contact.officialEmail}`}
+                  className="hover:text-white transition-colors underline"
+                >
+                  {BUSINESS_INFO.contact.officialEmail}
+                </a>
+              </div>
             </div>
           </div>
 
@@ -66,18 +84,18 @@ export function Footer() {
                   Featured Product Promos
                 </Link>
               </li>
-            </ul>
-          </div>
-
-          {/* Company & Legal */}
-          <div>
-            <h4 className="editorial-label text-white mb-4">Platform</h4>
-            <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/about" className="hover:text-white transition-colors">
                   About Us
                 </Link>
               </li>
+            </ul>
+          </div>
+
+          {/* Compliance & Legal Column */}
+          <div>
+            <h4 className="editorial-label text-white mb-4">Legal & Compliance</h4>
+            <ul className="space-y-2.5 text-sm text-[#A1A1AA]">
               <li>
                 <Link href="/contact" className="hover:text-white transition-colors">
                   Contact & Support
@@ -85,7 +103,7 @@ export function Footer() {
               </li>
               <li>
                 <Link href="/terms" className="hover:text-white transition-colors">
-                  Terms of Service
+                  Terms & Conditions
                 </Link>
               </li>
               <li>
@@ -94,13 +112,23 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/delete-account" className="hover:text-white transition-colors">
-                  Delete Account
+                <Link href="/refund-policy" className="hover:text-white transition-colors">
+                  Refund & Cancellation
                 </Link>
               </li>
               <li>
-                <Link href="/refund-policy" className="hover:text-white transition-colors">
-                  Refund & Cancellation
+                <Link href="/shipping-policy" className="hover:text-white transition-colors">
+                  Shipping & Delivery
+                </Link>
+              </li>
+              <li>
+                <Link href="/grievance" className="hover:text-white transition-colors">
+                  Grievance Redressal
+                </Link>
+              </li>
+              <li>
+                <Link href="/delete-account" className="hover:text-white transition-colors">
+                  Delete Account
                 </Link>
               </li>
             </ul>
@@ -108,11 +136,11 @@ export function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
+        <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono text-[#71717A]">
           <div>
-            © {new Date().getFullYear()} Market My Idea. Audience Distribution Platform.
+            © {new Date().getFullYear()} {BUSINESS_INFO.brandName}. Operated by {BUSINESS_INFO.proprietorName}. All rights reserved.
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <Link href="/contact" className="hover:text-[#A1A1AA] transition-colors">
               Contact
             </Link>
@@ -124,6 +152,12 @@ export function Footer() {
             </Link>
             <Link href="/refund-policy" className="hover:text-[#A1A1AA] transition-colors">
               Refunds
+            </Link>
+            <Link href="/shipping-policy" className="hover:text-[#A1A1AA] transition-colors">
+              Shipping
+            </Link>
+            <Link href="/grievance" className="hover:text-[#A1A1AA] transition-colors">
+              Grievance
             </Link>
           </div>
         </div>

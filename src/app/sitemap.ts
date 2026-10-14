@@ -18,6 +18,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/terms',
     '/privacy',
     '/refund-policy',
+    '/shipping-policy',
+    '/grievance',
     '/delete-account',
     '/auth/login',
     '/auth/signup',

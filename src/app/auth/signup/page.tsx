@@ -420,6 +420,22 @@ function SignupContent() {
             />
           </div>
 
+          <p className="text-[11px] text-[#71717A] dark:text-zinc-400 leading-normal">
+            By signing up, you agree to our{' '}
+            <Link href="/terms" className="text-[#FF5416] hover:underline">
+              Terms & Conditions
+            </Link>
+            ,{' '}
+            <Link href="/privacy" className="text-[#FF5416] hover:underline">
+              Privacy Policy
+            </Link>
+            , and{' '}
+            <Link href="/refund-policy" className="text-[#FF5416] hover:underline">
+              Refund Policy
+            </Link>
+            .
+          </p>
+
           <Button
             type="submit"
             variant="primary"
