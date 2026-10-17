@@ -145,7 +145,12 @@ export default function TermsPage() {
               <strong>Payment Collection:</strong> Payments are collected securely from the Business through authorized, PCI-DSS compliant third-party payment gateway partners (e.g. PayU / Razorpay). Sensitive card credentials or netbanking passwords are never collected or stored on our servers.
             </li>
             <li>
-              <strong>Platform Payment Holding:</strong> The Business deposits the total order amount upon deal confirmation. Funds are held in platform payment protection pending verified delivery and business acceptance. (Note: This is an internal milestone payment holding mechanism and does not constitute a licensed third-party banking escrow service).
+              <strong>Two-Stage Campaign Payments:</strong> {BUSINESS_INFO.brandName} uses a straightforward two-stage payment process. There is no escrow arrangement or platform-held campaign balance. Payments are made in two instalments:
+              <ul className="list-disc pl-5 mt-1 space-y-1">
+                <li><strong>1. Initial Payment (50%):</strong> The brand pays 50% of the agreed campaign amount before work begins. Once confirmed, the creator starts working on the campaign.</li>
+                <li><strong>2. Final Payment (50%):</strong> After completing content, the creator shares a private preview with the brand for review. The brand pays the remaining 50% before the creator publishes the content publicly or releases the final, unwatermarked deliverable.</li>
+                <li><strong>3. Publication & Completion:</strong> Once final payment is confirmed, the creator publishes approved content or provides agreed final deliverables, and the campaign is marked as completed.</li>
+              </ul>
             </li>
             <li>
               <strong>Creator Payouts:</strong> Upon order completion (or 4-day auto-approval), the net payout (order subtotal minus applicable platform fee) is initiated manually to the Creator&apos;s verified Indian bank account or UPI ID.

@@ -7,10 +7,11 @@
 
 export interface StartPaymentParams {
   orderId: string;
+  stage?: 'INITIAL' | 'FINAL';
   customerName?: string;
   customerEmail?: string;
   onPaymentStarted?: () => void;
-  onPaymentSuccess?: (result: { orderId: string; status: string }) => void;
+  onPaymentSuccess?: (result: { orderId: string; status: string; stage?: 'INITIAL' | 'FINAL' }) => void;
   onPaymentFailure?: (error: { message: string; code?: string }) => void;
   onDismiss?: () => void;
 }
@@ -52,9 +53,11 @@ export function loadRazorpayScript(): Promise<boolean> {
 export async function startRazorpayPayment(params: StartPaymentParams): Promise<{
   success: boolean;
   status: string;
+  stage?: 'INITIAL' | 'FINAL';
   error?: string;
 }> {
   try {
+    const paymentStage = params.stage || 'INITIAL';
     if (params.onPaymentStarted) {
       params.onPaymentStarted();
     }
@@ -63,7 +66,10 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
     const createRes = await fetch('/api/payments/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: params.orderId }),
+      body: JSON.stringify({
+        order_id: params.orderId,
+        stage: paymentStage,
+      }),
     });
 
     const createData = await createRes.json();
@@ -72,7 +78,7 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
       if (params.onPaymentFailure) {
         params.onPaymentFailure({ message: errMsg });
       }
-      return { success: false, status: 'FAILED', error: errMsg };
+      return { success: false, status: 'FAILED', stage: paymentStage, error: errMsg };
     }
 
     const { key_id, order_id: razorpayOrderId, amount, currency, order_number } = createData;
@@ -84,17 +90,18 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
       if (params.onPaymentFailure) {
         params.onPaymentFailure({ message: errMsg });
       }
-      return { success: false, status: 'FAILED', error: errMsg };
+      return { success: false, status: 'FAILED', stage: paymentStage, error: errMsg };
     }
 
     // 3. Open Razorpay Standard Checkout
     return new Promise((resolve) => {
+      const stageLabel = paymentStage === 'INITIAL' ? '50% Initial Payment' : '50% Final Payment';
       const options = {
         key: key_id,
         amount: amount,
         currency: currency || 'INR',
         name: 'Market My Idea',
-        description: `Order #${order_number}`,
+        description: `Order #${order_number} (${stageLabel})`,
         order_id: razorpayOrderId,
         prefill: {
           name: params.customerName || '',
@@ -115,6 +122,7 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 order_id: params.orderId,
+                stage: paymentStage,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
@@ -128,7 +136,7 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
               if (params.onPaymentFailure) {
                 params.onPaymentFailure({ message: errMsg });
               }
-              resolve({ success: false, status: 'FAILED', error: errMsg });
+              resolve({ success: false, status: 'FAILED', stage: paymentStage, error: errMsg });
               return;
             }
 
@@ -136,10 +144,11 @@ export async function startRazorpayPayment(params: StartPaymentParams): Promise<
               params.onPaymentSuccess({
                 orderId: params.orderId,
                 status: 'PAID',
+                stage: paymentStage,
               });
             }
 
-            resolve({ success: true, status: 'PAID' });
+            resolve({ success: true, status: 'PAID', stage: paymentStage });
           } catch (err: any) {
             const errMsg = err.message || 'Verification network error';
             if (params.onPaymentFailure) {

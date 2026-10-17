@@ -410,6 +410,7 @@ export function ConversationChat({
     try {
       const res = await payOrderWithRazorpay(
         activeOrder.id,
+        'INITIAL',
         currentUser?.display_name,
         currentUser?.email
       );

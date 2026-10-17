@@ -15,6 +15,7 @@
 
 export interface CreatePaymentOrderParams {
   orderId: string;
+  stage?: 'INITIAL' | 'FINAL';
   subtotal?: number;
   currency?: string;
   notes?: Record<string, string>;
@@ -27,10 +28,12 @@ export interface PaymentOrderResult {
   amount: number; // in paise
   currency: string;
   orderNumber: string;
+  stage?: 'INITIAL' | 'FINAL';
 }
 
 export interface VerifyPaymentParams {
   orderId: string;
+  stage?: 'INITIAL' | 'FINAL';
   razorpay_payment_id: string;
   razorpay_order_id: string;
   razorpay_signature: string;
@@ -39,7 +42,7 @@ export interface VerifyPaymentParams {
 export interface IPaymentService {
   calculatePlatformFee(subtotal: number): number;
   createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult>;
-  verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string }>;
+  verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string; stage?: string }>;
   initiateRefund(params: {
     orderId: string;
     amount: number;
@@ -56,13 +59,16 @@ class PaymentService implements IPaymentService {
 
   /**
    * Request server-side creation of a Razorpay Order.
-   * The server authenticates caller, verifies ownership, and reads the locked total amount from Supabase.
+   * The server authenticates caller, verifies ownership, and calculates stage amount from Supabase.
    */
   async createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
     const response = await fetch('/api/payments/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: params.orderId }),
+      body: JSON.stringify({
+        order_id: params.orderId,
+        stage: params.stage || 'INITIAL',
+      }),
     });
 
     const data = await response.json();
@@ -77,6 +83,7 @@ class PaymentService implements IPaymentService {
       amount: data.amount,
       currency: data.currency,
       orderNumber: data.order_number,
+      stage: data.stage || params.stage || 'INITIAL',
     };
   }
 
@@ -84,7 +91,7 @@ class PaymentService implements IPaymentService {
    * Server-side signature verification.
    * Client-side code sends the Razorpay payment credentials for HMAC-SHA256 signature verification.
    */
-  async verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string }> {
+  async verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string; stage?: string }> {
     const response = await fetch('/api/payments/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

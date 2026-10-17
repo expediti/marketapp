@@ -30,7 +30,8 @@ export async function POST(request: Request) {
 
     // 2. Parse request body
     const body = await request.json().catch(() => ({}));
-    const { order_id } = body;
+    const { order_id, stage = 'INITIAL' } = body;
+    const paymentStage: 'INITIAL' | 'FINAL' = stage === 'FINAL' ? 'FINAL' : 'INITIAL';
 
     if (!order_id || typeof order_id !== 'string') {
       return NextResponse.json(
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('id, order_number, business_id, business_user_id, order_status, payment_status, total_amount')
+      .select('id, order_number, business_id, business_user_id, order_status, payment_status, total_amount, initial_payment_amount, final_payment_amount, initial_paid_at, final_paid_at')
       .eq('id', order_id)
       .maybeSingle();
 
@@ -66,26 +67,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Verification: payment must not already be PAID
-    if (order.payment_status === 'PAID' || order.order_status === 'PAID') {
-      return NextResponse.json(
-        { error: 'This order has already been paid.' },
-        { status: 400 }
-      );
-    }
-
-    // 6. Workflow state verification: order must be DEAL_CONFIRMED or PAYMENT_PENDING
-    const allowedStatuses = ['DEAL_CONFIRMED', 'PAYMENT_PENDING', 'ACCEPTED_AWAITING_PAYMENT'];
-    if (!allowedStatuses.includes(order.order_status)) {
-      return NextResponse.json(
-        {
-          error: `Payment cannot be initiated for order in '${order.order_status}' status. Must be DEAL_CONFIRMED.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // 7. Amount verification (Source of truth: database)
+    // 5. Amount verification (Source of truth: database)
     const lockedTotalAmount = Number(order.total_amount);
     if (isNaN(lockedTotalAmount) || lockedTotalAmount <= 0) {
       return NextResponse.json(
@@ -94,57 +76,109 @@ export async function POST(request: Request) {
       );
     }
 
-    // Amount in paise (integer)
-    const amountInPaise = Math.round(lockedTotalAmount * 100);
+    // Calculate Two-Stage (50% initial + 50% final) amounts
+    const initialAmount = Math.round(lockedTotalAmount * 0.5 * 100) / 100;
+    const finalAmount = Math.round((lockedTotalAmount - initialAmount) * 100) / 100;
 
-    // 8. Create Razorpay Order server-side
+    let stageAmount = initialAmount;
+    if (paymentStage === 'FINAL') {
+      stageAmount = finalAmount;
+    }
+
+    // 6. Workflow state verification per stage
+    if (paymentStage === 'INITIAL') {
+      if (order.initial_paid_at || order.payment_status === 'PARTIALLY_PAID' || (order.payment_status === 'PAID' && order.initial_paid_at)) {
+        return NextResponse.json(
+          { error: 'Initial 50% payment has already been completed for this order.' },
+          { status: 400 }
+        );
+      }
+
+      const allowedInitialStatuses = ['DEAL_CONFIRMED', 'PAYMENT_PENDING', 'ACCEPTED_AWAITING_PAYMENT', 'DRAFT', 'ACCEPTED'];
+      if (!allowedInitialStatuses.includes(order.order_status)) {
+        return NextResponse.json(
+          {
+            error: `Initial payment cannot be initiated for order in '${order.order_status}' status.`,
+          },
+          { status: 400 }
+        );
+      }
+    } else {
+      // paymentStage === 'FINAL'
+      if (order.final_paid_at || (order.payment_status === 'PAID' && order.final_paid_at)) {
+        return NextResponse.json(
+          { error: 'Final 50% payment has already been completed for this order.' },
+          { status: 400 }
+        );
+      }
+
+      const allowedFinalStatuses = [
+        'PREVIEW_SUBMITTED',
+        'FINAL_PAYMENT_PENDING',
+        'DELIVERED',
+        'WORK_STARTED',
+        'IN_PROGRESS',
+        'PAID',
+        'READY_TO_PUBLISH'
+      ];
+      if (!allowedFinalStatuses.includes(order.order_status)) {
+        return NextResponse.json(
+          {
+            error: `Final payment cannot be initiated for order in '${order.order_status}' status. Creator must share private preview first.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Amount in paise (integer)
+    const amountInPaise = Math.round(stageAmount * 100);
+
+    // 7. Create Razorpay Order server-side
     const { keyId } = getRazorpayCredentials();
 
+    const stageNote = paymentStage === 'INITIAL' ? '50% Initial' : '50% Final';
     const razorpayOrder = await createRazorpayOrder({
       amountInPaise,
       currency: 'INR',
-      receipt: order.order_number,
+      receipt: `${order.order_number}-${paymentStage.toLowerCase()}`,
       notes: {
         order_id: order.id,
         order_number: order.order_number,
         business_id: user.id,
+        stage: paymentStage,
+        note: stageNote,
       },
     });
 
-    // 9. Store the Razorpay order ID in Supabase payments table via RPC
-    const { error: rpcError } = await (supabase as any).rpc('record_payment_order', {
-      p_order_id: order.id,
-      p_razorpay_order_id: razorpayOrder.id,
-      p_amount: lockedTotalAmount,
-      p_currency: 'INR',
-      p_payer_user_id: user.id,
-    });
-
-    if (rpcError) {
-      console.error('Failed to record payment order in database:', rpcError);
-      // Fallback direct insert/update if RPC is not yet applied
-      const { error: directError } = await (supabase as any)
-        .from('payments')
-        .upsert(
-          {
-            order_id: order.id,
-            payer_user_id: user.id,
-            provider: 'razorpay',
-            provider_payment_id: razorpayOrder.id,
-            razorpay_order_id: razorpayOrder.id,
-            amount: lockedTotalAmount,
-            currency: 'INR',
-            status: 'PENDING',
+    // 8. Store the Razorpay order ID in Supabase payments table
+    const { error: directError } = await (supabase as any)
+      .from('payments')
+      .upsert(
+        {
+          order_id: order.id,
+          payer_user_id: user.id,
+          provider: 'razorpay',
+          provider_payment_id: razorpayOrder.id,
+          razorpay_order_id: razorpayOrder.id,
+          amount: stageAmount,
+          currency: 'INR',
+          status: 'PENDING',
+          stage: paymentStage,
+          metadata: {
+            stage: paymentStage,
+            stage_amount: stageAmount,
+            total_amount: lockedTotalAmount,
           },
-          { onConflict: 'razorpay_order_id' }
-        );
-      if (directError) {
-        console.warn('Direct payment fallback also reported:', directError);
-      }
+        },
+        { onConflict: 'razorpay_order_id' }
+      );
+
+    if (directError) {
+      console.warn('Payment record upsert notice:', directError);
     }
 
-    // 10. Return ONLY what is required by Razorpay Standard Checkout
-    // NEVER expose RAZORPAY_KEY_SECRET!
+    // 9. Return ONLY what is required by Razorpay Standard Checkout
     return NextResponse.json({
       success: true,
       key_id: keyId,
@@ -152,6 +186,7 @@ export async function POST(request: Request) {
       amount: razorpayOrder.amount, // in paise
       currency: razorpayOrder.currency,
       order_number: order.order_number,
+      stage: paymentStage,
     });
   } catch (err: any) {
     console.error('Error in /api/payments/create-order:', err);

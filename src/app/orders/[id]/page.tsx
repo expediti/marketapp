@@ -9,6 +9,7 @@ import { Order } from '@/types/marketplace';
 import { OrderBriefView } from '@/components/order/OrderBriefView';
 import { ChatWindow } from '@/components/order/ChatWindow';
 import { DeliveryWorkspace } from '@/components/order/DeliveryWorkspace';
+import { OrderTimeline } from '@/components/order/OrderTimeline';
 import { DisputeModal } from '@/components/order/DisputeModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +25,7 @@ import {
   ChevronUp,
   FileText,
   History,
+  CreditCard,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +72,16 @@ export default function OrderWorkspacePage() {
               subtotal: Number(o.subtotal || 0),
               platform_fee: Number(o.platform_fee || 0),
               total_amount: Number(o.total_amount || 0),
+              initial_payment_amount: o.initial_payment_amount ? Number(o.initial_payment_amount) : undefined,
+              final_payment_amount: o.final_payment_amount ? Number(o.final_payment_amount) : undefined,
+              initial_paid_at: o.initial_paid_at,
+              final_paid_at: o.final_paid_at,
+              preview_url: o.preview_url,
+              preview_notes: o.preview_notes,
+              preview_submitted_at: o.preview_submitted_at,
+              final_delivery_url: o.final_delivery_url,
+              final_delivery_notes: o.final_delivery_notes,
+              final_delivered_at: o.final_delivered_at,
               payout_status: (o.payout_status as any) || 'UNRELEASED',
               deadline: b?.deadline || o.deadline || o.created_at,
               included_revisions: o.included_revisions ?? 1,
@@ -164,16 +176,34 @@ export default function OrderWorkspacePage() {
     );
   }
 
-  const isPaid =
+  const initialPaymentAmount =
+    order.initial_payment_amount ?? Math.round(order.total_amount * 0.5 * 100) / 100;
+  const finalPaymentAmount =
+    order.final_payment_amount ?? Math.round((order.total_amount - initialPaymentAmount) * 100) / 100;
+
+  const isStage1Paid = Boolean(
+    order.initial_paid_at ||
+    order.payment_status === 'PARTIALLY_PAID' ||
     order.payment_status === 'PAID' ||
-    order.order_status === 'PAID' ||
     order.order_status === 'WORK_STARTED' ||
     order.order_status === 'IN_PROGRESS' ||
+    order.order_status === 'PREVIEW_SUBMITTED' ||
+    order.order_status === 'FINAL_PAYMENT_PENDING' ||
+    order.order_status === 'READY_TO_PUBLISH' ||
     order.order_status === 'DELIVERED' ||
-    order.order_status === 'REVISION_REQUESTED' ||
     order.order_status === 'APPROVED' ||
     order.order_status === 'AUTO_APPROVED' ||
-    order.order_status === 'COMPLETED';
+    order.order_status === 'COMPLETED'
+  );
+
+  const isStage2Paid = Boolean(
+    order.final_paid_at ||
+    order.order_status === 'READY_TO_PUBLISH' ||
+    (order.payment_status === 'PAID' &&
+      order.order_status !== 'WORK_STARTED' &&
+      order.order_status !== 'PREVIEW_SUBMITTED') ||
+    order.order_status === 'COMPLETED'
+  );
 
   const otherPartyName = isMeCreator
     ? order.business?.business_name || 'Brand Partner'
@@ -194,17 +224,25 @@ export default function OrderWorkspacePage() {
           <span>Back to Orders</span>
         </Link>
 
-        {isPaid ? (
+        {isStage2Paid ? (
           <span className="text-[11px] text-[#047857] dark:text-emerald-400 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold flex items-center gap-1">
             <CheckCircle className="w-3.5 h-3.5" />
-            <span>Payment Protected ✓</span>
+            <span>Two-Stage Payment: 100% Paid ✓</span>
+          </span>
+        ) : isStage1Paid ? (
+          <span className="text-[11px] text-[#047857] dark:text-emerald-400 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold flex items-center gap-1">
+            <CheckCircle className="w-3.5 h-3.5" />
+            <span>Stage 1 Paid (50%) • Stage 2 Due on Preview</span>
           </span>
         ) : (
-          <span className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-            Awaiting Payment
+          <span className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 font-semibold">
+            Two-Stage Payment: Initial 50% Due
           </span>
         )}
       </div>
+
+      {/* TIMELINE PROGRESS BAR */}
+      <OrderTimeline currentStatus={order.order_status} />
 
       {/* COMPACT ORDER HEADER */}
       <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
@@ -223,9 +261,14 @@ export default function OrderWorkspacePage() {
 
           <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2">
             <StatusBadge status={order.order_status} size="sm" />
-            <span className="font-bold text-lg sm:text-xl text-[#121214] dark:text-white">
-              ₹{order.total_amount.toLocaleString('en-IN')}
-            </span>
+            <div className="text-right">
+              <span className="font-bold text-lg sm:text-xl text-[#121214] dark:text-white block">
+                ₹{order.total_amount.toLocaleString('en-IN')}
+              </span>
+              <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block">
+                50% (₹{initialPaymentAmount.toLocaleString('en-IN')}) + 50% (₹{finalPaymentAmount.toLocaleString('en-IN')})
+              </span>
+            </div>
           </div>
         </div>
 
@@ -239,9 +282,9 @@ export default function OrderWorkspacePage() {
           </div>
 
           <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
-            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Price</span>
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">2-Stage Payment</span>
             <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
-              ₹{order.total_amount.toLocaleString('en-IN')}
+              2 × ₹{initialPaymentAmount.toLocaleString('en-IN')}
             </span>
           </div>
 

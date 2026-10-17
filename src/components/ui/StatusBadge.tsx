@@ -40,6 +40,14 @@ export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
         return 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800';
       case 'WORK_STARTED':
         return 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+      case 'PREVIEW_SUBMITTED':
+        return 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800';
+      case 'FINAL_PAYMENT_PENDING':
+        return 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+      case 'READY_TO_PUBLISH':
+        return 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+      case 'PARTIALLY_PAID':
+        return 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800';
       case 'CREATOR_PENDING':
       case 'PAYMENT_PENDING':
       case 'PAYOUT_PENDING':

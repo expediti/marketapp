@@ -74,9 +74,20 @@ interface MarketplaceContextType {
   simulatePaymentSuccess: (orderId: string) => Promise<void>;
   payOrderWithRazorpay: (
     orderId: string,
+    stage?: 'INITIAL' | 'FINAL',
     customerName?: string,
     customerEmail?: string
-  ) => Promise<{ success: boolean; status: string; error?: string }>;
+  ) => Promise<{ success: boolean; status: string; stage?: 'INITIAL' | 'FINAL'; error?: string }>;
+  submitPrivatePreview: (
+    orderId: string,
+    previewUrl: string,
+    previewNotes?: string
+  ) => Promise<void>;
+  publishAndCompleteOrder: (
+    orderId: string,
+    liveUrl: string,
+    completionNotes?: string
+  ) => Promise<void>;
   markWorkStarted: (orderId: string) => Promise<void>;
   uploadDeliveryProofFile: (file: File) => Promise<{ publicUrl: string; storagePath: string }>;
   createOrderFromCollaboration: (params: {
@@ -2266,30 +2277,48 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
   const payOrderWithRazorpay = async (
     orderId: string,
+    stage: 'INITIAL' | 'FINAL' = 'INITIAL',
     customerName?: string,
     customerEmail?: string
-  ): Promise<{ success: boolean; status: string; error?: string }> => {
+  ): Promise<{ success: boolean; status: string; stage?: 'INITIAL' | 'FINAL'; error?: string }> => {
     if (!currentUser) throw new Error('Must be logged in to pay for an order');
 
     const result = await startRazorpayPayment({
       orderId,
+      stage,
       customerName: customerName || currentUser.display_name,
       customerEmail: customerEmail || currentUser.email,
     });
 
     if (result.success) {
-      // Synchronously transition local order to PAID so UI updates instantaneously
+      const now = new Date().toISOString();
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                order_status: 'PAID',
-                payment_status: 'PAID',
-                updated_at: new Date().toISOString(),
-              }
-            : o
-        )
+        prev.map((o) => {
+          if (o.id !== orderId) return o;
+          const halfAmount = Math.round(o.total_amount * 0.5 * 100) / 100;
+          const remainingAmount = Math.round((o.total_amount - halfAmount) * 100) / 100;
+
+          if (stage === 'INITIAL') {
+            return {
+              ...o,
+              order_status: 'WORK_STARTED' as const,
+              payment_status: 'PARTIALLY_PAID' as const,
+              initial_payment_amount: halfAmount,
+              initial_paid_at: now,
+              work_started_at: o.work_started_at || now,
+              updated_at: now,
+            };
+          } else {
+            return {
+              ...o,
+              order_status: 'READY_TO_PUBLISH' as const,
+              payment_status: 'PAID' as const,
+              final_payment_amount: remainingAmount,
+              final_paid_at: now,
+              updated_at: now,
+            };
+          }
+        })
       );
 
       if (currentUser?.id) {
@@ -2298,6 +2327,132 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
 
     return result;
+  };
+
+  const submitPrivatePreview = async (
+    orderId: string,
+    previewUrl: string,
+    previewNotes?: string
+  ): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to submit preview');
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { error: rpcError } = await (supabase as any).rpc('submit_private_preview', {
+        p_order_id: orderId,
+        p_preview_url: previewUrl,
+        p_notes: previewNotes || null,
+      });
+
+      if (rpcError) {
+        console.warn('submit_private_preview RPC warning, using direct update:', rpcError);
+        await (supabase as any)
+          .from('orders')
+          .update({
+            order_status: 'PREVIEW_SUBMITTED',
+            preview_url: previewUrl,
+            preview_notes: previewNotes || null,
+            preview_submitted_at: now,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+      }
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'PREVIEW_SUBMITTED' as const,
+              preview_url: previewUrl,
+              preview_notes: previewNotes || null,
+              preview_submitted_at: now,
+              updated_at: now,
+            }
+          : o
+      )
+    );
+
+    if (currentUser?.id) {
+      fetchUserData(currentUser.id, activeRole).catch(console.error);
+    }
+  };
+
+  const publishAndCompleteOrder = async (
+    orderId: string,
+    liveUrl: string,
+    completionNotes?: string
+  ): Promise<void> => {
+    if (!currentUser) throw new Error('Must be logged in to complete campaign');
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      const { error: rpcError } = await (supabase as any).rpc('publish_and_complete_order', {
+        p_order_id: orderId,
+        p_live_url: liveUrl,
+        p_notes: completionNotes || null,
+      });
+
+      if (rpcError) {
+        console.warn('publish_and_complete_order RPC warning, using direct update:', rpcError);
+        await (supabase as any)
+          .from('orders')
+          .update({
+            order_status: 'COMPLETED',
+            payout_status: 'PAYOUT_PENDING',
+            delivered_at: now,
+            final_delivery_url: liveUrl,
+            final_delivery_notes: completionNotes || null,
+            final_delivered_at: now,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+
+        await (supabase as any)
+          .from('deliveries')
+          .insert({
+            order_id: orderId,
+            submitted_by: currentUser.id,
+            proof_url: liveUrl,
+            instagram_post_url: liveUrl,
+            notes: completionNotes || null,
+            status: 'approved',
+            submitted_at: now,
+          });
+      }
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              order_status: 'COMPLETED' as const,
+              payout_status: 'PAYOUT_PENDING' as const,
+              delivered_at: now,
+              final_delivery_url: liveUrl,
+              final_delivery_notes: completionNotes || null,
+              final_delivered_at: now,
+              updated_at: now,
+              delivery: {
+                id: `del_${Date.now()}`,
+                order_id: orderId,
+                submitted_by: currentUser.id,
+                proof_url: liveUrl,
+                instagram_post_url: liveUrl,
+                notes: completionNotes || '',
+                submitted_at: now,
+                status: 'approved',
+              },
+            }
+          : o
+      )
+    );
+
+    if (currentUser?.id) {
+      fetchUserData(currentUser.id, activeRole).catch(console.error);
+    }
   };
 
   const markWorkStarted = async (orderId: string): Promise<void> => {
@@ -3646,6 +3801,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         cancelConfirmedDeal,
         simulatePaymentSuccess,
         payOrderWithRazorpay,
+        submitPrivatePreview,
+        publishAndCompleteOrder,
         markWorkStarted,
         uploadDeliveryProofFile,
         createOrderFromCollaboration,

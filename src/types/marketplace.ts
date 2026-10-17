@@ -31,6 +31,9 @@ export type OrderStatus =
   | 'WORK_STARTED'
   | 'WAITING_FOR_BUSINESS'
   | 'OVERDUE'
+  | 'PREVIEW_SUBMITTED'
+  | 'FINAL_PAYMENT_PENDING'
+  | 'READY_TO_PUBLISH'
   | 'DELIVERED'
   | 'REVISION_REQUESTED'
   | 'APPROVED'
@@ -49,11 +52,14 @@ export type PaymentStatus =
   | 'NOT_REQUIRED'
   | 'PENDING'
   | 'PROCESSING'
+  | 'PARTIALLY_PAID'
   | 'PAID'
   | 'FAILED'
   | 'REFUND_PENDING'
   | 'REFUNDED'
   | 'FUNDED';
+
+export type PaymentStage = 'INITIAL' | 'FINAL' | 'FULL';
 
 export type PayoutStatus = 'UNRELEASED' | 'PAYOUT_PENDING' | 'PAID' | 'HELD' | 'CANCELLED';
 
@@ -421,6 +427,17 @@ export interface Order {
   system_review_reason?: string | null;
   system_review_description?: string | null;
   system_review_evidence_url?: string | null;
+  // Two-Stage Campaign Payment Fields
+  initial_payment_amount?: number;
+  final_payment_amount?: number;
+  initial_paid_at?: string | null;
+  final_paid_at?: string | null;
+  preview_url?: string | null;
+  preview_notes?: string | null;
+  preview_submitted_at?: string | null;
+  final_delivery_url?: string | null;
+  final_delivery_notes?: string | null;
+  final_delivered_at?: string | null;
   payment?: Payment;
 }
 
@@ -429,6 +446,7 @@ export interface Payment {
   order_id: string;
   payer_user_id?: string | null;
   provider: string;
+  stage?: PaymentStage;
   provider_payment_id?: string | null;
   amount: number;
   currency: string;

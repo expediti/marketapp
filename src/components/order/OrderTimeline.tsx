@@ -6,13 +6,12 @@ interface OrderTimelineProps {
   currentStatus: OrderStatus;
 }
 
-const STEPS: { key: string; label: string }[] = [
-  { key: 'CONFIRMED', label: 'Deal Confirmed' },
-  { key: 'ACCEPTED', label: 'Accepted' },
-  { key: 'IN_PROGRESS', label: 'In Production' },
-  { key: 'DELIVERED', label: 'Delivered (4-Day Review)' },
-  { key: 'APPROVED', label: 'Approved' },
-  { key: 'COMPLETED', label: 'Completed' },
+const STEPS: { key: string; label: string; desc: string }[] = [
+  { key: 'CONFIRMED', label: '1. Deal Confirmed', desc: 'Terms agreed' },
+  { key: 'INITIAL_PAYMENT', label: '2. Initial 50% Paid', desc: 'Upfront payment' },
+  { key: 'PRODUCTION', label: '3. In Production', desc: 'Content creation' },
+  { key: 'PREVIEW_FINAL_PAY', label: '4. Preview & Final 50%', desc: 'Review & remaining 50%' },
+  { key: 'PUBLISHED_COMPLETE', label: '5. Published & Done', desc: 'Public deliverable' },
 ];
 
 export function OrderTimeline({ currentStatus }: OrderTimelineProps) {
@@ -44,18 +43,18 @@ export function OrderTimeline({ currentStatus }: OrderTimelineProps) {
       case 'WAITING_FOR_BUSINESS':
       case 'OVERDUE':
         return 2;
-      case 'DELIVERED':
+      case 'PREVIEW_SUBMITTED':
+      case 'FINAL_PAYMENT_PENDING':
       case 'REVISION_REQUESTED':
-      case 'DISPUTED':
-      case 'SYSTEM_REVIEW':
-      case 'ADMIN_REVIEW':
         return 3;
+      case 'READY_TO_PUBLISH':
+        return 3;
+      case 'DELIVERED':
       case 'APPROVED':
       case 'AUTO_APPROVED':
       case 'PAYOUT_PENDING':
-        return 4;
       case 'COMPLETED':
-        return 5;
+        return 4;
       default:
         return 0;
     }
@@ -98,7 +97,7 @@ export function OrderTimeline({ currentStatus }: OrderTimelineProps) {
       <div className="relative">
         <div className="hidden sm:block absolute top-1/2 left-4 right-4 -translate-y-1/2 h-0.5 bg-[#E5E5DE] dark:bg-zinc-800" />
 
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 sm:gap-2 relative z-10">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-2 relative z-10">
           {STEPS.map((step, idx) => {
             const isCompleted = idx < activeIndex;
             const isCurrent = idx === activeIndex;

@@ -19,7 +19,13 @@ import {
   Info,
   CreditCard,
   XCircle,
-  FileText,
+  Eye,
+  Send,
+  ShieldCheck,
+  Lock,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
 } from 'lucide-react';
 
 function InstagramIcon({ className }: { className?: string }) {
@@ -49,34 +55,81 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
   const {
     currentUser,
     activeRole,
-    submitDelivery,
-    approveDelivery,
+    submitPrivatePreview,
+    publishAndCompleteOrder,
     requestRevision,
     markWaitingForBusiness,
     resumeFromWaiting,
     requestDeadlineExtension,
     respondDeadlineExtension,
-    markWorkStarted,
     payOrderWithRazorpay,
     cancelConfirmedDeal,
     uploadDeliveryProofFile,
   } = useMarketplace();
 
-  // Submission form state
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [proofFileUrl, setProofFileUrl] = useState<string>('');
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const [instagramPostUrl, setInstagramPostUrl] = useState('');
-  const [deliveryNotes, setDeliveryNotes] = useState('');
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isApproving, setIsApproving] = useState(false);
-  const [isStartingWork, setIsStartingWork] = useState(false);
+  // Two-Stage Calculation
+  const initialPaymentAmount =
+    order.initial_payment_amount ?? Math.round(order.total_amount * 0.5 * 100) / 100;
+  const finalPaymentAmount =
+    order.final_payment_amount ?? Math.round((order.total_amount - initialPaymentAmount) * 100) / 100;
 
-  // Pay Now Modal state
-  const [isPayNowModalOpen, setIsPayNowModalOpen] = useState(false);
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
+  // State flags
+  const isInitialPaid = Boolean(
+    order.initial_paid_at ||
+    order.payment_status === 'PARTIALLY_PAID' ||
+    order.payment_status === 'PAID' ||
+    order.order_status === 'WORK_STARTED' ||
+    order.order_status === 'IN_PROGRESS' ||
+    order.order_status === 'PREVIEW_SUBMITTED' ||
+    order.order_status === 'FINAL_PAYMENT_PENDING' ||
+    order.order_status === 'READY_TO_PUBLISH' ||
+    order.order_status === 'DELIVERED' ||
+    order.order_status === 'APPROVED' ||
+    order.order_status === 'AUTO_APPROVED' ||
+    order.order_status === 'COMPLETED'
+  );
+
+  const isPreviewSubmitted = Boolean(
+    order.preview_url ||
+    order.order_status === 'PREVIEW_SUBMITTED' ||
+    order.order_status === 'FINAL_PAYMENT_PENDING' ||
+    order.order_status === 'READY_TO_PUBLISH' ||
+    order.order_status === 'DELIVERED' ||
+    order.order_status === 'COMPLETED'
+  );
+
+  const isFinalPaid = Boolean(
+    order.final_paid_at ||
+    order.order_status === 'READY_TO_PUBLISH' ||
+    (order.payment_status === 'PAID' &&
+      order.order_status !== 'WORK_STARTED' &&
+      order.order_status !== 'PREVIEW_SUBMITTED') ||
+    order.order_status === 'COMPLETED'
+  );
+
+  const isCompleted =
+    order.order_status === 'COMPLETED' ||
+    order.order_status === 'APPROVED' ||
+    order.order_status === 'AUTO_APPROVED';
+
+  // Private Preview form state (Creator)
+  const [previewInputUrl, setPreviewInputUrl] = useState('');
+  const [previewInputNotes, setPreviewInputNotes] = useState('');
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [isSubmittingPreview, setIsSubmittingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Final Publication form state (Creator)
+  const [publicPostUrl, setPublicPostUrl] = useState('');
+  const [publicNotes, setPublicNotes] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  // Payment states (Brand)
+  const [isProcessingInitialPay, setIsProcessingInitialPay] = useState(false);
+  const [initialPayError, setInitialPayError] = useState<string | null>(null);
+  const [isProcessingFinalPay, setIsProcessingFinalPay] = useState(false);
+  const [finalPayError, setFinalPayError] = useState<string | null>(null);
 
   // Cancel Deal Modal state
   const [isCancelDealModalOpen, setIsCancelDealModalOpen] = useState(false);
@@ -102,6 +155,9 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
   const [extensionReason, setExtensionReason] = useState('');
   const [isSubmittingExtension, setIsSubmittingExtension] = useState(false);
 
+  // Policy disclosure expander
+  const [showPolicyInfo, setShowPolicyInfo] = useState(false);
+
   const isMeBusiness =
     currentUser?.id === order.business_user_id ||
     currentUser?.id === order.business_id ||
@@ -124,156 +180,44 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
     new Date(order.deadline).getTime() < Date.now() &&
     ['ACCEPTED', 'IN_PROGRESS', 'WORK_STARTED', 'REVISION_REQUESTED'].includes(order.order_status);
 
-  // Canonical state helpers (guarantees NO "Payment Pending" bug after PAID)
-  const isPaid =
-    order.payment_status === 'PAID' ||
-    order.order_status === 'PAID' ||
-    order.order_status === 'WORK_STARTED' ||
-    order.order_status === 'IN_PROGRESS' ||
-    order.order_status === 'DELIVERED' ||
-    order.order_status === 'REVISION_REQUESTED' ||
-    order.order_status === 'APPROVED' ||
-    order.order_status === 'AUTO_APPROVED' ||
-    order.order_status === 'COMPLETED';
-
-  const isConfirmedUnpaid =
-    !isPaid &&
-    (order.order_status === 'DEAL_CONFIRMED' || order.order_status === 'PAYMENT_PENDING');
-
-  const isPaidAwaitingStart =
-    isPaid && order.order_status === 'PAID';
-
-  const isWorkInProgress =
-    isPaid &&
-    (order.order_status === 'WORK_STARTED' ||
-      order.order_status === 'IN_PROGRESS' ||
-      order.order_status === 'ACCEPTED');
-
-  // Format 4-day auto-approval timer
-  const autoApproveTimeRemaining = (() => {
-    if (!order.auto_approve_deadline) return null;
-    const diffMs = new Date(order.auto_approve_deadline).getTime() - Date.now();
-    if (diffMs <= 0) return 'Auto-approval due';
-    const hours = Math.floor(diffMs / (1000 * 60 * 60));
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    return `${days}d ${remHours}h remaining`;
-  })();
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setProofFile(file);
-    setSubmissionError(null);
-  };
-
-  // Submit delivery - Primary is Instagram Reel URL
-  const handleSubmitDelivery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmissionError(null);
-
-    const parsedIg = parseInstagramUrl(instagramPostUrl.trim());
-    if (!parsedIg.isValid || !parsedIg.canonicalUrl) {
-      setSubmissionError(
-        parsedIg.error || 'Please provide a valid Instagram Reel URL (e.g. https://www.instagram.com/reel/...)'
-      );
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      let finalProofUrl = proofFileUrl.trim();
-
-      // If user uploaded an optional proof asset, upload it to storage
-      if (proofFile && !finalProofUrl) {
-        setIsUploadingFile(true);
-        const { publicUrl } = await uploadDeliveryProofFile(proofFile);
-        finalProofUrl = publicUrl;
-        setProofFileUrl(publicUrl);
-        setIsUploadingFile(false);
-      }
-
-      // If no file uploaded, safe fallback for proof_url is the canonical Instagram Reel URL itself
-      if (!finalProofUrl) {
-        finalProofUrl = parsedIg.canonicalUrl;
-      }
-
-      await submitDelivery(
-        order.id,
-        finalProofUrl,
-        deliveryNotes.trim(),
-        parsedIg.canonicalUrl
-      );
-
-      setProofFile(null);
-      setProofFileUrl('');
-      setInstagramPostUrl('');
-      setDeliveryNotes('');
-    } catch (err: any) {
-      setSubmissionError(err.message || 'Failed to submit delivery');
-    } finally {
-      setIsSubmitting(false);
-      setIsUploadingFile(false);
-    }
-  };
-
-  const handleStartWork = async () => {
-    setIsStartingWork(true);
-    try {
-      await markWorkStarted(order.id);
-    } catch (err: any) {
-      alert(err.message || 'Failed to mark work as started');
-    } finally {
-      setIsStartingWork(false);
-    }
-  };
-
-  const handleApprove = async () => {
-    setIsApproving(true);
-    try {
-      await approveDelivery(order.id);
-    } finally {
-      setIsApproving(false);
-    }
-  };
-
-  const handleConfirmRevisionRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!revisionNotes.trim()) return;
-    setIsSubmittingRevision(true);
-    setRevisionError(null);
-    try {
-      await requestRevision(order.id, revisionNotes.trim());
-      setIsRequestingRevision(false);
-      setRevisionNotes('');
-    } catch (err: any) {
-      setRevisionError(err.message || 'Failed to request revision');
-    } finally {
-      setIsSubmittingRevision(false);
-    }
-  };
-
-  const handleStartPayment = async () => {
-    setIsProcessingPayment(true);
-    setPaymentError(null);
+  // Handlers
+  const handlePayInitialStage = async () => {
+    setIsProcessingInitialPay(true);
+    setInitialPayError(null);
     try {
       const res = await payOrderWithRazorpay(
         order.id,
+        'INITIAL',
         currentUser?.display_name,
         currentUser?.email
       );
-      if (!res.success) {
-        if (res.status !== 'CANCELLED') {
-          setPaymentError(res.error || 'Payment failed. You can retry payment.');
-        }
-      } else {
-        setIsPayNowModalOpen(false);
+      if (!res.success && res.status !== 'CANCELLED') {
+        setInitialPayError(res.error || 'Initial payment failed. You can retry.');
       }
     } catch (err: any) {
-      setPaymentError(err.message || 'Payment failed. You can retry payment.');
+      setInitialPayError(err.message || 'Payment initiation failed.');
     } finally {
-      setIsProcessingPayment(false);
+      setIsProcessingInitialPay(false);
+    }
+  };
+
+  const handlePayFinalStage = async () => {
+    setIsProcessingFinalPay(true);
+    setFinalPayError(null);
+    try {
+      const res = await payOrderWithRazorpay(
+        order.id,
+        'FINAL',
+        currentUser?.display_name,
+        currentUser?.email
+      );
+      if (!res.success && res.status !== 'CANCELLED') {
+        setFinalPayError(res.error || 'Final payment failed. You can retry.');
+      }
+    } catch (err: any) {
+      setFinalPayError(err.message || 'Payment initiation failed.');
+    } finally {
+      setIsProcessingFinalPay(false);
     }
   };
 
@@ -290,165 +234,217 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
     }
   };
 
-  const handleConfirmWaiting = async (e: React.FormEvent) => {
+  const handleSubmitPreview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!waitingReason.trim()) return;
-    setIsSubmittingWaiting(true);
+    setPreviewError(null);
+
+    if (!previewInputUrl.trim() && !previewFile) {
+      setPreviewError('Please provide a preview link or upload a draft file.');
+      return;
+    }
+
+    setIsSubmittingPreview(true);
     try {
-      await markWaitingForBusiness(order.id, waitingReason.trim());
-      setIsWaitingModalOpen(false);
-      setWaitingReason('');
+      let finalUrl = previewInputUrl.trim();
+      if (previewFile && !finalUrl) {
+        const { publicUrl } = await uploadDeliveryProofFile(previewFile);
+        finalUrl = publicUrl;
+      }
+
+      await submitPrivatePreview(order.id, finalUrl, previewInputNotes.trim());
+      setPreviewInputUrl('');
+      setPreviewInputNotes('');
+      setPreviewFile(null);
+    } catch (err: any) {
+      setPreviewError(err.message || 'Failed to submit preview');
     } finally {
-      setIsSubmittingWaiting(false);
+      setIsSubmittingPreview(false);
     }
   };
 
-  const handleConfirmExtension = async (e: React.FormEvent) => {
+  const handleConfirmRevision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!extensionDate || !extensionReason.trim()) return;
-    setIsSubmittingExtension(true);
+    if (!revisionNotes.trim()) return;
+    setIsSubmittingRevision(true);
+    setRevisionError(null);
     try {
-      await requestDeadlineExtension(
-        order.id,
-        new Date(extensionDate).toISOString(),
-        extensionReason.trim()
-      );
-      setIsExtensionModalOpen(false);
-      setExtensionReason('');
+      await requestRevision(order.id, revisionNotes.trim());
+      setIsRequestingRevision(false);
+      setRevisionNotes('');
+    } catch (err: any) {
+      setRevisionError(err.message || 'Failed to request revision');
     } finally {
-      setIsSubmittingExtension(false);
+      setIsSubmittingRevision(false);
     }
   };
 
-  const instagramDeliveryUrl = order.delivery?.instagram_post_url || order.delivery?.proof_url || '';
+  const handlePublishAndComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPublishError(null);
+
+    const parsedIg = parseInstagramUrl(publicPostUrl.trim());
+    const validUrl = parsedIg.isValid ? parsedIg.canonicalUrl! : publicPostUrl.trim();
+
+    if (!validUrl) {
+      setPublishError('Please provide the live publication link or deliverable URL.');
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      await publishAndCompleteOrder(order.id, validUrl, publicNotes.trim());
+      setPublicPostUrl('');
+      setPublicNotes('');
+    } catch (err: any) {
+      setPublishError(err.message || 'Failed to complete campaign');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const currentPreviewUrl = order.preview_url;
+  const currentLiveUrl =
+    order.final_delivery_url || order.delivery?.instagram_post_url || order.delivery?.proof_url;
 
   return (
-    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-5 shadow-sm font-mono text-xs">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-[#ECECE6] dark:border-zinc-800 gap-2">
-        <div>
-          <span className="editorial-label text-[#71717A] dark:text-zinc-400">Order Delivery & Status</span>
-          <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
-            Status: {order.order_status}
-          </h3>
+    <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-6 shadow-sm font-mono text-xs">
+      {/* 1. TWO-STAGE PAYMENT ARCHITECTURE OVERVIEW CARD */}
+      <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-[#FBFBFA] via-white to-[#FFF6F2] dark:from-zinc-900 dark:via-[#18181B] dark:to-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+          <div>
+            <div className="flex items-center gap-1.5 text-[#FF5416] font-bold text-xs uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Two-Stage Campaign Payments</span>
+            </div>
+            <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+              Direct two-installment process. No escrow or platform-held campaign balance.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPolicyInfo(!showPolicyInfo)}
+            className="inline-flex items-center gap-1 text-[11px] text-[#FF5416] hover:underline self-start sm:self-auto font-semibold"
+          >
+            <Info className="w-3.5 h-3.5" />
+            <span>{showPolicyInfo ? 'Hide Policy Details' : 'How Payments Work'}</span>
+            {showPolicyInfo ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
         </div>
 
-        {(order.order_status === 'COMPLETED' || order.order_status === 'APPROVED' || order.order_status === 'AUTO_APPROVED') && (
-          <div className="flex items-center gap-1.5 text-xs text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 px-3 py-1 rounded border border-[#A7F3D0] dark:border-emerald-800">
-            <CheckCircle className="w-4 h-4" />
-            <span>Delivery Accepted ✓</span>
+        {/* 2 Stages Visual Badges */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {/* Stage 1 Breakdown */}
+          <div
+            className={`p-3.5 rounded-lg border transition-all ${
+              isInitialPaid
+                ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                : 'bg-white dark:bg-zinc-800 border-purple-200 dark:border-purple-800'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#121214] dark:text-white flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] flex items-center justify-center text-[10px]">
+                  1
+                </span>
+                Initial Payment (50%)
+              </span>
+              {isInitialPaid ? (
+                <span className="text-[11px] text-[#047857] dark:text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Paid ✓
+                </span>
+              ) : (
+                <span className="text-[11px] text-purple-700 dark:text-purple-300 font-bold">
+                  Due Before Work
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                Pays to initiate campaign production
+              </span>
+              <span className="font-bold text-sm text-[#121214] dark:text-white">
+                ₹{initialPaymentAmount.toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+
+          {/* Stage 2 Breakdown */}
+          <div
+            className={`p-3.5 rounded-lg border transition-all ${
+              isFinalPaid
+                ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                : isPreviewSubmitted
+                ? 'bg-purple-50/70 dark:bg-purple-950/20 border-purple-300 dark:border-purple-700 ring-2 ring-purple-100 dark:ring-purple-900/30'
+                : 'bg-white dark:bg-zinc-800 border-[#E5E5DE] dark:border-zinc-800 opacity-80'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#121214] dark:text-white flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-[#121214] dark:bg-white text-white dark:text-[#121214] flex items-center justify-center text-[10px]">
+                  2
+                </span>
+                Final Payment (50%)
+              </span>
+              {isFinalPaid ? (
+                <span className="text-[11px] text-[#047857] dark:text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Paid ✓
+                </span>
+              ) : isPreviewSubmitted ? (
+                <span className="text-[11px] text-purple-700 dark:text-purple-300 font-bold animate-pulse">
+                  Due After Preview
+                </span>
+              ) : (
+                <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                  After Preview Review
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                Paid before public release or deliverable
+              </span>
+              <span className="font-bold text-sm text-[#121214] dark:text-white">
+                ₹{finalPaymentAmount.toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Policy Explainer Drawer */}
+        {showPolicyInfo && (
+          <div className="p-3.5 bg-[#FAF9F5] dark:bg-zinc-950/60 rounded-lg border border-[#ECECE6] dark:border-zinc-800 text-[11px] text-[#52525B] dark:text-zinc-300 space-y-2 leading-relaxed">
+            <p className="font-bold text-[#121214] dark:text-white">
+              MarketMyIdea Payment Framework:
+            </p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>
+                <strong>Two Instalments:</strong> 50% before work begins and 50% before final publication or unwatermarked delivery.
+              </li>
+              <li>
+                <strong>No Platform-Held Escrow:</strong> MarketMyIdea does not hold campaign funds in escrow or maintain platform-held balances.
+              </li>
+              <li>
+                <strong>Private Preview Protection:</strong> The second instalment is only due after the creator shares a private preview.
+              </li>
+              <li>
+                <strong>Creator Protection:</strong> Creators are never required to publish publicly before the final payment is confirmed.
+              </li>
+              <li>
+                <strong>Transparent Economics:</strong> Platform and gateway fees are disclosed during checkout. Disputes follow the platform Refund and Cancellation Policy.
+              </li>
+            </ul>
           </div>
         )}
       </div>
-
-      {/* STAGE 1: DEAL CONFIRMED (Awaiting Payment - Business Needs to Pay) */}
-      {isConfirmedUnpaid && (
-        <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-purple-900 dark:text-purple-300 flex items-center gap-1.5 text-xs">
-              <CheckCircle className="w-4 h-4 text-purple-600" />
-              WAITING FOR PAYMENT
-            </span>
-            <span className="text-[11px] text-purple-700 dark:text-purple-400 font-semibold">
-              Amount Due: ₹{order.total_amount.toLocaleString('en-IN')}
-            </span>
-          </div>
-
-          <p className="text-purple-800 dark:text-purple-300 leading-relaxed text-xs">
-            {isMeBusiness
-              ? 'Complete payment to start the collaboration.'
-              : 'Waiting for the business to complete payment.'}
-          </p>
-
-          {paymentError && (
-            <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
-              {paymentError}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {isMeBusiness && (
-              <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleStartPayment}
-                  isLoading={isProcessingPayment}
-                  disabled={isProcessingPayment}
-                  className="bg-[#047857] hover:bg-[#065F46] text-white text-xs"
-                >
-                  <CreditCard className="w-3.5 h-3.5 mr-1" />
-                  <span>
-                    {isProcessingPayment
-                      ? 'Processing...'
-                      : `Pay Now — ₹${order.total_amount.toLocaleString('en-IN')}`}
-                  </span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsCancelDealModalOpen(true)}
-                  disabled={isProcessingPayment}
-                  className="text-red-600 border-red-200 hover:bg-red-50 text-xs"
-                >
-                  <XCircle className="w-3.5 h-3.5 mr-1" />
-                  <span>Cancel Deal</span>
-                </Button>
-              </>
-            )}
-
-            {isMeCreator && (
-              <div className="flex items-center gap-2 text-purple-800 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-900/40 px-3 py-1.5 rounded text-[11px]">
-                <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                <span>You will be notified as soon as the business completes payment.</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* STAGE 2: PAID (Ready to Start) */}
-      {isPaidAwaitingStart && (
-        <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-xs">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              PAYMENT RECEIVED
-            </span>
-            <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
-              Payment Protected ✓
-            </span>
-          </div>
-
-          <p className="text-emerald-800 dark:text-emerald-300 leading-relaxed text-xs">
-            {isMeCreator
-              ? 'Payment received. You can start working.'
-              : 'Payment completed. Creator can now start working.'}
-          </p>
-
-          {isMeCreator && (
-            <div className="pt-1">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleStartWork}
-                isLoading={isStartingWork}
-                className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs"
-              >
-                <PlayCircle className="w-3.5 h-3.5 mr-1" />
-                <span>Start Working</span>
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* OVERDUE NOTICE */}
       {isOverdue && (
         <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 text-red-700 dark:text-red-400 font-bold">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Delivery is past the agreed deadline ({new Date(order.deadline).toLocaleDateString()}).</span>
+            <span>Delivery is past the agreed deadline ({new Date(order.deadline).toLocaleDateString('en-IN')}).</span>
           </div>
           <div className="flex items-center gap-2">
             {isMeCreator && (
@@ -487,7 +483,7 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
               Creator requested:{' '}
               <strong>
                 {order.extension_requested_deadline
-                  ? new Date(order.extension_requested_deadline).toLocaleDateString()
+                  ? new Date(order.extension_requested_deadline).toLocaleDateString('en-IN')
                   : 'N/A'}
               </strong>
               {order.extension_reason && ` — Reason: "${order.extension_reason}"`}
@@ -541,17 +537,96 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
         </div>
       )}
 
-      {/* STAGE 3: WORK_STARTED / IN_PROGRESS (Creator Submit Delivery Form) */}
-      {isWorkInProgress && (
+      {/* ========================================================================= */}
+      {/* STAGE 1: INITIAL PAYMENT (50%) PENDING */}
+      {/* ========================================================================= */}
+      {!isInitialPaid && (
+        <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-purple-900 dark:text-purple-300 flex items-center gap-2 text-sm">
+              <CreditCard className="w-4 h-4 text-purple-600" />
+              STAGE 1: INITIAL 50% PAYMENT DUE
+            </span>
+            <span className="text-sm font-bold text-purple-950 dark:text-purple-200">
+              ₹{initialPaymentAmount.toLocaleString('en-IN')}
+            </span>
+          </div>
+
+          <p className="text-purple-900 dark:text-purple-300 text-xs leading-relaxed">
+            {isMeBusiness
+              ? 'Pay the initial 50% instalment to begin campaign production. Once confirmed, the creator can start work and prepare your private preview. The remaining 50% is due only after you inspect the preview.'
+              : 'Waiting for brand partner to pay the initial 50% instalment. You will be notified immediately when confirmed so you can begin work.'}
+          </p>
+
+          {initialPayError && (
+            <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
+              {initialPayError}
+            </div>
+          )}
+
+          {isMeBusiness && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handlePayInitialStage}
+                isLoading={isProcessingInitialPay}
+                disabled={isProcessingInitialPay}
+                className="bg-[#047857] hover:bg-[#065F46] text-white text-xs font-semibold px-4"
+              >
+                <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                <span>
+                  {isProcessingInitialPay
+                    ? 'Processing...'
+                    : `Pay Initial 50% — ₹${initialPaymentAmount.toLocaleString('en-IN')}`}
+                </span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCancelDealModalOpen(true)}
+                disabled={isProcessingInitialPay}
+                className="text-red-600 border-red-200 hover:bg-red-50 text-xs"
+              >
+                <XCircle className="w-3.5 h-3.5 mr-1" />
+                <span>Cancel Deal</span>
+              </Button>
+            </div>
+          )}
+
+          {isMeCreator && (
+            <div className="flex items-center gap-2 text-purple-800 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-900/40 px-3 py-2 rounded text-xs">
+              <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              <span>
+                Work starts once the brand completes the initial 50% payment (₹{initialPaymentAmount.toLocaleString('en-IN')}).
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STAGE 2: IN PRODUCTION & PRIVATE PREVIEW SUBMISSION */}
+      {/* (Initial 50% paid, preview not yet submitted) */}
+      {/* ========================================================================= */}
+      {isInitialPaid && !isPreviewSubmitted && !isFinalPaid && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-[#F4F4F0] dark:bg-zinc-800/60 p-3.5 rounded-lg text-xs text-[#52525B] dark:text-zinc-400">
+          <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div>
-              <span className="font-semibold text-[#121214] dark:text-white block">IN PRODUCTION</span>
-              {isMeCreator ? 'Submit your live Instagram Reel URL once published.' : 'Creator is working on your order.'}
+              <span className="font-bold text-[#047857] dark:text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-[#047857]" />
+                Stage 1 Payment Confirmed (₹{initialPaymentAmount.toLocaleString('en-IN')})
+              </span>
+              <p className="text-[#065F46] dark:text-emerald-300 text-[11px] mt-0.5">
+                {isMeCreator
+                  ? 'Campaign is in production. Prepare your content and share a private preview when ready.'
+                  : 'Creator has received upfront payment and is producing your promotional content.'}
+              </p>
             </div>
 
             {isMeCreator && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <Button
                   variant="outline"
                   size="sm"
@@ -574,236 +649,393 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
             )}
           </div>
 
-          {/* Submission Form for Creator */}
+          {/* Form for Creator to share private preview */}
           {isMeCreator && (
             <form
-              onSubmit={handleSubmitDelivery}
-              className="border border-[#E5E5DE] dark:border-zinc-800 rounded-lg p-4 space-y-3.5 bg-white dark:bg-zinc-900"
+              onSubmit={handleSubmitPreview}
+              className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-4 bg-white dark:bg-zinc-900 shadow-xs"
             >
-              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-2">
-                <h4 className="editorial-label text-[#121214] dark:text-white flex items-center gap-1.5 font-bold">
-                  <Upload className="w-3.5 h-3.5 text-[#FF5416]" />
-                  Submit Delivery
-                </h4>
-                <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
-                  Live Instagram Reel URL
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                <div>
+                  <h4 className="font-bold text-sm text-[#121214] dark:text-white flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-[#FF5416]" />
+                    Share Private Preview with Brand
+                  </h4>
+                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                    Share an unlisted video, drive link, or draft preview for brand inspection.
+                  </p>
+                </div>
+                <span className="text-[11px] text-[#FF5416] bg-[#FFF2EC] dark:bg-[#27140B] px-2.5 py-0.5 rounded font-semibold border border-[#FFD2C1] dark:border-[#4D1F0E]">
+                  Private Preview
                 </span>
               </div>
 
-              {submissionError && (
+              {previewError && (
                 <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{submissionError}</span>
+                  <span>{previewError}</span>
                 </div>
               )}
 
-              {/* Primary: Instagram Reel URL */}
               <div>
                 <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Instagram Reel URL <span className="text-red-500">*</span>
+                  Private Preview URL <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
-                  <InstagramIcon className="w-4 h-4 absolute left-3 top-2.5 text-[#FF5416]" />
-                  <input
-                    type="url"
-                    required
-                    value={instagramPostUrl}
-                    onChange={(e) => setInstagramPostUrl(e.target.value)}
-                    placeholder="https://www.instagram.com/reel/XXXXXXXX/"
-                    className="w-full text-xs py-2 pl-9 pr-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
-                  />
-                </div>
+                <input
+                  type="url"
+                  required
+                  value={previewInputUrl}
+                  onChange={(e) => setPreviewInputUrl(e.target.value)}
+                  placeholder="https://drive.google.com/file/... or unlisted YouTube / Vimeo / Reel draft"
+                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
+                />
                 <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                  Paste the live Instagram link for the business to review directly.
+                  You are not required to publish publicly yet. The brand pays the remaining 50% after reviewing this preview.
                 </p>
               </div>
 
-              {/* Optional: Notes */}
               <div>
                 <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Delivery Notes <span className="text-[#71717A] font-normal">(optional)</span>
+                  Preview Notes for Brand <span className="text-[#71717A] font-normal">(optional)</span>
                 </label>
                 <textarea
-                  rows={2}
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  placeholder="Notes for the business (e.g. caption, hashtags, link in bio)..."
+                  rows={3}
+                  value={previewInputNotes}
+                  onChange={(e) => setPreviewInputNotes(e.target.value)}
+                  placeholder="Outline key talking points, audio tracks used, and any specific questions for the brand..."
                   className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
                 />
               </div>
 
-              {/* Optional: Proof Asset File */}
-              <div>
-                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                  Attach File <span className="text-[#71717A] font-normal">(optional backup screenshot / video)</span>
-                </label>
-                <input
-                  type="file"
-                  onChange={handleFileChange}
-                  accept="image/*,video/*,application/pdf"
-                  className="block w-full text-xs text-[#71717A] dark:text-zinc-400 file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#F4F4F0] dark:file:bg-zinc-800 file:text-[#121214] dark:file:text-white hover:file:bg-[#E5E5DE] cursor-pointer"
-                />
-                {proofFile && (
-                  <p className="text-[11px] text-[#047857] mt-1">Selected: {proofFile.name}</p>
-                )}
-              </div>
-
-              <div className="pt-1">
+              <div className="pt-2">
                 <Button
                   type="submit"
                   variant="primary"
                   size="sm"
-                  isLoading={isSubmitting || isUploadingFile}
-                  className="w-full sm:w-auto bg-[#FF5416] hover:bg-[#E04810] text-white"
+                  isLoading={isSubmittingPreview}
+                  className="w-full sm:w-auto bg-[#FF5416] hover:bg-[#E04810] text-white font-semibold"
                 >
-                  <Upload className="w-3.5 h-3.5 mr-1" />
-                  <span>Submit Delivery</span>
+                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Submit Private Preview for Review</span>
                 </Button>
               </div>
             </form>
           )}
 
           {isMeBusiness && (
-            <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded-lg text-xs text-[#71717A] dark:text-zinc-400">
-              Creator is working on your order. As soon as the delivery is submitted, you will be able to view the live Instagram Reel and approve it here.
+            <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded-lg text-xs text-[#71717A] dark:text-zinc-400 space-y-1">
+              <strong className="text-[#121214] dark:text-white block font-mono">
+                Production in Progress
+              </strong>
+              <p>
+                The creator is currently producing your agreed content. Once ready, they will upload a private preview link here for your review. You will inspect the work and confirm the final 50% payment before public release.
+              </p>
             </div>
           )}
         </div>
       )}
 
-      {/* STAGE 4: DELIVERED (Business Review & Acceptance) */}
-      {(order.order_status === 'DELIVERED' || (order.delivery && order.order_status !== 'COMPLETED' && order.order_status !== 'APPROVED' && order.order_status !== 'AUTO_APPROVED' && order.order_status !== 'REVISION_REQUESTED')) && (
-        <div className="bg-[#FBFBFA] dark:bg-zinc-900/50 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg p-4 sm:p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-2.5">
-            <span className="font-bold text-xs text-[#047857] flex items-center gap-1.5">
-              <FileCheck className="w-4 h-4 text-[#047857]" />
-              DELIVERY SUBMITTED
-            </span>
-            {order.delivery?.submitted_at && (
-              <span className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                Submitted {new Date(order.delivery.submitted_at).toLocaleDateString('en-IN')}
-              </span>
+      {/* ========================================================================= */}
+      {/* STAGE 3: PRIVATE PREVIEW REVIEW & FINAL 50% PAYMENT */}
+      {/* (Preview submitted, final payment not yet completed) */}
+      {/* ========================================================================= */}
+      {isPreviewSubmitted && !isFinalPaid && (
+        <div className="space-y-4">
+          <div className="p-5 bg-white dark:bg-zinc-900 border-2 border-indigo-200 dark:border-indigo-900 rounded-xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center justify-center">
+                  <Eye className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-[#121214] dark:text-white">
+                    Private Preview Shared
+                  </h4>
+                  <span className="text-[10px] text-[#71717A] dark:text-zinc-400">
+                    Shared for Brand Review
+                  </span>
+                </div>
+              </div>
+
+              {currentPreviewUrl && (
+                <a
+                  href={currentPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors shadow-sm"
+                >
+                  <span>Open Preview</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+
+            {/* Preview link details */}
+            <div className="p-3 bg-[#FAF9F5] dark:bg-zinc-800 rounded-lg space-y-1 text-xs">
+              <div className="text-[11px] text-[#71717A] dark:text-zinc-400">
+                <strong>Preview Link:</strong>{' '}
+                <a
+                  href={currentPreviewUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline break-all"
+                >
+                  {currentPreviewUrl}
+                </a>
+              </div>
+              {order.preview_notes && (
+                <div className="text-[11px] text-[#52525B] dark:text-zinc-300 pt-1 border-t border-[#ECECE6] dark:border-zinc-700 mt-1">
+                  <strong>Notes:</strong> {order.preview_notes}
+                </div>
+              )}
+            </div>
+
+            {/* Actions for Brand: Request Revision, System Review, Pay Final 50% */}
+            {isMeBusiness && (
+              <div className="p-4 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-xs text-purple-900 dark:text-purple-200 block">
+                      STAGE 2: FINAL PAYMENT (50%) DUE BEFORE PUBLICATION
+                    </span>
+                    <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5">
+                      Review the completed work. The brand pays the remaining 50% before the creator publishes publicly or releases unwatermarked deliverables.
+                    </p>
+                  </div>
+                  <span className="font-bold text-sm text-purple-950 dark:text-purple-100 shrink-0">
+                    ₹{finalPaymentAmount.toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                {finalPayError && (
+                  <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
+                    {finalPayError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-purple-200 dark:border-purple-800">
+                  <div className="text-[11px] text-purple-800 dark:text-purple-300">
+                    Revisions remaining: <strong>{revisionsRemaining}</strong>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Revision Request */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsRequestingRevision(true)}
+                      disabled={revisionsRemaining <= 0 || isProcessingFinalPay}
+                      className="text-xs"
+                      title={revisionsRemaining <= 0 ? 'All revisions used' : 'Request changes'}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
+                      <span>Request Revision</span>
+                    </Button>
+
+                    {/* System Review Dispute */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenDispute}
+                      disabled={isProcessingFinalPay}
+                      className="text-xs text-[#B91C1C] border-red-200 hover:bg-red-50 dark:border-red-900"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 mr-1 text-[#B91C1C]" />
+                      <span>System Review</span>
+                    </Button>
+
+                    {/* Approve & Pay Final 50% */}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handlePayFinalStage}
+                      isLoading={isProcessingFinalPay}
+                      disabled={isProcessingFinalPay}
+                      className="text-xs bg-[#047857] hover:bg-[#065F46] text-white font-semibold"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                      <span>
+                        {isProcessingFinalPay
+                          ? 'Processing...'
+                          : `Approve & Pay Final 50% — ₹${finalPaymentAmount.toLocaleString('en-IN')}`}
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isMeCreator && (
+              <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 rounded-lg text-xs text-indigo-900 dark:text-indigo-300 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Preview is under brand review</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  The brand is reviewing your draft. As stated in the platform payment policy, <strong>creators are not required to publish publicly before the final payment is confirmed</strong>. Once the brand confirms the remaining 50% (₹{finalPaymentAmount.toLocaleString('en-IN')}), you will be notified to publish.
+                </p>
+              </div>
             )}
           </div>
+        </div>
+      )}
 
-          {/* Instagram Reel Presentation */}
-          <div className="p-4 bg-white dark:bg-zinc-800 border border-[#ECECE6] dark:border-zinc-700 rounded-lg space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* ========================================================================= */}
+      {/* STAGE 4: FINAL PAYMENT CONFIRMED / READY FOR PUBLICATION */}
+      {/* (Both stages paid, awaiting public post submission) */}
+      {/* ========================================================================= */}
+      {isFinalPaid && !isCompleted && (
+        <div className="space-y-4">
+          <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-sm text-[#047857] dark:text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-[#047857]" />
+                STAGE 2: FINAL PAYMENT CONFIRMED (100% PAID)
+              </span>
+              <span className="text-xs font-bold text-[#047857]">
+                Total: ₹{order.total_amount.toLocaleString('en-IN')} ✓
+              </span>
+            </div>
+            <p className="text-xs text-[#065F46] dark:text-emerald-300">
+              {isMeCreator
+                ? 'Final 50% payment is confirmed! Please publish the approved content publicly or release the final deliverable to complete the campaign.'
+                : 'Both instalments are fully confirmed! The creator has been notified to publish the approved content publicly.'}
+            </p>
+          </div>
+
+          {/* Form for Creator to submit public live URL */}
+          {isMeCreator && (
+            <form
+              onSubmit={handlePublishAndComplete}
+              className="border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 space-y-4 bg-white dark:bg-zinc-900 shadow-xs"
+            >
+              <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                <div>
+                  <h4 className="font-bold text-sm text-[#121214] dark:text-white flex items-center gap-1.5">
+                    <Upload className="w-4 h-4 text-[#FF5416]" />
+                    Publish & Complete Campaign
+                  </h4>
+                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
+                    Submit the live Instagram Reel / post URL or final deliverable link.
+                  </p>
+                </div>
+                <span className="text-[11px] text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded font-semibold border border-[#A7F3D0] dark:border-emerald-800">
+                  Ready to Publish
+                </span>
+              </div>
+
+              {publishError && (
+                <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{publishError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Live Public Post / Reel URL <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <InstagramIcon className="w-4 h-4 absolute left-3 top-2.5 text-[#FF5416]" />
+                  <input
+                    type="url"
+                    required
+                    value={publicPostUrl}
+                    onChange={(e) => setPublicPostUrl(e.target.value)}
+                    placeholder="https://www.instagram.com/reel/XXXXXXXX/"
+                    className="w-full text-xs py-2 pl-9 pr-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
+                  />
+                </div>
+                <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                  Provide the live Instagram link where the approved content is published.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Completion Notes <span className="text-[#71717A] font-normal">(optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={publicNotes}
+                  onChange={(e) => setPublicNotes(e.target.value)}
+                  placeholder="Notes for brand (e.g. pinned comment, hashtags, duration)..."
+                  className="w-full text-xs py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isPublishing}
+                  className="w-full sm:w-auto bg-[#047857] hover:bg-[#065F46] text-white font-semibold"
+                >
+                  <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Mark Campaign as Completed</span>
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {isMeBusiness && (
+            <div className="p-4 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#ECECE6] dark:border-zinc-800 rounded-lg text-xs text-[#71717A] dark:text-zinc-400 space-y-1">
+              <strong className="text-[#121214] dark:text-white block font-mono">
+                Awaiting Public Publication
+              </strong>
+              <p>
+                Your final payment is confirmed. The creator has been notified to publish the approved content publicly on their channel. Once published, the live URL will appear here.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STAGE 5: CAMPAIGN COMPLETED */}
+      {/* ========================================================================= */}
+      {isCompleted && (
+        <div className="bg-[#ECFDF5] dark:bg-emerald-950/20 border border-[#A7F3D0] dark:border-emerald-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#A7F3D0] dark:border-emerald-800/60 pb-3">
+            <span className="font-bold text-sm text-[#047857] dark:text-emerald-400 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-[#047857]" />
+              CAMPAIGN COMPLETED SUCCESSFULLY
+            </span>
+            <span className="text-xs font-bold text-[#047857]">
+              ₹{order.total_amount.toLocaleString('en-IN')} (100% Settled)
+            </span>
+          </div>
+
+          <p className="text-xs text-[#065F46] dark:text-emerald-300 leading-relaxed">
+            {isMeCreator
+              ? 'Campaign completed! Your net payout is eligible and will settle directly to your verified bank account or UPI ID.'
+              : 'The campaign has been completed and verified. Thank you for collaborating on MarketMyIdea!'}
+          </p>
+
+          {currentLiveUrl && (
+            <div className="p-3.5 bg-white dark:bg-zinc-800 rounded-lg border border-[#A7F3D0] dark:border-emerald-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shrink-0">
                   <InstagramIcon className="w-4 h-4" />
                 </div>
                 <div>
                   <span className="text-xs font-bold text-[#121214] dark:text-white block">
-                    Instagram Reel
+                    Delivered Publication Link
                   </span>
                   <span className="text-[11px] text-[#71717A] dark:text-zinc-400 truncate max-w-xs sm:max-w-md block">
-                    {instagramDeliveryUrl}
+                    {currentLiveUrl}
                   </span>
                 </div>
               </div>
 
-              {instagramDeliveryUrl && (
-                <a
-                  href={instagramDeliveryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors shrink-0 shadow-sm"
-                >
-                  <span>View on Instagram</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
-
-            {order.delivery?.notes && (
-              <div className="p-2.5 bg-[#FAF9F5] dark:bg-zinc-900 rounded text-[11px] text-[#52525B] dark:text-zinc-300">
-                <strong>Notes:</strong> {order.delivery.notes}
-              </div>
-            )}
-          </div>
-
-          {/* Business Review Actions: Accept Delivery, Request Revision, System Review */}
-          {order.order_status === 'DELIVERED' && isMeBusiness && (
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#FAF9F5] dark:bg-zinc-800/80 border border-[#ECECE6] dark:border-zinc-700 p-3.5 rounded-lg">
-              <div className="text-[11px] text-[#71717A] dark:text-zinc-400">
-                {autoApproveTimeRemaining && (
-                  <span>Review window: <strong>{autoApproveTimeRemaining}</strong> • </span>
-                )}
-                <span>Revisions left: <strong>{revisionsRemaining}</strong></span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-                {/* 1. Request Revision */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsRequestingRevision(true)}
-                  disabled={revisionsRemaining <= 0}
-                  className="text-xs"
-                  title={revisionsRemaining <= 0 ? 'All included revisions used' : 'Request revision'}
-                >
-                  <RefreshCw className="w-3.5 h-3.5 mr-1 text-[#FF5416]" />
-                  <span>Request Revision</span>
-                </Button>
-
-                {/* 2. System Review */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpenDispute}
-                  className="text-xs text-[#B91C1C] border-red-200 hover:bg-red-50 dark:border-red-900"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1 text-[#B91C1C]" />
-                  <span>System Review</span>
-                </Button>
-
-                {/* 3. Accept Delivery */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  isLoading={isApproving}
-                  onClick={handleApprove}
-                  className="text-xs bg-[#047857] hover:bg-[#065F46] text-white"
-                >
-                  <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                  <span>Accept Delivery</span>
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {order.order_status === 'DELIVERED' && isMeCreator && (
-            <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded text-xs text-blue-800 dark:text-blue-300">
-              Delivery submitted! The business has 4 days to review. Once accepted, payout will be processed to your UPI ID.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* STAGE 5: COMPLETED / APPROVED (Clear Payout Message for Creator) */}
-      {(order.order_status === 'COMPLETED' || order.order_status === 'APPROVED' || order.order_status === 'AUTO_APPROVED') && (
-        <div className="bg-[#ECFDF5] dark:bg-emerald-950/20 border border-[#A7F3D0] dark:border-emerald-800 rounded-lg p-4 space-y-3">
-          <div className="flex items-center gap-2 text-[#047857] dark:text-emerald-400 font-bold text-xs">
-            <CheckCircle className="w-4 h-4" />
-            <span>Delivery accepted.</span>
-          </div>
-
-          <p className="text-xs text-[#047857] dark:text-emerald-300 leading-relaxed">
-            {isMeCreator
-              ? 'Your payout will be processed within 1–2 business days.'
-              : 'Delivery accepted. Collaboration completed successfully.'}
-          </p>
-
-          {instagramDeliveryUrl && (
-            <div className="pt-2 flex items-center gap-3">
               <a
-                href={instagramDeliveryUrl}
+                href={currentLiveUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-[#047857] dark:text-emerald-300 hover:underline font-bold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-[#FF5416] text-white hover:bg-[#E04810] text-xs font-semibold transition-colors shrink-0 shadow-sm"
               >
-                <span>View Delivered Instagram Reel</span>
+                <span>View Live Content</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -811,209 +1043,55 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
         </div>
       )}
 
-      {/* REVISION REQUESTED STATE */}
-      {order.order_status === 'REVISION_REQUESTED' && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1.5 text-xs">
-              <RefreshCw className="w-4 h-4 text-amber-600" />
-              REVISION REQUESTED ({revisionsUsed}/{includedRevisions} used)
-            </span>
-          </div>
-
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            {isMeCreator
-              ? 'The business requested 1 revision. Please update your delivery and submit the revised Reel URL.'
-              : 'Revision requested. Waiting for creator to submit the updated Reel URL.'}
-          </p>
-
-          {isMeCreator && (
-            <form onSubmit={handleSubmitDelivery} className="bg-white dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg p-4 space-y-3 text-xs">
-              <h5 className="font-bold text-[#121214] dark:text-white">Submit Revised Delivery</h5>
-
-              {submissionError && (
-                <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
-                  {submissionError}
-                </div>
-              )}
-
-              <div>
-                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                  Revised Instagram Reel URL <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={instagramPostUrl}
-                  onChange={(e) => setInstagramPostUrl(e.target.value)}
-                  placeholder="https://www.instagram.com/reel/XXXXXXXX/"
-                  className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                  Revision Notes <span className="text-[#71717A] font-normal">(what was updated)</span>
-                </label>
-                <textarea
-                  rows={2}
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  placeholder="Describe the adjustments made..."
-                  className="w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                isLoading={isSubmitting}
-                className="bg-[#FF5416] hover:bg-[#E04810] text-white"
-              >
-                <Upload className="w-3.5 h-3.5 mr-1" />
-                <span>Submit Revised Delivery</span>
-              </Button>
-            </form>
-          )}
-        </div>
-      )}
-
-      {/* SYSTEM REVIEW / DISPUTE BANNER */}
-      {(order.order_status === 'SYSTEM_REVIEW' || order.order_status === 'DISPUTED') && (
-        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-4 space-y-2 text-xs">
-          <div className="flex items-center gap-2 font-bold text-red-700 dark:text-red-400">
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-            <span>Case Under System Review</span>
-          </div>
-          <p className="text-red-700 dark:text-red-300 leading-relaxed text-[11px]">
-            {order.system_review_description || order.dispute?.description || 'A System Review was opened to evaluate deliverable adherence to the agreed campaign brief.'}
-          </p>
-        </div>
-      )}
-
-      {/* MODAL: Pay Now */}
-      {isPayNowModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl text-xs font-mono">
-            <h4 className="font-bold text-base text-[#121214] dark:text-white flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-[#047857]" />
-              Platform Payment Checkout
-            </h4>
-            <div className="p-3 bg-[#FAF9F5] dark:bg-zinc-800 rounded border border-[#ECECE6] dark:border-zinc-700 space-y-2">
-              <div className="flex justify-between text-[#71717A]">
-                <span>Agreed Amount:</span>
-                <span>₹{order.subtotal.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between text-[#71717A]">
-                <span>Platform Fee:</span>
-                <span>₹{order.platform_fee.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between font-bold text-[#121214] dark:text-white pt-2 border-t border-[#ECECE6] dark:border-zinc-700">
-                <span>Total Due:</span>
-                <span className="text-[#047857]">₹{order.total_amount.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsPayNowModalOpen(false)}
-                disabled={isProcessingPayment}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                isLoading={isProcessingPayment}
-                disabled={isProcessingPayment}
-                onClick={handleStartPayment}
-                className="bg-[#047857] hover:bg-[#065F46] text-white"
-              >
-                {isProcessingPayment ? 'Processing...' : `Pay Now — ₹${order.total_amount.toLocaleString('en-IN')}`}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Cancel Deal */}
-      {isCancelDealModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl text-xs font-mono">
-            <h4 className="font-bold text-[#121214] dark:text-white text-sm flex items-center gap-1.5 text-red-600">
-              <XCircle className="w-4 h-4" />
-              Cancel Confirmed Deal
-            </h4>
-            <p className="text-[#71717A] text-[11px]">
-              This deal has not been paid yet. Cancelling will close this order with no financial charge.
-            </p>
-            <form onSubmit={handleConfirmCancelDeal} className="space-y-3">
-              <textarea
-                rows={2}
-                required
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Reason for cancellation..."
-                className="w-full p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
-              />
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsCancelDealModalOpen(false)}
-                >
-                  Back
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  isLoading={isSubmittingCancel}
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Confirm Cancellation
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Request Revision */}
+      {/* ========================================================================= */}
+      {/* REVISION REQUESTED STATE MODAL / DRAWER */}
+      {/* ========================================================================= */}
       {isRequestingRevision && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl text-xs font-mono">
-            <h4 className="font-bold text-[#121214] dark:text-white text-sm flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 text-[#FF5416]" />
-              Request Revision ({revisionsUsed + 1} of {includedRevisions})
-            </h4>
-            <p className="text-[#71717A] text-[11px]">
-              Please describe the required adjustment according to the agreed brief.
-            </p>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <h4 className="font-bold text-sm text-[#121214] dark:text-white flex items-center gap-1.5">
+                <RefreshCw className="w-4 h-4 text-[#FF5416]" />
+                Request Revision ({revisionsUsed + 1}/{includedRevisions})
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsRequestingRevision(false)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
             {revisionError && (
-              <div className="p-2 bg-red-50 text-red-600 text-xs rounded border border-red-200">
+              <div className="p-2.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs">
                 {revisionError}
               </div>
             )}
-            <form onSubmit={handleConfirmRevisionRequest} className="space-y-3">
-              <textarea
-                rows={3}
-                required
-                value={revisionNotes}
-                onChange={(e) => setRevisionNotes(e.target.value)}
-                placeholder="e.g. Please update the caption to tag @mybrand handle..."
-                className="w-full p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
-              />
-              <div className="flex items-center justify-end gap-2">
+
+            <form onSubmit={handleConfirmRevision} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                  Revision Notes <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={revisionNotes}
+                  onChange={(e) => setRevisionNotes(e.target.value)}
+                  placeholder="Detail the specific adjustments needed based on the private preview..."
+                  className="w-full text-xs p-3 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-md focus:outline-none focus:border-[#FF5416]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setIsRequestingRevision(false)}
+                  disabled={isSubmittingRevision}
+                  className="text-xs"
                 >
                   Cancel
                 </Button>
@@ -1022,9 +1100,9 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                   variant="primary"
                   size="sm"
                   isLoading={isSubmittingRevision}
-                  className="bg-[#FF5416] hover:bg-[#E04810] text-white"
+                  className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white"
                 >
-                  Send Revision Request
+                  Submit Revision Request
                 </Button>
               </div>
             </form>
@@ -1032,30 +1110,89 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
         </div>
       )}
 
-      {/* MODAL: Waiting for Business Materials */}
+      {/* CANCEL DEAL MODAL */}
+      {isCancelDealModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h4 className="font-bold text-sm text-[#121214] dark:text-white">Cancel Confirmed Deal</h4>
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Because no payment has been made yet, you can cancel this deal without penalty.
+            </p>
+            <form onSubmit={handleConfirmCancelDeal} className="space-y-3">
+              <textarea
+                rows={3}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Reason for cancellation..."
+                className="w-full text-xs p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCancelDealModalOpen(false)}
+                  disabled={isSubmittingCancel}
+                >
+                  Close
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isSubmittingCancel}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Confirm Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WAITING FOR BUSINESS MODAL */}
       {isWaitingModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl text-xs font-mono">
-            <h4 className="font-bold text-[#121214] dark:text-white text-sm">
-              Waiting for Business Material
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h4 className="font-bold text-sm text-[#121214] dark:text-white">
+              Waiting for Brand Assets
             </h4>
-            <form onSubmit={handleConfirmWaiting} className="space-y-3">
+            <p className="text-xs text-[#71717A] dark:text-zinc-400">
+              Pause production while waiting for product access, brand guidelines, or answers from the brand.
+            </p>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!waitingReason.trim()) return;
+                setIsSubmittingWaiting(true);
+                try {
+                  await markWaitingForBusiness(order.id, waitingReason.trim());
+                  setIsWaitingModalOpen(false);
+                  setWaitingReason('');
+                } finally {
+                  setIsSubmittingWaiting(false);
+                }
+              }}
+              className="space-y-3"
+            >
               <textarea
                 rows={3}
                 required
                 value={waitingReason}
                 onChange={(e) => setWaitingReason(e.target.value)}
-                placeholder="e.g. Waiting for brand logo PNG and app login credentials..."
-                className="w-full p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
+                placeholder="What materials or assets are you waiting for?..."
+                className="w-full text-xs p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
               />
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setIsWaitingModalOpen(false)}
+                  disabled={isSubmittingWaiting}
                 >
-                  Cancel
+                  Close
                 </Button>
                 <Button
                   type="submit"
@@ -1063,7 +1200,7 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
                   size="sm"
                   isLoading={isSubmittingWaiting}
                 >
-                  Mark Waiting
+                  Confirm
                 </Button>
               </div>
             </form>
@@ -1071,47 +1208,62 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
         </div>
       )}
 
-      {/* MODAL: Request Deadline Extension */}
+      {/* DEADLINE EXTENSION MODAL */}
       {isExtensionModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl text-xs font-mono">
-            <h4 className="font-bold text-[#121214] dark:text-white text-sm">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h4 className="font-bold text-sm text-[#121214] dark:text-white">
               Request Deadline Extension
             </h4>
-            <form onSubmit={handleConfirmExtension} className="space-y-3">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!extensionDate || !extensionReason.trim()) return;
+                setIsSubmittingExtension(true);
+                try {
+                  await requestDeadlineExtension(
+                    order.id,
+                    new Date(extensionDate).toISOString(),
+                    extensionReason.trim()
+                  );
+                  setIsExtensionModalOpen(false);
+                  setExtensionReason('');
+                } finally {
+                  setIsSubmittingExtension(false);
+                }
+              }}
+              className="space-y-3"
+            >
               <div>
-                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                  New Target Date
-                </label>
+                <label className="text-xs font-semibold block mb-1">New Target Date</label>
                 <input
                   type="date"
                   required
                   value={extensionDate}
                   onChange={(e) => setExtensionDate(e.target.value)}
-                  className="w-full p-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
+                  className="w-full text-xs p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
                 />
               </div>
               <div>
-                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                  Reason
-                </label>
+                <label className="text-xs font-semibold block mb-1">Reason for Extension</label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   required
                   value={extensionReason}
                   onChange={(e) => setExtensionReason(e.target.value)}
                   placeholder="Explain why extra production time is required..."
-                  className="w-full p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded text-xs"
+                  className="w-full text-xs p-2.5 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded"
                 />
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setIsExtensionModalOpen(false)}
+                  disabled={isSubmittingExtension}
                 >
-                  Cancel
+                  Close
                 </Button>
                 <Button
                   type="submit"
