@@ -12,6 +12,9 @@ import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
 import { CreatorReel, ReelType, CreatorPackage, Campaign } from '@/types/marketplace';
 import { ConversationChat } from '@/components/chat/ConversationChat';
+import { CreatorCampaignCard } from '@/components/campaign/CreatorCampaignCard';
+import { CreatorEarningsView } from '@/components/campaign/CreatorEarningsView';
+import { NotificationsView } from '@/components/common/NotificationsView';
 import {
   ArrowRight,
   Package,
@@ -37,6 +40,8 @@ import {
   Clock,
   AlertTriangle,
   Sparkles,
+  Bell,
+  DollarSign,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
 import { parseInstagramUrl, parseInstagramProfileUrl } from '@/lib/utils/instagram';
@@ -60,7 +65,7 @@ function InstagramIcon({ className }: { className?: string }) {
   );
 }
 
-type TabKey = 'home' | 'discover' | 'orders' | 'messages' | 'profile' | 'settings';
+type TabKey = 'home' | 'campaigns' | 'orders' | 'earnings' | 'messages' | 'notifications' | 'profile' | 'discover' | 'settings';
 type OrderFilter = 'all' | 'ongoing' | 'completed';
 
 interface DbCreatorState {
@@ -396,8 +401,9 @@ function CreatorDashboardContent() {
   // Synchronize URL tab parameter and Instagram OAuth status
   useEffect(() => {
     if (tabParam) {
-      if (tabParam === 'overview') setActiveTab('home');
-      else if (['home', 'discover', 'orders', 'messages', 'profile', 'settings'].includes(tabParam)) {
+      if (tabParam === 'overview' || tabParam === 'dashboard') setActiveTab('home');
+      else if (tabParam === 'campaigns') setActiveTab('orders');
+      else if (['home', 'campaigns', 'orders', 'earnings', 'messages', 'notifications', 'profile', 'discover', 'settings'].includes(tabParam)) {
         setActiveTab(tabParam as TabKey);
       }
     }
@@ -874,18 +880,20 @@ function CreatorDashboardContent() {
       {/* PRIMARY NAVIGATION TABS (Simple Marketplace IA) */}
       <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 text-xs overflow-x-auto">
         {[
-          { key: 'home', label: 'Home' },
-          { key: 'discover', label: `Discover (${activeOpportunities.length})` },
-          { key: 'orders', label: `Orders (${creatorOrders.length})` },
-          { key: 'messages', label: `Messages` },
+          { key: 'home', label: 'Dashboard' },
+          { key: 'orders', label: `My Campaigns (${creatorOrders.length})` },
+          { key: 'earnings', label: 'Earnings' },
+          { key: 'messages', label: 'Messages' },
+          { key: 'notifications', label: 'Notifications' },
           { key: 'profile', label: 'Profile' },
+          { key: 'discover', label: `Discover (${activeOpportunities.length})` },
           { key: 'settings', label: 'Settings' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as TabKey)}
             className={`px-3.5 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
-              activeTab === tab.key
+              activeTab === tab.key || (tab.key === 'orders' && activeTab === 'campaigns')
                 ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
                 : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
             }`}
@@ -1212,15 +1220,15 @@ function CreatorDashboardContent() {
         </div>
       )}
 
-      {/* 3. PRIMARY ORDERS TAB */}
-      {activeTab === 'orders' && (
+      {/* 3. PRIMARY CAMPAIGNS TAB */}
+      {(activeTab === 'orders' || activeTab === 'campaigns') && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-5 shadow-sm">
           {/* Header & Filter Pills */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
             <div>
-              <span className="editorial-label text-[#FF5416]">Collaboration Orders</span>
+              <span className="editorial-label text-[#FF5416]">Creator Campaigns</span>
               <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
-                My Orders ({creatorOrders.length})
+                My Campaigns ({creatorOrders.length})
               </h3>
             </div>
 
@@ -1249,101 +1257,39 @@ function CreatorDashboardContent() {
             </div>
           </div>
 
-          {/* Orders List */}
+          {/* Campaigns List */}
           {displayedOrders.length === 0 ? (
             <div className="p-12 text-center border border-dashed border-[#E5E5DE] dark:border-zinc-800 rounded-xl text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
               <ShoppingBag className="w-8 h-8 text-[#A1A1AA] mx-auto mb-1" />
               <p className="font-bold text-sm text-[#121214] dark:text-white">
-                You don&apos;t have any {orderFilter !== 'all' ? orderFilter : ''} orders yet.
+                You don&apos;t have any {orderFilter !== 'all' ? orderFilter : ''} campaigns yet.
               </p>
-              <p>When a business confirms an order or accepts terms with you, it will appear here.</p>
+              <p>When a business confirms a campaign with you, it will appear here.</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {displayedOrders.map((ord) => {
-                const isOrdPaid =
-                  ord.payment_status === 'PAID' ||
-                  ord.order_status === 'PAID' ||
-                  ord.order_status === 'WORK_STARTED' ||
-                  ord.order_status === 'IN_PROGRESS' ||
-                  ord.order_status === 'DELIVERED' ||
-                  ord.order_status === 'REVISION_REQUESTED' ||
-                  ord.order_status === 'APPROVED' ||
-                  ord.order_status === 'AUTO_APPROVED' ||
-                  ord.order_status === 'COMPLETED';
-
-                // Contextual Next Action guidance for the creator
-                const nextActionGuidance = !isOrdPaid
-                  ? 'Waiting for the business to complete payment.'
-                  : ord.order_status === 'PAID'
-                  ? 'Payment received. You can start working.'
-                  : ord.order_status === 'WORK_STARTED' || ord.order_status === 'IN_PROGRESS'
-                  ? 'In production. Submit your Instagram Reel URL when ready.'
-                  : ord.order_status === 'DELIVERED'
-                  ? 'Delivery submitted. Waiting for business review.'
-                  : ord.order_status === 'REVISION_REQUESTED'
-                  ? 'Business requested 1 revision. Please update and submit revised Reel.'
-                  : 'Delivery accepted. Payout processing.';
-
-                return (
-                  <div
-                    key={ord.id}
-                    className="p-5 rounded-xl bg-[#FBFBFA] dark:bg-zinc-900 border border-[#E5E5DE] dark:border-zinc-800 space-y-3.5 hover:border-[#FF5416]/50 transition-colors"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-base text-[#121214] dark:text-white">
-                            #{ord.order_number}
-                          </span>
-                          <StatusBadge status={ord.order_status} size="sm" />
-                          {isOrdPaid ? (
-                            <span className="text-[10px] text-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold">
-                              PAID ✓
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-                              Payment Pending
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-[#52525B] dark:text-zinc-300 mt-1">
-                          Brand: <strong>{ord.business?.business_name || 'Brand Partner'}</strong> • Deliverable: {ord.package?.name || '1 × Instagram Reel'}
-                        </p>
-                      </div>
-
-                      <div className="text-left sm:text-right">
-                        <span className="font-bold text-base text-[#121214] dark:text-white block">
-                          ₹{Number(ord.subtotal || ord.total_amount || 0).toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[11px] text-[#71717A]">
-                          Deadline: {ord.deadline ? new Date(ord.deadline).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Action Required Box */}
-                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#ECECE6] dark:border-zinc-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#FF5416] shrink-0" />
-                        <span className="text-[#121214] dark:text-zinc-200 font-medium">
-                          {nextActionGuidance}
-                        </span>
-                      </div>
-
-                      <Link href={`/orders/${ord.id}`}>
-                        <Button variant="primary" size="sm" className="text-xs bg-[#FF5416] hover:bg-[#E04810] text-white shrink-0">
-                          <span>Open Workspace</span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
+              {displayedOrders.map((ord) => (
+                <CreatorCampaignCard
+                  key={ord.id}
+                  order={ord}
+                  onStartWorking={() => {
+                    router.push(`/orders/${ord.id}`);
+                  }}
+                />
+              ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* EARNINGS TAB */}
+      {activeTab === 'earnings' && (
+        <CreatorEarningsView orders={creatorOrders} />
+      )}
+
+      {/* NOTIFICATIONS TAB */}
+      {activeTab === 'notifications' && (
+        <NotificationsView userId={currentUser?.id || dbCreator?.user_id || ''} />
       )}
 
       {/* 4. MESSAGES TAB */}

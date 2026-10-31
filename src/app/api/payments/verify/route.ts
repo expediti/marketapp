@@ -1,25 +1,24 @@
 import { NextResponse } from 'next/server';
 import { createClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import {
-  verifyRazorpayPaymentSignature,
-  fetchRazorpayPayment,
-} from '@/lib/server/razorpay';
+import { getPaymentProvider } from '@/lib/server/payment';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/payments/verify
  * 
- * Server-side payment verification for Razorpay Standard Checkout.
+ * Server-side payment verification for campaign instalments.
  * 
  * Guarantees:
- * 1. Authenticates the user.
- * 2. Finds local payment & order using razorpay_order_id.
- * 3. Verifies that payment belongs to authenticated business.
- * 4. Verifies HMAC-SHA256 signature using RAZORPAY_KEY_SECRET.
- * 5. Verifies payment status and amount with Razorpay API.
- * 6. Idempotent: repeated calls safely return current status without duplication.
- * 7. Atomically transitions payment and order to PAID, logs audit event, and notifies creator.
+ * 1. Authenticates user.
+ * 2. Verifies ownership.
+ * 3. Provider-independent verification (verifies HMAC/API status server-side).
+ * 4. Idempotent: repeated calls safely return current status without duplicating events.
+ * 5. Strictly server-side: frontend state cannot mark payment verified.
+ * 6. Atomically updates order status:
+ *    - INITIAL payment: sets WORK_STARTED, notifies creator "First payment received...".
+ *    - FINAL payment: sets READY_FOR_FINAL_DELIVERY, notifies creator "Final payment received...".
+ * 7. Records splits in campaign_splits (keeps payment received separate from settlement).
  */
 export async function POST(request: Request) {
   try {
@@ -37,54 +36,48 @@ export async function POST(request: Request) {
     const {
       order_id,
       stage,
+      instalment_type,
+      provider: requestedProvider,
+      provider_order_id,
+      provider_payment_id,
+      signature,
       razorpay_payment_id,
       razorpay_order_id,
       razorpay_signature,
     } = body;
 
-    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    const targetProviderOrderId = provider_order_id || razorpay_order_id;
+    const targetProviderPaymentId = provider_payment_id || razorpay_payment_id;
+    const targetSignature = signature || razorpay_signature;
+
+    if (!targetProviderOrderId) {
       return NextResponse.json(
-        { error: 'Missing required Razorpay payment credentials (payment_id, order_id, signature).' },
+        { error: 'Missing required provider_order_id.' },
         { status: 400 }
       );
     }
 
-    // 3. Verify Razorpay HMAC-SHA256 signature server-side
-    const isSignatureValid = verifyRazorpayPaymentSignature({
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      signature: razorpay_signature,
-    });
-
-    if (!isSignatureValid) {
-      console.warn('Razorpay signature verification failed for order:', razorpay_order_id);
-      return NextResponse.json(
-        { error: 'Invalid payment signature. Verification failed.' },
-        { status: 400 }
-      );
-    }
-
-    // 4. Look up payment and associated order in Supabase
+    // 3. Look up order and payment in Supabase
     const supabase = await createClient();
 
-    // Query payment record
-    const { data: paymentRecord } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('razorpay_order_id', razorpay_order_id)
-      .maybeSingle();
+    let targetOrderId = order_id;
+    let paymentRecord: any = null;
 
-    let targetOrderId = order_id || paymentRecord?.order_id;
-
-    if (!targetOrderId) {
-      const { data: payByOrder } = await supabase
+    if (targetProviderOrderId) {
+      const { data: payRec } = await (supabase as any)
         .from('payments')
         .select('*')
-        .eq('provider_payment_id', razorpay_order_id)
+        .or(`provider_order_id.eq.${targetProviderOrderId},razorpay_order_id.eq.${targetProviderOrderId},provider_payment_id.eq.${targetProviderOrderId}`)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      targetOrderId = payByOrder?.order_id;
+
+      if (payRec) {
+        paymentRecord = payRec;
+        if (!targetOrderId) {
+          targetOrderId = payRec.order_id;
+        }
+      }
     }
 
     if (!targetOrderId) {
@@ -94,7 +87,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Locate order directly
+    // Fetch order
     const { data: orderData, error: orderFetchError } = await supabase
       .from('orders')
       .select('*')
@@ -103,12 +96,12 @@ export async function POST(request: Request) {
 
     if (orderFetchError || !orderData) {
       return NextResponse.json(
-        { error: 'Could not locate the associated order in the database.' },
+        { error: 'Order not found in the database.' },
         { status: 404 }
       );
     }
 
-    // 5. Ownership verification: caller must be the business owner of the order
+    // 4. Ownership verification: caller must be the business owner of the order
     const isBusinessOwner =
       orderData.business_id === user.id ||
       orderData.business_user_id === user.id;
@@ -123,13 +116,14 @@ export async function POST(request: Request) {
     // Determine payment stage
     const detectedStage: 'INITIAL' | 'FINAL' =
       stage === 'FINAL' ||
+      instalment_type === 'FINAL' ||
       paymentRecord?.stage === 'FINAL' ||
-      (paymentRecord?.metadata as any)?.stage === 'FINAL' ||
+      paymentRecord?.instalment_type === 'FINAL' ||
       Boolean(orderData.initial_paid_at && !orderData.final_paid_at)
         ? 'FINAL'
         : 'INITIAL';
 
-    // 6. Idempotency Check: if this specific stage was already completed
+    // 5. Idempotency Check: if this specific stage was already verified
     if (detectedStage === 'INITIAL' && (orderData.initial_paid_at || paymentRecord?.status === 'PAID')) {
       return NextResponse.json({
         success: true,
@@ -152,61 +146,72 @@ export async function POST(request: Request) {
       });
     }
 
-    // 7. Double check with Razorpay API (verifying amount and status)
-    let paymentMethod: string | undefined;
-    const stageAmount = Number(paymentRecord?.amount || (detectedStage === 'INITIAL'
-      ? Math.round(Number(orderData.total_amount) * 0.5 * 100) / 100
-      : Math.round((Number(orderData.total_amount) - Math.round(Number(orderData.total_amount) * 0.5 * 100) / 100) * 100) / 100));
+    // 6. Verify with Payment Provider
+    const providerName = requestedProvider || paymentRecord?.provider || 'cashfree';
+    const provider = getPaymentProvider(providerName);
 
-    try {
-      const rzpPayment = await fetchRazorpayPayment(razorpay_payment_id);
-      paymentMethod = rzpPayment.method;
+    if (!provider.isConfigured()) {
+      return NextResponse.json(
+        {
+          error: `Payment provider (${provider.providerName}) is not configured yet. Credentials required for verification.`,
+          is_configured: false,
+        },
+        { status: 503 }
+      );
+    }
 
-      if (rzpPayment.order_id !== razorpay_order_id) {
-        return NextResponse.json(
-          { error: 'Payment does not match the expected Razorpay order.' },
-          { status: 400 }
-        );
-      }
+    const verificationResult = await provider.verifyPayment({
+      orderId: orderData.id,
+      instalmentType: detectedStage,
+      providerOrderId: targetProviderOrderId,
+      providerPaymentId: targetProviderPaymentId,
+      signature: targetSignature,
+    });
 
-      const expectedPaise = Math.round(stageAmount * 100);
-      if (rzpPayment.amount !== expectedPaise) {
-        console.error('Stage payment amount mismatch:', { rzp: rzpPayment.amount, expected: expectedPaise, stage: detectedStage });
-      }
-    } catch (apiErr) {
-      console.warn('Razorpay API verification warning (continuing with HMAC signature):', apiErr);
+    if (!verificationResult.isVerified || verificationResult.status !== 'PAID') {
+      return NextResponse.json(
+        { error: 'Payment verification failed. Transaction was not confirmed by the provider.' },
+        { status: 400 }
+      );
     }
 
     const now = new Date().toISOString();
+    const stageAmount = detectedStage === 'INITIAL'
+      ? Number(orderData.first_payment_amount || orderData.initial_payment_amount || Math.round(Number(orderData.total_amount) * 0.5 * 100) / 100)
+      : Number(orderData.second_payment_amount || orderData.final_payment_amount || Math.round(Number(orderData.total_amount) * 0.5 * 100) / 100);
 
-    // 8. Update payment record
-    await (supabase as any)
-      .from('payments')
-      .upsert(
-        {
-          order_id: orderData.id,
-          payer_user_id: user.id,
-          provider: 'razorpay',
-          provider_payment_id: razorpay_payment_id,
-          razorpay_order_id: razorpay_order_id,
-          razorpay_payment_id: razorpay_payment_id,
-          razorpay_signature: razorpay_signature,
-          amount: stageAmount,
-          currency: 'INR',
+    // 7. Update payment record
+    if (paymentRecord?.id) {
+      await (supabase as any)
+        .from('payments')
+        .update({
           status: 'PAID',
-          stage: detectedStage,
+          payment_status: 'PAID',
+          verified_at: now,
           paid_at: now,
+          provider_payment_id: verificationResult.providerPaymentId,
           updated_at: now,
           metadata: {
+            ...(paymentRecord.metadata || {}),
             stage: detectedStage,
-            payment_method: paymentMethod || null,
+            instalment_type: detectedStage,
+            payment_method: verificationResult.paymentMethod || null,
             verified_at: now,
           },
-        },
-        { onConflict: 'razorpay_order_id' }
-      );
+        })
+        .eq('id', paymentRecord.id);
 
-    // 9. Update order according to stage
+      // Update split records to COMPLETED (splits allocated, settlements remain separate)
+      await (supabase as any)
+        .from('campaign_splits')
+        .update({
+          split_status: 'COMPLETED',
+          updated_at: now,
+        })
+        .eq('payment_id', paymentRecord.id);
+    }
+
+    // 8. Update order state and send notifications per stage
     if (detectedStage === 'INITIAL') {
       await (supabase as any)
         .from('orders')
@@ -214,6 +219,7 @@ export async function POST(request: Request) {
           order_status: 'WORK_STARTED',
           payment_status: 'PARTIALLY_PAID',
           initial_payment_amount: stageAmount,
+          first_payment_amount: stageAmount,
           initial_paid_at: now,
           updated_at: now,
         })
@@ -226,21 +232,22 @@ export async function POST(request: Request) {
         event_type: 'INITIAL_PAYMENT_VERIFIED',
         from_status: orderData.order_status,
         to_status: 'WORK_STARTED',
-        reason: `Initial 50% payment of ₹${stageAmount} verified. Creator can now begin campaign work and prepare a private preview.`,
+        reason: `First instalment (50%) of ₹${stageAmount} verified. Creator authorized to start work and prepare watermarked preview.`,
         metadata: {
           stage: 'INITIAL',
           amount: stageAmount,
-          razorpay_payment_id,
+          provider: provider.providerName,
+          provider_payment_id: verificationResult.providerPaymentId,
         },
       });
 
-      // Notification to Creator
+      // Notification to Creator (Exact prompt requirement)
       await (supabase as any).from('notifications').insert({
         user_id: orderData.creator_user_id || orderData.creator_id,
         related_order_id: orderData.id,
         type: 'PAYMENT_STATUS_CHANGED',
-        title: 'Initial 50% Payment Received!',
-        body: `Initial payment of ₹${stageAmount} (50%) confirmed for Order #${orderData.order_number}. You can now start working on the campaign and share a private preview.`,
+        title: 'First payment received',
+        body: 'Your campaign is now funded for the first instalment. You can start working.',
       });
 
       // System message in conversation
@@ -252,8 +259,8 @@ export async function POST(request: Request) {
           sender_id: user.id,
           sender_user_id: user.id,
           sender_role: 'system',
-          body: `✓ Initial 50% payment (₹${stageAmount}) verified. Creator can now start working on the campaign and share a private preview before final release.`,
-          message: `✓ Initial 50% payment (₹${stageAmount}) verified. Creator can now start working on the campaign and share a private preview before final release.`,
+          body: `✓ First payment received: ₹${stageAmount} (50%) confirmed. Creator is now funded and can start working on the campaign.`,
+          message: `✓ First payment received: ₹${stageAmount} (50%) confirmed. Creator is now funded and can start working on the campaign.`,
           moderation_status: 'clean',
         });
       }
@@ -262,9 +269,10 @@ export async function POST(request: Request) {
       await (supabase as any)
         .from('orders')
         .update({
-          order_status: 'READY_TO_PUBLISH',
+          order_status: 'READY_FOR_FINAL_DELIVERY',
           payment_status: 'PAID',
           final_payment_amount: stageAmount,
+          second_payment_amount: stageAmount,
           final_paid_at: now,
           updated_at: now,
         })
@@ -276,22 +284,23 @@ export async function POST(request: Request) {
         actor_id: user.id,
         event_type: 'FINAL_PAYMENT_VERIFIED',
         from_status: orderData.order_status,
-        to_status: 'READY_TO_PUBLISH',
-        reason: `Final 50% payment of ₹${stageAmount} verified. Creator authorized to publish content or release final deliverables.`,
+        to_status: 'READY_FOR_FINAL_DELIVERY',
+        reason: `Second instalment (50%) of ₹${stageAmount} verified. Final delivery unlocked for creator.`,
         metadata: {
           stage: 'FINAL',
           amount: stageAmount,
-          razorpay_payment_id,
+          provider: provider.providerName,
+          provider_payment_id: verificationResult.providerPaymentId,
         },
       });
 
-      // Notification to Creator
+      // Notification to Creator (Exact prompt requirement)
       await (supabase as any).from('notifications').insert({
         user_id: orderData.creator_user_id || orderData.creator_id,
         related_order_id: orderData.id,
         type: 'PAYMENT_STATUS_CHANGED',
-        title: 'Final 50% Payment Received!',
-        body: `Final payment of ₹${stageAmount} (50%) confirmed for Order #${orderData.order_number}. Please publish the approved content or provide final deliverable.`,
+        title: 'Final payment received',
+        body: 'You can now upload your final video and complete the campaign.',
       });
 
       // System message in conversation
@@ -303,8 +312,8 @@ export async function POST(request: Request) {
           sender_id: user.id,
           sender_user_id: user.id,
           sender_role: 'system',
-          body: `✓ Final 50% payment (₹${stageAmount}) verified. Both instalments are now complete (100%). Creator may now publish content publicly or provide final deliverables.`,
-          message: `✓ Final 50% payment (₹${stageAmount}) verified. Both instalments are now complete (100%). Creator may now publish content publicly or provide final deliverables.`,
+          body: `✓ Final payment received: ₹${stageAmount} (50%) confirmed (100% total campaign paid). Final delivery section unlocked for creator.`,
+          message: `✓ Final payment received: ₹${stageAmount} (50%) confirmed (100% total campaign paid). Final delivery section unlocked for creator.`,
           moderation_status: 'clean',
         });
       }

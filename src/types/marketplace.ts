@@ -21,6 +21,8 @@ export type OrderStatus =
   | 'REQUESTED'
   | 'PAYMENT_PENDING'
   | 'ACCEPTED_AWAITING_PAYMENT'
+  | 'AWAITING_FIRST_PAYMENT'
+  | 'FIRST_PAYMENT_PENDING'
   | 'NEGOTIATING'
   | 'DEAL_CONFIRMED'
   | 'FUNDED'
@@ -32,7 +34,9 @@ export type OrderStatus =
   | 'WAITING_FOR_BUSINESS'
   | 'OVERDUE'
   | 'PREVIEW_SUBMITTED'
+  | 'AWAITING_FINAL_PAYMENT'
   | 'FINAL_PAYMENT_PENDING'
+  | 'READY_FOR_FINAL_DELIVERY'
   | 'READY_TO_PUBLISH'
   | 'DELIVERED'
   | 'REVISION_REQUESTED'
@@ -430,6 +434,14 @@ export interface Order {
   // Two-Stage Campaign Payment Fields
   initial_payment_amount?: number;
   final_payment_amount?: number;
+  first_payment_amount?: number;
+  second_payment_amount?: number;
+  first_payment_amount_paise?: number;
+  second_payment_amount_paise?: number;
+  platform_commission_percentage?: number;
+  platform_commission_amount?: number;
+  creator_total_amount?: number;
+  agreed_revision_limit?: number;
   initial_paid_at?: string | null;
   final_paid_at?: string | null;
   preview_url?: string | null;
@@ -438,7 +450,83 @@ export interface Order {
   final_delivery_url?: string | null;
   final_delivery_notes?: string | null;
   final_delivered_at?: string | null;
+  current_preview_id?: string | null;
+  current_final_delivery_id?: string | null;
+  current_preview?: CampaignPreview;
+  previews?: CampaignPreview[];
+  revisions?: CampaignRevision[];
+  current_final_delivery?: CampaignFinalDelivery;
+  splits?: CampaignSplit[];
+  approved_at?: string | null;
+  completed_at?: string | null;
   payment?: Payment;
+}
+
+export interface CampaignSplit {
+  id: string;
+  payment_id: string;
+  order_id: string;
+  instalment_type: 'INITIAL' | 'FINAL';
+  vendor_id: string;
+  vendor_role: 'creator' | 'platform';
+  amount: number;
+  amount_in_paise: number;
+  currency: string;
+  split_status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  provider_split_reference?: string | null;
+  settlement_status: 'UNSETTLED' | 'SETTLED' | 'FAILED' | 'ON_HOLD';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignPreview {
+  id: string;
+  order_id: string;
+  uploaded_by: string;
+  storage_path: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  preview_version: number;
+  notes?: string | null;
+  is_watermarked: boolean;
+  uploaded_at: string;
+  expires_at: string;
+  preview_status: 'ACTIVE' | 'APPROVED' | 'REVISION_REQUESTED' | 'EXPIRED' | 'DISPUTED_PRESERVED' | 'DELETED';
+  deleted_at?: string | null;
+  signed_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignRevision {
+  id: string;
+  order_id: string;
+  preview_id?: string | null;
+  requested_by: string;
+  creator_id: string;
+  feedback: string;
+  revision_number: number;
+  status: 'PENDING' | 'RESOLVED' | 'SUPERSEDED';
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface CampaignFinalDelivery {
+  id: string;
+  order_id: string;
+  uploaded_by: string;
+  storage_path?: string | null;
+  file_name?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+  instagram_url?: string | null;
+  notes?: string | null;
+  uploaded_at?: string | null;
+  publication_submitted_at?: string | null;
+  delivery_status: 'DELIVERED' | 'COMPLETED' | 'DISPUTED';
+  signed_url?: string | null;
+  created_at: string;
 }
 
 export interface Payment {
@@ -447,16 +535,22 @@ export interface Payment {
   payer_user_id?: string | null;
   provider: string;
   stage?: PaymentStage;
+  instalment_type?: 'INITIAL' | 'FINAL' | 'FULL';
   provider_payment_id?: string | null;
+  provider_order_id?: string | null;
   amount: number;
+  amount_in_paise?: number;
   currency: string;
   status: PaymentStatus;
+  payment_status?: string;
+  verified_at?: string | null;
   razorpay_order_id?: string | null;
   razorpay_payment_id?: string | null;
   razorpay_signature?: string | null;
   failure_reason?: string | null;
   paid_at?: string | null;
   metadata?: Record<string, unknown>;
+  splits?: CampaignSplit[];
   created_at: string;
   updated_at?: string;
 }
@@ -470,3 +564,4 @@ export interface AdminAction {
   metadata: Record<string, unknown>;
   created_at: string;
 }
+

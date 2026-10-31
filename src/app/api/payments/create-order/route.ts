@@ -1,21 +1,22 @@
 import { NextResponse } from 'next/server';
 import { createClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import { createRazorpayOrder, getRazorpayCredentials } from '@/lib/server/razorpay';
+import { getPaymentProvider } from '@/lib/server/payment';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/payments/create-order
  * 
- * Server-side order creation for Razorpay Standard Checkout.
+ * Provider-independent server-side order creation.
+ * Handles two equal 50% instalments (INITIAL and FINAL).
  * 
  * Guarantees:
  * 1. User must be authenticated.
- * 2. User must be the business/customer owning the order.
- * 3. Order must be DEAL_CONFIRMED or PAYMENT_PENDING.
- * 4. Payment must not already be PAID.
- * 5. Amount is strictly read from orders.total_amount in Supabase database.
- * 6. Never exposes RAZORPAY_KEY_SECRET to the client.
+ * 2. User must be the business owning the campaign order.
+ * 3. Amount is strictly read from database order record (integer minor units / paise).
+ * 4. Workflow state is verified per instalment.
+ * 5. Fails safely and informs user if payment provider credentials are not yet configured.
+ * 6. Never exposes secret keys to the browser.
  */
 export async function POST(request: Request) {
   try {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
     // 2. Parse request body
     const body = await request.json().catch(() => ({}));
-    const { order_id, stage = 'INITIAL' } = body;
+    const { order_id, stage = 'INITIAL', preferred_provider } = body;
     const paymentStage: 'INITIAL' | 'FINAL' = stage === 'FINAL' ? 'FINAL' : 'INITIAL';
 
     if (!order_id || typeof order_id !== 'string') {
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('id, order_number, business_id, business_user_id, order_status, payment_status, total_amount, initial_payment_amount, final_payment_amount, initial_paid_at, final_paid_at')
+      .select('id, order_number, business_id, business_user_id, creator_id, creator_user_id, order_status, payment_status, total_amount, first_payment_amount, second_payment_amount, first_payment_amount_paise, second_payment_amount_paise, initial_payment_amount, final_payment_amount, initial_paid_at, final_paid_at, platform_commission_percentage, platform_commission_amount, creator_total_amount')
       .eq('id', order_id)
       .maybeSingle();
 
@@ -77,13 +78,20 @@ export async function POST(request: Request) {
     }
 
     // Calculate Two-Stage (50% initial + 50% final) amounts
-    const initialAmount = Math.round(lockedTotalAmount * 0.5 * 100) / 100;
-    const finalAmount = Math.round((lockedTotalAmount - initialAmount) * 100) / 100;
+    const initialAmount = order.first_payment_amount
+      ? Number(order.first_payment_amount)
+      : Math.round(lockedTotalAmount * 0.5 * 100) / 100;
+    const finalAmount = order.second_payment_amount
+      ? Number(order.second_payment_amount)
+      : Math.round((lockedTotalAmount - initialAmount) * 100) / 100;
 
-    let stageAmount = initialAmount;
-    if (paymentStage === 'FINAL') {
-      stageAmount = finalAmount;
-    }
+    const stageAmount = paymentStage === 'FINAL' ? finalAmount : initialAmount;
+    const amountInPaise = Math.round(stageAmount * 100);
+
+    // Commission calculations for Easy Split
+    const commissionPct = Number(order.platform_commission_percentage || 10.00);
+    const platformInstalmentShare = Math.round(stageAmount * (commissionPct / 100.0) * 100) / 100;
+    const creatorInstalmentShare = Math.round((stageAmount - platformInstalmentShare) * 100) / 100;
 
     // 6. Workflow state verification per stage
     if (paymentStage === 'INITIAL') {
@@ -94,7 +102,15 @@ export async function POST(request: Request) {
         );
       }
 
-      const allowedInitialStatuses = ['DEAL_CONFIRMED', 'PAYMENT_PENDING', 'ACCEPTED_AWAITING_PAYMENT', 'DRAFT', 'ACCEPTED'];
+      const allowedInitialStatuses = [
+        'DEAL_CONFIRMED',
+        'AWAITING_FIRST_PAYMENT',
+        'FIRST_PAYMENT_PENDING',
+        'PAYMENT_PENDING',
+        'ACCEPTED_AWAITING_PAYMENT',
+        'DRAFT',
+        'ACCEPTED'
+      ];
       if (!allowedInitialStatuses.includes(order.order_status)) {
         return NextResponse.json(
           {
@@ -114,79 +130,162 @@ export async function POST(request: Request) {
 
       const allowedFinalStatuses = [
         'PREVIEW_SUBMITTED',
+        'AWAITING_FINAL_PAYMENT',
         'FINAL_PAYMENT_PENDING',
         'DELIVERED',
         'WORK_STARTED',
         'IN_PROGRESS',
         'PAID',
-        'READY_TO_PUBLISH'
+        'READY_TO_PUBLISH',
+        'READY_FOR_FINAL_DELIVERY'
       ];
       if (!allowedFinalStatuses.includes(order.order_status)) {
         return NextResponse.json(
           {
-            error: `Final payment cannot be initiated for order in '${order.order_status}' status. Creator must share private preview first.`,
+            error: `Final payment cannot be initiated for order in '${order.order_status}' status. Creator must share preview first.`,
           },
           { status: 400 }
         );
       }
     }
 
-    // Amount in paise (integer)
-    const amountInPaise = Math.round(stageAmount * 100);
+    // 7. Resolve Payment Provider
+    const provider = getPaymentProvider(preferred_provider);
 
-    // 7. Create Razorpay Order server-side
-    const { keyId } = getRazorpayCredentials();
+    // If live credentials are not yet configured:
+    if (!provider.isConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Payment provider (${provider.providerName}) credentials are not configured yet. Credentials will be connected in the next phase.`,
+          provider: provider.providerName,
+          is_configured: false,
+          order_id: order.id,
+          order_number: order.order_number,
+          stage: paymentStage,
+          amount: stageAmount,
+        },
+        { status: 503 }
+      );
+    }
 
-    const stageNote = paymentStage === 'INITIAL' ? '50% Initial' : '50% Final';
-    const razorpayOrder = await createRazorpayOrder({
+    // 8. Fetch creator profile for vendor split ID if available
+    const creatorUserId = order.creator_user_id || order.creator_id;
+    const { data: creatorProfile } = await supabase
+      .from('creator_profiles')
+      .select('payout_upi_id, user_id')
+      .eq('user_id', creatorUserId)
+      .maybeSingle();
+
+    // 9. Call provider-independent order creation
+    const orderResult = await provider.createPaymentOrder({
+      orderId: order.id,
+      orderNumber: order.order_number,
+      instalmentType: paymentStage,
       amountInPaise,
       currency: 'INR',
-      receipt: `${order.order_number}-${paymentStage.toLowerCase()}`,
+      customer: {
+        id: user.id,
+        name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'Business Partner',
+        email: user.email || '',
+      },
+      splitDetails: {
+        creatorVendorId: creatorProfile?.payout_upi_id || creatorUserId,
+        creatorAmountInPaise: Math.round(creatorInstalmentShare * 100),
+        platformAmountInPaise: Math.round(platformInstalmentShare * 100),
+      },
       notes: {
-        order_id: order.id,
-        order_number: order.order_number,
-        business_id: user.id,
-        stage: paymentStage,
-        note: stageNote,
+        creator_user_id: creatorUserId,
+        commission_percentage: String(commissionPct),
       },
     });
 
-    // 8. Store the Razorpay order ID in Supabase payments table
-    const { error: directError } = await (supabase as any)
+    // 10. Record payment in Supabase payments table
+    const { data: paymentRecord, error: paymentInsertError } = await (supabase as any)
       .from('payments')
       .upsert(
         {
           order_id: order.id,
           payer_user_id: user.id,
-          provider: 'razorpay',
-          provider_payment_id: razorpayOrder.id,
-          razorpay_order_id: razorpayOrder.id,
+          provider: provider.providerName,
+          provider_order_id: orderResult.providerOrderId,
+          provider_payment_id: orderResult.providerOrderId,
           amount: stageAmount,
+          amount_in_paise: amountInPaise,
           currency: 'INR',
           status: 'PENDING',
           stage: paymentStage,
+          instalment_type: paymentStage,
+          razorpay_order_id: provider.providerName === 'razorpay' ? orderResult.providerOrderId : null,
           metadata: {
             stage: paymentStage,
+            instalment_type: paymentStage,
             stage_amount: stageAmount,
+            amount_in_paise: amountInPaise,
             total_amount: lockedTotalAmount,
+            platform_share: platformInstalmentShare,
+            creator_share: creatorInstalmentShare,
+            commission_percentage: commissionPct,
+            provider: provider.providerName,
           },
         },
-        { onConflict: 'razorpay_order_id' }
-      );
+        { onConflict: 'provider_order_id' }
+      )
+      .select()
+      .maybeSingle();
 
-    if (directError) {
-      console.warn('Payment record upsert notice:', directError);
+    if (paymentInsertError) {
+      console.warn('Payment record upsert notice:', paymentInsertError);
     }
 
-    // 9. Return ONLY what is required by Razorpay Standard Checkout
+    // 11. Record pending split entries in public.campaign_splits
+    const targetPaymentId = paymentRecord?.id;
+    if (targetPaymentId) {
+      try {
+        await (supabase as any).from('campaign_splits').insert([
+          {
+            payment_id: targetPaymentId,
+            order_id: order.id,
+            instalment_type: paymentStage,
+            vendor_id: creatorProfile?.payout_upi_id || creatorUserId,
+            vendor_role: 'creator',
+            amount: creatorInstalmentShare,
+            amount_in_paise: Math.round(creatorInstalmentShare * 100),
+            currency: 'INR',
+            split_status: 'PENDING',
+            settlement_status: 'UNSETTLED',
+          },
+          {
+            payment_id: targetPaymentId,
+            order_id: order.id,
+            instalment_type: paymentStage,
+            vendor_id: 'PLATFORM_MARKETMYIDEA',
+            vendor_role: 'platform',
+            amount: platformInstalmentShare,
+            amount_in_paise: Math.round(platformInstalmentShare * 100),
+            currency: 'INR',
+            split_status: 'PENDING',
+            settlement_status: 'UNSETTLED',
+          },
+        ]);
+      } catch (splitErr) {
+        console.warn('Notice inserting campaign_splits:', splitErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      key_id: keyId,
-      order_id: razorpayOrder.id, // Razorpay order id (e.g. order_EKwxwAgItmmMnv)
-      amount: razorpayOrder.amount, // in paise
-      currency: razorpayOrder.currency,
+      provider: provider.providerName,
+      provider_order_id: orderResult.providerOrderId,
+      payment_session_id: orderResult.paymentSessionId,
+      checkout_url: orderResult.checkoutUrl,
+      amount: stageAmount,
+      amount_in_paise: amountInPaise,
+      currency: orderResult.currency,
       order_number: order.order_number,
       stage: paymentStage,
+      instalment_type: paymentStage,
+      key_id: provider.getPublicConfig().keyId || provider.getPublicConfig().appId || '',
     });
   } catch (err: any) {
     console.error('Error in /api/payments/create-order:', err);

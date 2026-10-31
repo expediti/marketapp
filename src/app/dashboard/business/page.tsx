@@ -9,6 +9,9 @@ import { StatCard } from '@/components/ui/StatCard';
 import { Button } from '@/components/ui/Button';
 import { CreatorCard } from '@/components/marketplace/CreatorCard';
 import { ConversationChat } from '@/components/chat/ConversationChat';
+import { BusinessCampaignCard } from '@/components/campaign/BusinessCampaignCard';
+import { BusinessPaymentsView } from '@/components/campaign/BusinessPaymentsView';
+import { NotificationsView } from '@/components/common/NotificationsView';
 import {
   ArrowRight,
   Search,
@@ -33,9 +36,11 @@ import {
   Users,
   Layers,
   Sparkles,
+  Bell,
+  CreditCard,
 } from 'lucide-react';
 
-type TabKey = 'home' | 'discover' | 'orders' | 'messages' | 'profile' | 'settings';
+type TabKey = 'home' | 'campaigns' | 'orders' | 'discover' | 'payments' | 'messages' | 'notifications' | 'profile' | 'settings';
 
 interface DbBusinessProfile {
   user_id: string;
@@ -72,7 +77,7 @@ function BusinessDashboardContent() {
     conversations,
   } = useMarketplace();
 
-  const tabParam = searchParams.get('tab') as TabKey | null;
+  const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [dbBusiness, setDbBusiness] = useState<DbBusinessProfile | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -146,8 +151,12 @@ function BusinessDashboardContent() {
   };
 
   useEffect(() => {
-    if (tabParam && ['home', 'discover', 'orders', 'messages', 'profile', 'settings'].includes(tabParam)) {
-      setActiveTab(tabParam);
+    if (tabParam) {
+      if (tabParam === 'overview' || tabParam === 'dashboard') setActiveTab('home');
+      else if (tabParam === 'campaigns') setActiveTab('orders');
+      else if (['home', 'campaigns', 'orders', 'discover', 'payments', 'messages', 'notifications', 'profile', 'settings'].includes(tabParam)) {
+        setActiveTab(tabParam as TabKey);
+      }
     } else {
       setActiveTab('home');
     }
@@ -430,7 +439,31 @@ function BusinessDashboardContent() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* NOTE: Duplicate navigation row removed per product positioning requirements */}
+      {/* PRIMARY NAVIGATION TABS (Marketplace IA) */}
+      <div className="flex items-center gap-2 border-b border-[#E5E5DE] dark:border-zinc-800 pb-2 text-xs overflow-x-auto">
+        {[
+          { key: 'home', label: 'Dashboard' },
+          { key: 'orders', label: `My Campaigns (${businessOrders.length})` },
+          { key: 'discover', label: 'Find Creators' },
+          { key: 'payments', label: 'Payments' },
+          { key: 'messages', label: 'Messages' },
+          { key: 'notifications', label: 'Notifications' },
+          { key: 'profile', label: 'Profile' },
+          { key: 'settings', label: 'Settings' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as TabKey)}
+            className={`px-3.5 py-1.5 rounded transition-colors shrink-0 cursor-pointer ${
+              activeTab === tab.key || (tab.key === 'orders' && activeTab === 'campaigns')
+                ? 'bg-[#121214] text-white dark:bg-[#FF5416] dark:text-white font-bold'
+                : 'text-[#71717A] dark:text-zinc-400 hover:text-[#121214] dark:hover:text-white hover:bg-[#F4F4F0] dark:hover:bg-zinc-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {/* ==================================================== */}
       {/* TAB 1: HOME (Distribution Dashboard)                 */}
@@ -716,18 +749,18 @@ function BusinessDashboardContent() {
       )}
 
       {/* ==================================================== */}
-      {/* TAB 3: ORDERS                                        */}
+      {/* TAB 3: CAMPAIGNS / ORDERS                            */}
       {/* ==================================================== */}
-      {activeTab === 'orders' && (
+      {(activeTab === 'orders' || activeTab === 'campaigns') && (
         <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-[#27272A] pb-4">
             <div>
-              <span className="editorial-label text-[#FF5416]">Promotion Orders</span>
+              <span className="editorial-label text-[#FF5416]">Business Campaigns</span>
               <h2 className="font-mono text-xl font-bold text-[#121214] dark:text-white">
-                Orders & Collaborations
+                My Campaigns ({businessOrders.length})
               </h2>
               <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] mt-0.5">
-                Track production progress, deliverable verification, and revision requests.
+                Track two-stage payments, preview review, and final deliverables.
               </p>
             </div>
 
@@ -753,10 +786,10 @@ function BusinessDashboardContent() {
             <div className="py-16 text-center border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-xl space-y-3">
               <ShoppingBag className="w-8 h-8 text-[#A1A1AA] mx-auto" />
               <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
-                No promotions yet
+                No campaigns yet
               </h3>
               <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] max-w-sm mx-auto">
-                Explore the directory and discover audiences that already exist for your app or product.
+                Explore the directory and discover creators that already reach your target audience.
               </p>
               <Link href="/discover">
                 <Button variant="primary" size="sm">
@@ -765,60 +798,32 @@ function BusinessDashboardContent() {
               </Link>
             </div>
           ) : (
-            <div className="divide-y divide-[#ECECE6] dark:divide-[#27272A]">
-              {filteredOrders.map((ord) => {
-                const guide = getOrderStatusGuide(ord);
-                return (
-                  <div
-                    key={ord.id}
-                    className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#FBFBFA] dark:hover:bg-[#18181B] px-2 rounded-lg transition-colors"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <strong className="font-mono text-[#121214] dark:text-white text-base">
-                          #{ord.order_number}
-                        </strong>
-                        <span
-                          className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${guide.color}`}
-                        >
-                          {guide.tag}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-[#52525B] dark:text-[#A1A1AA] font-mono">
-                        <span>Partner: <strong>{ord.creator?.profile?.display_name || 'Creator'}</strong></span>
-                        <span className="mx-2">•</span>
-                        <span>Deliverable: {ord.package?.name || 'Promotion'}</span>
-                      </div>
-
-                      <p className="text-[11px] text-[#71717A] dark:text-[#71717A] font-mono">
-                        Action Required: {guide.action}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="text-right font-mono">
-                        <span className="text-sm font-bold text-[#121214] dark:text-white block">
-                          ₹{Number(ord.total_amount || 0).toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[10px] text-[#047857] dark:text-[#34D399]">
-                          Protected Payment
-                        </span>
-                      </div>
-
-                      <Link href={`/orders/${ord.id}`}>
-                        <Button variant="outline" size="sm">
-                          <span>Workspace</span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="space-y-4">
+              {filteredOrders.map((ord) => (
+                <BusinessCampaignCard
+                  key={ord.id}
+                  order={ord}
+                  onPayFirst50={() => router.push(`/orders/${ord.id}`)}
+                  onPayRemaining50={() => router.push(`/orders/${ord.id}`)}
+                />
+              ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* PAYMENTS TAB                                         */}
+      {/* ==================================================== */}
+      {activeTab === 'payments' && (
+        <BusinessPaymentsView orders={businessOrders} />
+      )}
+
+      {/* ==================================================== */}
+      {/* NOTIFICATIONS TAB                                    */}
+      {/* ==================================================== */}
+      {activeTab === 'notifications' && (
+        <NotificationsView userId={currentUser?.id || dbBusiness?.user_id || ''} />
       )}
 
       {/* ==================================================== */}

@@ -11,6 +11,7 @@ import { ChatWindow } from '@/components/order/ChatWindow';
 import { DeliveryWorkspace } from '@/components/order/DeliveryWorkspace';
 import { OrderTimeline } from '@/components/order/OrderTimeline';
 import { DisputeModal } from '@/components/order/DisputeModal';
+import { PaymentSuccessNotification } from '@/components/common/PaymentSuccessNotification';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import {
@@ -221,30 +222,41 @@ export default function OrderWorkspacePage() {
           className="inline-flex items-center gap-1.5 text-xs text-[#71717A] hover:text-[#121214] dark:hover:text-white transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Orders</span>
+          <span>Back to Campaigns</span>
         </Link>
 
         {isStage2Paid ? (
           <span className="text-[11px] text-[#047857] dark:text-emerald-400 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold flex items-center gap-1">
             <CheckCircle className="w-3.5 h-3.5" />
-            <span>Two-Stage Payment: 100% Paid ✓</span>
+            <span>Two-Instalment Payment: 100% Paid ✓</span>
           </span>
         ) : isStage1Paid ? (
           <span className="text-[11px] text-[#047857] dark:text-emerald-400 bg-[#ECFDF5] dark:bg-emerald-950/40 px-2.5 py-0.5 rounded border border-[#A7F3D0] dark:border-emerald-800 font-semibold flex items-center gap-1">
             <CheckCircle className="w-3.5 h-3.5" />
-            <span>Stage 1 Paid (50%) • Stage 2 Due on Preview</span>
+            <span>First Instalment Paid (50%) • Second Due on Preview Approval</span>
           </span>
         ) : (
           <span className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 font-semibold">
-            Two-Stage Payment: Initial 50% Due
+            Two-Instalment Payment: First 50% Due
           </span>
         )}
       </div>
 
-      {/* TIMELINE PROGRESS BAR */}
-      <OrderTimeline currentStatus={order.order_status} />
+      {/* IN-APP PAYMENT SUCCESS NOTIFICATION (CREATOR) */}
+      {isMeCreator && isStage1Paid && order.order_status === 'WORK_STARTED' && (
+        <PaymentSuccessNotification
+          isOpen={true}
+          onClose={() => {}}
+          orderNumber={order.order_number}
+          title="First payment received"
+          message="Your campaign is now funded for the first instalment. You can start working."
+        />
+      )}
 
-      {/* COMPACT ORDER HEADER */}
+      {/* 9-STAGE PERSISTENT CAMPAIGN TIMELINE */}
+      <OrderTimeline order={order} currentStatus={order.order_status} />
+
+      {/* COMPACT ORDER HEADER WITH COMMISSION & PAYMENT BREAKDOWN */}
       <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECECE6] dark:border-zinc-800 pb-4">
           <div>
@@ -255,7 +267,7 @@ export default function OrderWorkspacePage() {
               {otherPartyName}
             </h1>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
-              Order #{order.order_number}
+              Campaign Order #{order.order_number}
             </p>
           </div>
 
@@ -266,14 +278,14 @@ export default function OrderWorkspacePage() {
                 ₹{order.total_amount.toLocaleString('en-IN')}
               </span>
               <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block">
-                50% (₹{initialPaymentAmount.toLocaleString('en-IN')}) + 50% (₹{finalPaymentAmount.toLocaleString('en-IN')})
+                2 × ₹{initialPaymentAmount.toLocaleString('en-IN')} (50% each)
               </span>
             </div>
           </div>
         </div>
 
-        {/* Essential Terms Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        {/* Essential Terms Grid with Platform Commission & Creator Share */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
           <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
             <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Deliverable</span>
             <span className="font-bold text-[#121214] dark:text-white truncate block mt-0.5">
@@ -282,9 +294,20 @@ export default function OrderWorkspacePage() {
           </div>
 
           <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
-            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">2-Stage Payment</span>
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Instalments</span>
             <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
               2 × ₹{initialPaymentAmount.toLocaleString('en-IN')}
+            </span>
+          </div>
+
+          <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
+            <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">
+              {isMeCreator ? 'Your Earnings' : 'Platform Fee'}
+            </span>
+            <span className="font-bold text-[#047857] dark:text-emerald-400 block mt-0.5">
+              {isMeCreator
+                ? `₹${(order.creator_total_amount || order.total_amount * 0.9).toLocaleString('en-IN')} (90%)`
+                : `₹${(order.platform_commission_amount || order.total_amount * 0.1).toLocaleString('en-IN')} (10%)`}
             </span>
           </div>
 
@@ -298,11 +321,12 @@ export default function OrderWorkspacePage() {
           <div className="p-2.5 bg-[#FBFBFA] dark:bg-zinc-900 rounded-lg border border-[#E5E5DE] dark:border-zinc-800">
             <span className="text-[10px] text-[#71717A] dark:text-zinc-400 block uppercase">Revisions</span>
             <span className="font-bold text-[#121214] dark:text-white block mt-0.5">
-              {revisionsLeft} remaining
+              {revisionsLeft} remaining ({order.revisions_used || 0}/{order.included_revisions || 1} used)
             </span>
           </div>
         </div>
       </div>
+
 
       {/* PRIMARY WORKSPACE: DELIVERY & CHAT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
