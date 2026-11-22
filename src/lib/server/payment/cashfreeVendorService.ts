@@ -10,8 +10,9 @@ export type PayoutVerificationStatus =
 export interface RegisterVendorParams {
   creatorUserId: string;
   accountHolderName: string;
-  accountNumber: string;
-  ifscCode: string;
+  upiId?: string;
+  accountNumber?: string;
+  ifscCode?: string;
   accountType?: 'SAVINGS' | 'CURRENT';
   creatorEmail?: string;
   creatorPhone?: string;
@@ -75,21 +76,53 @@ export class CashfreeVendorService {
       'x-api-version': creds.apiVersion,
     };
 
-    // Easy Split Vendor payload with on-demand deferred settlement (schedule_option: 4 / on demand release)
-    const vendorPayload = {
+    const hasUpi = Boolean(params.upiId && params.upiId.trim());
+
+    // Build payload: prefer UPI VPA if provided, else bank details
+    const vendorPayload: Record<string, any> = {
       vendor_id: vendorId,
       status: 'ACTIVE',
       name: params.accountHolderName,
       email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
       phone: params.creatorPhone || '9876543210',
-      verify_account: true,
       schedule_option: 4, // 4 = ON DEMAND (funds held in escrow split until completion trigger)
-      bank: {
+    };
+
+    if (hasUpi) {
+      vendorPayload.upi = {
+        vpa: params.upiId!.trim(),
+        account_holder: params.accountHolderName,
+      };
+    } else if (params.accountNumber && params.ifscCode) {
+      vendorPayload.bank = {
         account_number: params.accountNumber,
         account_holder: params.accountHolderName,
         ifsc: params.ifscCode,
-      },
+      };
+      vendorPayload.verify_account = true;
+    }
+
+    const patchPayload: Record<string, any> = {
+      status: 'ACTIVE',
+      name: params.accountHolderName,
+      email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
+      phone: params.creatorPhone || '9876543210',
+      schedule_option: 4,
     };
+
+    if (hasUpi) {
+      patchPayload.upi = {
+        vpa: params.upiId!.trim(),
+        account_holder: params.accountHolderName,
+      };
+    } else if (params.accountNumber && params.ifscCode) {
+      patchPayload.bank = {
+        account_number: params.accountNumber,
+        account_holder: params.accountHolderName,
+        ifsc: params.ifscCode,
+      };
+      patchPayload.verify_account = true;
+    }
 
     try {
       // 1. Check if vendor already exists on Cashfree
@@ -101,23 +134,11 @@ export class CashfreeVendorService {
       let response: Response;
 
       if (checkRes.ok) {
-        // Vendor exists -> Update vendor with new bank details via PATCH
+        // Vendor exists -> Update vendor with new details via PATCH
         response = await fetch(`${creds.baseUrl}/easy-split/vendors/${encodeURIComponent(vendorId)}`, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify({
-            status: 'ACTIVE',
-            name: params.accountHolderName,
-            email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
-            phone: params.creatorPhone || '9876543210',
-            verify_account: true,
-            schedule_option: 4,
-            bank: {
-              account_number: params.accountNumber,
-              account_holder: params.accountHolderName,
-              ifsc: params.ifscCode,
-            },
-          }),
+          body: JSON.stringify(patchPayload),
         });
       } else {
         // Vendor does not exist -> Create vendor via POST
@@ -135,19 +156,7 @@ export class CashfreeVendorService {
             response = await fetch(`${creds.baseUrl}/easy-split/vendors/${encodeURIComponent(vendorId)}`, {
               method: 'PATCH',
               headers,
-              body: JSON.stringify({
-                status: 'ACTIVE',
-                name: params.accountHolderName,
-                email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
-                phone: params.creatorPhone || '9876543210',
-                verify_account: true,
-                schedule_option: 4,
-                bank: {
-                  account_number: params.accountNumber,
-                  account_holder: params.accountHolderName,
-                  ifsc: params.ifscCode,
-                },
-              }),
+              body: JSON.stringify(patchPayload),
             });
           }
         }
@@ -186,7 +195,10 @@ export class CashfreeVendorService {
 
       let resolvedStatus: PayoutVerificationStatus = 'PENDING_VERIFICATION';
 
-      if (bankStatus === 'SUCCESS' || (vendorStatus === 'ACTIVE' && bankStatus !== 'FAILED')) {
+      if (hasUpi) {
+        // UPI payouts are verified immediately upon successful creation/update on Cashfree
+        resolvedStatus = 'VERIFIED';
+      } else if (bankStatus === 'SUCCESS' || (vendorStatus === 'ACTIVE' && bankStatus !== 'FAILED')) {
         resolvedStatus = 'VERIFIED';
       } else if (bankStatus === 'FAILED' || vendorStatus === 'REJECTED') {
         resolvedStatus = 'REJECTED';
@@ -208,7 +220,7 @@ export class CashfreeVendorService {
         resData?.message ||
         resData?.error_description ||
         (bankStatus === 'FAILED'
-          ? 'Bank account verification failed. Account holder name must match the legal name on record with your bank.'
+          ? 'Payout verification failed. Please verify your details.'
           : undefined);
 
       return {

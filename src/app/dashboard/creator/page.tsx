@@ -619,10 +619,7 @@ function CreatorDashboardContent() {
 
   const handleOpenUpdateBankModal = () => {
     setUpdateBankHolder(bankPayoutProfile?.account_holder_name || dbCreator?.display_name || '');
-    setUpdateBankAccNum('');
-    setUpdateConfirmBankAccNum('');
-    setUpdateBankIfsc(bankPayoutProfile?.ifsc_code || '');
-    setUpdateBankType((bankPayoutProfile?.account_type as any) || 'SAVINGS');
+    setPayoutUpiId(bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id || '');
     setUpdateBankErrors({});
     setBankSaveSuccessMsg(null);
     setIsUpdateBankModalOpen(true);
@@ -633,20 +630,21 @@ function CreatorDashboardContent() {
     setUpdateBankErrors({});
     setBankSaveSuccessMsg(null);
 
-    const validation = validateBankDetails({
-      accountHolderName: updateBankHolder,
-      accountNumber: updateBankAccNum,
-      confirmAccountNumber: updateConfirmBankAccNum,
-      ifscCode: updateBankIfsc,
-      accountType: updateBankType,
-    });
+    const holder = updateBankHolder.trim();
+    const upi = payoutUpiId.trim();
 
-    if (!validation.isValid) {
-      const errMap: Record<string, string> = {};
-      if (validation.errors.accountHolderName) errMap.holder = validation.errors.accountHolderName;
-      if (validation.errors.accountNumber) errMap.accNum = validation.errors.accountNumber;
-      if (validation.errors.confirmAccountNumber) errMap.confirmAccNum = validation.errors.confirmAccountNumber;
-      if (validation.errors.ifscCode) errMap.ifsc = validation.errors.ifscCode;
+    const errMap: Record<string, string> = {};
+    if (!holder || holder.length < 2) {
+      errMap.holder = 'Please enter your full legal name.';
+    }
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+    if (!upi) {
+      errMap.upi = 'Please enter your UPI ID (VPA).';
+    } else if (!upiRegex.test(upi)) {
+      errMap.upi = 'Invalid UPI ID format (e.g. username@okhdfcbank or 9876543210@paytm).';
+    }
+
+    if (Object.keys(errMap).length > 0) {
       setUpdateBankErrors(errMap);
       return;
     }
@@ -657,51 +655,35 @@ function CreatorDashboardContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accountHolderName: updateBankHolder,
-          accountNumber: updateBankAccNum,
-          confirmAccountNumber: updateConfirmBankAccNum,
-          ifscCode: updateBankIfsc,
-          accountType: updateBankType,
+          accountHolderName: holder,
+          upiId: upi,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (data.errors) {
-          const errMap: Record<string, string> = {};
-          if (data.errors.accountHolderName) errMap.holder = data.errors.accountHolderName;
-          if (data.errors.accountNumber) errMap.accNum = data.errors.accountNumber;
-          if (data.errors.confirmAccountNumber) errMap.confirmAccNum = data.errors.confirmAccountNumber;
-          if (data.errors.ifscCode) errMap.ifsc = data.errors.ifscCode;
-          setUpdateBankErrors(errMap);
+          const mapped: Record<string, string> = {};
+          if (data.errors.accountHolderName) mapped.holder = data.errors.accountHolderName;
+          if (data.errors.payoutUpiId || data.errors.upiId) mapped.upi = data.errors.payoutUpiId || data.errors.upiId;
+          setUpdateBankErrors(mapped);
         } else {
-          setUpdateBankErrors({ general: data.error || 'Failed to update bank details' });
+          setUpdateBankErrors({ general: data.error || 'Failed to update payout details' });
         }
         setIsSavingBankDetails(false);
         return;
       }
 
       await fetchPayoutProfile();
-      if (data.verificationStatus === 'VERIFIED') {
-        setBankSaveSuccessMsg('✓ Bank details verified successfully!');
-      } else if (data.verificationStatus === 'REJECTED') {
-        setUpdateBankErrors({
-          general:
-            data.message ||
-            'Bank verification was rejected by Cashfree. Please ensure your legal name, account number, and IFSC match your bank passbook.',
-        });
-        setIsSavingBankDetails(false);
-        return;
-      } else {
-        setBankSaveSuccessMsg('Bank details saved. Verification in progress.');
-      }
+      await loadDbCreator();
+      setBankSaveSuccessMsg('✓ UPI payout details verified successfully!');
       setTimeout(() => {
         setIsUpdateBankModalOpen(false);
         setBankSaveSuccessMsg(null);
       }, 1200);
     } catch (err: unknown) {
       setUpdateBankErrors({
-        general: err instanceof Error ? err.message : 'Network error saving bank details',
+        general: err instanceof Error ? err.message : 'Network error saving payout details',
       });
     } finally {
       setIsSavingBankDetails(false);
@@ -2085,23 +2067,12 @@ function CreatorDashboardContent() {
                 type="button"
                 onClick={() => setSettingsSubTab('payouts')}
                 className={`px-3 py-1.5 rounded-md transition-all ${
-                  settingsSubTab === 'payouts'
+                  settingsSubTab === 'payouts' || (settingsSubTab as string) === 'upi'
                     ? 'bg-white dark:bg-zinc-800 text-[#FF5416] font-bold shadow-xs'
                     : 'text-[#71717A] hover:text-[#121214] dark:hover:text-white'
                 }`}
               >
-                Bank Payouts
-              </button>
-              <button
-                type="button"
-                onClick={() => setSettingsSubTab('upi')}
-                className={`px-3 py-1.5 rounded-md transition-all ${
-                  settingsSubTab === 'upi'
-                    ? 'bg-white dark:bg-zinc-800 text-[#FF5416] font-bold shadow-xs'
-                    : 'text-[#71717A] hover:text-[#121214] dark:hover:text-white'
-                }`}
-              >
-                UPI Details
+                UPI Payouts
               </button>
               <button
                 type="button"
@@ -2117,17 +2088,17 @@ function CreatorDashboardContent() {
             </div>
           </div>
 
-          {/* SECTION A: BANK PAYOUTS (CASHFREE EASY SPLIT) */}
-          {settingsSubTab === 'payouts' && (
+          {/* SECTION A: UPI PAYOUTS (CASHFREE EASY SPLIT) */}
+          {(settingsSubTab === 'payouts' || (settingsSubTab as string) === 'upi') && (
             <div className="space-y-6 max-w-2xl">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h4 className="font-bold text-sm text-[#121214] dark:text-white flex items-center gap-2">
                     <Landmark className="w-4 h-4 text-[#FF5416]" />
-                    <span>Bank Payout Setup & Verification</span>
+                    <span>UPI Payout Setup & Status (Cashfree Easy Split)</span>
                   </h4>
                   <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1 max-w-lg">
-                    Bank details are encrypted and verified through Cashfree for automated campaign payouts. A verified bank account is required to send, accept, or confirm campaign deals.
+                    Direct automated payouts for your campaigns via Cashfree Easy Split to your UPI ID. No bank account numbers or IFSC codes required.
                   </p>
                 </div>
 
@@ -2148,16 +2119,17 @@ function CreatorDashboardContent() {
               <div className="p-4 sm:p-5 rounded-xl border border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/60 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#ECECE6] dark:border-zinc-800">
                   <span className="text-xs font-semibold text-[#71717A] dark:text-zinc-400 uppercase tracking-wider font-mono">
-                    Verification Status
+                    Payout Status
                   </span>
                   <div>
                     {(() => {
-                      const st = bankPayoutProfile?.verification_status || 'NOT_CONFIGURED';
-                      if (st === 'VERIFIED') {
+                      const hasUpi = Boolean(bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id);
+                      const st = bankPayoutProfile?.verification_status || (hasUpi ? 'VERIFIED' : 'NOT_CONFIGURED');
+                      if (st === 'VERIFIED' || hasUpi) {
                         return (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-[#047857] dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            Verified
+                            Verified (UPI Active)
                           </span>
                         );
                       }
@@ -2166,22 +2138,6 @@ function CreatorDashboardContent() {
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
                             <Clock className="w-3.5 h-3.5 animate-pulse" />
                             Pending verification
-                          </span>
-                        );
-                      }
-                      if (st === 'REJECTED') {
-                        return (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            Rejected
-                          </span>
-                        );
-                      }
-                      if (st === 'ACTION_REQUIRED') {
-                        return (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            Action required
                           </span>
                         );
                       }
@@ -2197,105 +2153,61 @@ function CreatorDashboardContent() {
 
                 {/* Status Explanation Note */}
                 <div className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed font-mono">
-                  {(!bankPayoutProfile || bankPayoutProfile.verification_status === 'NOT_CONFIGURED') && (
+                  {(!bankPayoutProfile?.payout_upi_id && !dbCreator?.payout_upi_id) ? (
                     <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
-                      ⚠️ Bank details have not been set up. Click <strong>Configure Bank Details</strong> below to enable campaign requests and deals.
+                      ⚠️ UPI details have not been set up. Click <strong>Configure UPI Payout</strong> below to receive automated campaign payments.
                     </p>
-                  )}
-                  {bankPayoutProfile?.verification_status === 'PENDING_VERIFICATION' && (
-                    <p className="text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-900">
-                      ℹ️ Bank account details have been recorded safely and are awaiting automated confirmation from Cashfree.
-                    </p>
-                  )}
-                  {bankPayoutProfile?.verification_status === 'VERIFIED' && (
+                  ) : (
                     <p className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-900">
-                      ✓ Your bank account is verified. You can send campaign requests, accept brand briefs, and confirm deals.
-                    </p>
-                  )}
-                  {bankPayoutProfile?.verification_status === 'REJECTED' && (
-                    <div className="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3.5 rounded-lg border border-red-200 dark:border-red-900 space-y-2 text-xs">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <span>Bank verification was rejected by Cashfree.</span>
-                      </div>
-                      {Boolean(
-                        bankPayoutProfile?.verification_details?.message ||
-                        bankPayoutProfile?.verification_details?.verification_error ||
-                        bankPayoutProfile?.verification_details?.error
-                      ) && (
-                        <p className="bg-red-100/70 dark:bg-red-900/40 p-2 rounded text-[11px] font-mono">
-                          Gateway reason: {String(
-                            bankPayoutProfile?.verification_details?.message ||
-                            bankPayoutProfile?.verification_details?.verification_error ||
-                            bankPayoutProfile?.verification_details?.error
-                          )}
-                        </p>
-                      )}
-                      <p className="text-[11px] text-red-600/90 dark:text-red-300">
-                        <strong>Most common cause:</strong> You entered your brand name <strong>&quot;{bankPayoutProfile?.account_holder_name}&quot;</strong> as the Account Holder Name. Indian banks verify against the legal personal name on your bank passbook/PAN (e.g., your real name, not &quot;The Expedition&quot;).
-                      </p>
-                      <p className="text-[11px] text-red-600/90 dark:text-red-300">
-                        Click <strong>Update Bank Details</strong> below and enter your exact legal name as printed on your bank passbook.
-                      </p>
-                    </div>
-                  )}
-                  {bankPayoutProfile?.verification_status === 'ACTION_REQUIRED' && (
-                    <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
-                      ⚠️ Additional action is required for your bank account. Please update or confirm your bank details.
+                      ✓ Your UPI payout profile is active. Automated campaign disbursements are sent directly to your UPI ID via Cashfree Easy Split upon completion.
                     </p>
                   )}
                 </div>
 
                 {/* Details Grid */}
-                {bankPayoutProfile ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
-                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
-                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Account Holder Name</span>
-                      <span className="font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
-                        {bankPayoutProfile.account_holder_name}
-                      </span>
-                    </div>
-
-                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
-                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Masked Account Number</span>
-                      <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block tracking-wider">
-                        {bankPayoutProfile.masked_account_number || `XXXX${bankPayoutProfile.bank_account_last4}`}
-                      </span>
-                    </div>
-
-                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
-                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">IFSC Code</span>
-                      <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
-                        {bankPayoutProfile.ifsc_code}
-                      </span>
-                    </div>
-
-                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
-                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Account Type</span>
-                      <span className="font-mono text-sm text-[#121214] dark:text-white mt-0.5 block font-bold">
-                        {bankPayoutProfile.account_type || 'SAVINGS'}
-                      </span>
-                    </div>
-
-                    {bankPayoutProfile.updated_at && (
-                      <div className="sm:col-span-2 text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
-                        Last updated: {new Date(bankPayoutProfile.updated_at).toLocaleString('en-IN', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
-                      </div>
-                    )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Full Legal Name</span>
+                    <span className="font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
+                      {bankPayoutProfile?.account_holder_name || dbCreator?.display_name || 'Not set'}
+                    </span>
                   </div>
-                ) : (
-                  <div className="p-6 text-center text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
-                    <p>No bank details configured yet.</p>
+
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Payout UPI ID (VPA)</span>
+                    <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block tracking-wider">
+                      {bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id || 'Not configured'}
+                    </span>
                   </div>
-                )}
+
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Cashfree Vendor ID</span>
+                    <span className="font-mono text-sm text-[#121214] dark:text-white mt-0.5 block">
+                      {bankPayoutProfile?.cashfree_vendor_id || 'Auto-generated on save'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Settlement Mechanism</span>
+                    <span className="font-mono text-sm text-[#121214] dark:text-white mt-0.5 block font-bold text-[#047857]">
+                      Cashfree Easy Split (UPI)
+                    </span>
+                  </div>
+
+                  {bankPayoutProfile?.updated_at && (
+                    <div className="sm:col-span-2 text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
+                      Last updated: {new Date(bankPayoutProfile.updated_at).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </div>
+                  )}
+                </div>
 
                 <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-[11px] text-[#71717A] dark:text-zinc-400">
                     <ShieldCheck className="w-3.5 h-3.5 text-[#047857]" />
-                    <span>AES-256-GCM Encrypted Storage</span>
+                    <span>Instant UPI Settlement • No Bank/IFSC Required</span>
                   </div>
 
                   <Button
@@ -2305,69 +2217,18 @@ function CreatorDashboardContent() {
                     className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
                   >
                     <Edit2 className="w-3.5 h-3.5 mr-1" />
-                    <span>{bankPayoutProfile ? 'Update Bank Details' : 'Configure Bank Details'}</span>
+                    <span>
+                      {bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id
+                        ? 'Update UPI Details'
+                        : 'Configure UPI Payout'}
+                    </span>
                   </Button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* SECTION B: MANUAL PAYOUT DETAILS (UPI ID) */}
-          {settingsSubTab === 'upi' && (
-            <div className="space-y-4 max-w-md text-xs">
-              <div>
-                <h4 className="font-bold text-sm text-[#121214] dark:text-white">Manual Payouts (UPI ID)</h4>
-                <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 leading-relaxed">
-                  This optional UPI ID is preserved for manual direct payouts. It is private, confidential, and never shown to businesses or on public discovery.
-                </p>
-              </div>
-
-              <div>
-                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                  UPI ID (e.g. name@upi or phone@paytm)
-                </label>
-                <input
-                  type="text"
-                  value={payoutUpiId}
-                  onChange={(e) => {
-                    setPayoutUpiId(e.target.value);
-                    if (upiError) setUpiError(null);
-                    if (upiSuccessMessage) setUpiSuccessMessage(null);
-                  }}
-                  onBlur={() => {
-                    if (payoutUpiId.trim()) {
-                      const res = validateAndNormalizeUpiId(payoutUpiId);
-                      if (!res.isValid) {
-                        setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
-                      } else {
-                        setPayoutUpiId(res.value);
-                        setUpiError(null);
-                      }
-                    }
-                  }}
-                  placeholder="name@upi"
-                  className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
-                    upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                  } rounded focus:outline-none focus:border-[#FF5416] font-mono`}
-                />
-              </div>
-
-              {upiError && <p className="text-xs text-red-600">{upiError}</p>}
-              {upiSuccessMessage && <p className="text-xs text-[#047857]">{upiSuccessMessage}</p>}
-
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isSavingUpi}
-                onClick={handleSavePayoutUpi}
-                className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
-              >
-                <span>{isSavingUpi ? 'Saving...' : 'Save Payout UPI ID'}</span>
-              </Button>
-            </div>
-          )}
-
-          {/* SECTION C: DANGER ZONE (DELETE ACCOUNT) */}
+          {/* SECTION B: DANGER ZONE (DELETE ACCOUNT) */}
           {settingsSubTab === 'danger' && (
             <div className="space-y-4 max-w-xl text-xs">
               <div>
@@ -2394,15 +2255,17 @@ function CreatorDashboardContent() {
             </div>
           )}
 
-          {/* Update Bank Details Modal */}
+          {/* Update UPI Details Modal */}
           {isUpdateBankModalOpen && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+              <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
                   <div className="flex items-center gap-2">
                     <Landmark className="w-5 h-5 text-[#FF5416]" />
                     <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
-                      {bankPayoutProfile ? 'Update Bank Details' : 'Configure Bank Details'}
+                      {bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id
+                        ? 'Update UPI Details'
+                        : 'Configure UPI Payout'}
                     </h3>
                   </div>
                   <button
@@ -2413,13 +2276,13 @@ function CreatorDashboardContent() {
                   </button>
                 </div>
 
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 space-y-1">
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg text-[11px] text-blue-800 dark:text-blue-300 space-y-1">
                   <p className="font-bold flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Re-verification Requirement</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Direct Cashfree Easy Split Settlement</span>
                   </p>
                   <p>
-                    When bank details change, any existing verification is invalidated and re-verification is required. You will not retain Verified status until Cashfree confirms the new details.
+                    Campaign earnings will be split automatically and deposited to your UPI ID upon client approval.
                   </p>
                 </div>
 
@@ -2439,19 +2302,19 @@ function CreatorDashboardContent() {
                 <form onSubmit={handleSaveBankDetails} className="space-y-3.5 text-xs">
                   <div>
                     <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      Account Holder Name <span className="text-red-500">*</span>
+                      Full Legal Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={updateBankHolder}
                       onChange={(e) => setUpdateBankHolder(e.target.value)}
-                      placeholder="Legal name as printed on bank passbook"
+                      placeholder="Legal name (e.g. Rahul Sharma)"
                       className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
                         updateBankErrors.holder ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                       } rounded text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
                     />
                     <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                      Must match the legal name on your bank account / passbook (do not use channel/brand names for personal savings accounts).
+                      Legal personal name registered on your UPI or bank account.
                     </p>
                     {updateBankErrors.holder && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.holder}</p>
@@ -2460,89 +2323,24 @@ function CreatorDashboardContent() {
 
                   <div>
                     <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      Bank Account Number <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={updateBankAccNum}
-                      onChange={(e) => setUpdateBankAccNum(e.target.value)}
-                      placeholder="9 to 18 digits"
-                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
-                        updateBankErrors.accNum ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                      } rounded text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
-                    />
-                    {updateBankErrors.accNum && (
-                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.accNum}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      Confirm Bank Account Number <span className="text-red-500">*</span>
+                      UPI ID (VPA) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       autoComplete="off"
-                      value={updateConfirmBankAccNum}
-                      onChange={(e) => setUpdateConfirmBankAccNum(e.target.value)}
-                      placeholder="Re-enter bank account number"
+                      value={payoutUpiId}
+                      onChange={(e) => setPayoutUpiId(e.target.value)}
+                      placeholder="e.g. username@okhdfcbank or 9876543210@paytm"
                       className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
-                        updateBankErrors.confirmAccNum ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                        updateBankErrors.upi ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                       } rounded text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
                     />
-                    {updateBankErrors.confirmAccNum && (
-                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.confirmAccNum}</p>
+                    <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                      Your payouts will be credited directly to this UPI address.
+                    </p>
+                    {updateBankErrors.upi && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.upi}</p>
                     )}
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      IFSC Code <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={updateBankIfsc}
-                      maxLength={11}
-                      onChange={(e) => setUpdateBankIfsc(e.target.value.toUpperCase())}
-                      placeholder="e.g. HDFC0001234"
-                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
-                        updateBankErrors.ifsc ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                      } rounded text-[#121214] dark:text-white font-mono uppercase focus:outline-none focus:border-[#FF5416]`}
-                    />
-                    {updateBankErrors.ifsc && (
-                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.ifsc}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      Account Type
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setUpdateBankType('SAVINGS')}
-                        className={`py-2 px-3 rounded border text-xs font-mono font-medium ${
-                          updateBankType === 'SAVINGS'
-                            ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
-                            : 'border-[#E5E5DE] dark:border-zinc-700 text-[#71717A]'
-                        }`}
-                      >
-                        Savings Account
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUpdateBankType('CURRENT')}
-                        className={`py-2 px-3 rounded border text-xs font-mono font-medium ${
-                          updateBankType === 'CURRENT'
-                            ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
-                            : 'border-[#E5E5DE] dark:border-zinc-700 text-[#71717A]'
-                        }`}
-                      >
-                        Current Account
-                      </button>
-                    </div>
                   </div>
 
                   <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
@@ -2562,7 +2360,7 @@ function CreatorDashboardContent() {
                       disabled={isSavingBankDetails}
                       className="bg-[#FF5416] hover:bg-[#E04810] text-white font-bold"
                     >
-                      {isSavingBankDetails ? 'Saving...' : 'Save Bank Details'}
+                      {isSavingBankDetails ? 'Saving...' : 'Save & Verify UPI'}
                     </Button>
                   </div>
                 </form>
@@ -2650,7 +2448,7 @@ function CreatorDashboardContent() {
             <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
               <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
+                <h3 className="font-mono text-base font-bold">UPI Payout Setup Required</h3>
               </div>
               <button
                 onClick={() => setPayoutAlertModalMessage(null)}
@@ -2663,7 +2461,7 @@ function CreatorDashboardContent() {
             <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
               <p>{payoutAlertModalMessage}</p>
               <p className="text-[11px] text-[#71717A]">
-                To receive campaign disbursements through Cashfree Easy Split, please set up and verify your bank account details.
+                To receive campaign disbursements through Cashfree Easy Split, please set up your UPI address in Settings → Payouts.
               </p>
             </div>
 

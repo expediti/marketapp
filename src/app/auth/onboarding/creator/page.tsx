@@ -90,6 +90,7 @@ export default function CreatorOnboardingPage() {
   const [bankAccountType, setBankAccountType] = useState<'SAVINGS' | 'CURRENT'>('SAVINGS');
   const [bankFormErrors, setBankFormErrors] = useState<{
     accountHolderName?: string;
+    payoutUpiId?: string;
     accountNumber?: string;
     confirmAccountNumber?: string;
     ifscCode?: string;
@@ -351,16 +352,22 @@ export default function CreatorOnboardingPage() {
 
   const handleSavePayoutAndContinue = async () => {
     setBankFormErrors({});
-    const validation = validateBankDetails({
-      accountHolderName: bankAccountHolderName,
-      accountNumber: bankAccountNumber,
-      confirmAccountNumber: confirmBankAccountNumber,
-      ifscCode: bankIfscCode,
-      accountType: bankAccountType,
-    });
+    const holder = bankAccountHolderName.trim();
+    const upi = payoutUpiId.trim();
 
-    if (!validation.isValid) {
-      setBankFormErrors(validation.errors);
+    const errs: Record<string, string> = {};
+    if (!holder || holder.length < 2) {
+      errs.accountHolderName = 'Please enter your full legal name.';
+    }
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+    if (!upi) {
+      errs.payoutUpiId = 'Please enter your UPI ID (VPA).';
+    } else if (!upiRegex.test(upi)) {
+      errs.payoutUpiId = 'Invalid UPI ID format (e.g. username@bank or mobile@paytm).';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setBankFormErrors(errs);
       return;
     }
 
@@ -370,11 +377,8 @@ export default function CreatorOnboardingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accountHolderName: bankAccountHolderName,
-          accountNumber: bankAccountNumber,
-          confirmAccountNumber: confirmBankAccountNumber,
-          ifscCode: bankIfscCode,
-          accountType: bankAccountType,
+          accountHolderName: holder,
+          upiId: upi,
         }),
       });
 
@@ -383,7 +387,7 @@ export default function CreatorOnboardingPage() {
         if (data.errors) {
           setBankFormErrors(data.errors);
         } else {
-          setBankFormErrors({ general: data.error || 'Failed to save bank details.' });
+          setBankFormErrors({ general: data.error || 'Failed to save UPI payout details.' });
         }
         setIsSubmittingPayout(false);
         return;
@@ -393,7 +397,7 @@ export default function CreatorOnboardingPage() {
       await handleFinishOnboarding();
     } catch (err: unknown) {
       setBankFormErrors({
-        general: err instanceof Error ? err.message : 'Network error saving bank details.',
+        general: err instanceof Error ? err.message : 'Network error saving payout details.',
       });
       setIsSubmittingPayout(false);
     }
@@ -1693,11 +1697,11 @@ export default function CreatorOnboardingPage() {
                 <Landmark className="w-4 h-4" />
               </div>
               <h2 className="font-mono text-2xl font-bold text-[#121214] dark:text-white">
-                Set up your payouts
+                Set up your payouts (UPI)
               </h2>
             </div>
             <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-1">
-              Add your bank details to receive payments for your campaigns. You can complete this later.
+              Add your UPI ID to receive direct campaign payouts via Cashfree. You can also complete this later.
             </p>
           </div>
 
@@ -1719,7 +1723,7 @@ export default function CreatorOnboardingPage() {
             {/* Account Holder Name */}
             <div>
               <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Account holder name <span className="text-red-500">*</span>
+                Full Legal Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -1730,131 +1734,51 @@ export default function CreatorOnboardingPage() {
                     setBankFormErrors((prev) => ({ ...prev, accountHolderName: undefined }));
                   }
                 }}
-                placeholder="Full legal name as printed on bank passbook"
+                placeholder="Full legal name (e.g. Rahul Sharma)"
                 className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
                   bankFormErrors.accountHolderName ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                 } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
               />
               <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                Must match the legal name on your bank account / passbook (do not enter channel/brand names).
+                Enter your real legal name as registered on your UPI app or bank account.
               </p>
               {bankFormErrors.accountHolderName && (
                 <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.accountHolderName}</p>
               )}
             </div>
 
-            {/* Bank Account Number */}
+            {/* UPI ID (VPA) */}
             <div>
               <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Bank account number <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="password"
-                autoComplete="off"
-                value={bankAccountNumber}
-                onChange={(e) => {
-                  setBankAccountNumber(e.target.value);
-                  if (bankFormErrors.accountNumber) {
-                    setBankFormErrors((prev) => ({ ...prev, accountNumber: undefined }));
-                  }
-                }}
-                placeholder="9 to 18 digit bank account number"
-                className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
-                  bankFormErrors.accountNumber ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono`}
-              />
-              {bankFormErrors.accountNumber && (
-                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.accountNumber}</p>
-              )}
-            </div>
-
-            {/* Confirm Bank Account Number */}
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Confirm bank account number <span className="text-red-500">*</span>
+                UPI ID (VPA) <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 autoComplete="off"
-                value={confirmBankAccountNumber}
+                value={payoutUpiId}
                 onChange={(e) => {
-                  setConfirmBankAccountNumber(e.target.value);
-                  if (bankFormErrors.confirmAccountNumber) {
-                    setBankFormErrors((prev) => ({ ...prev, confirmAccountNumber: undefined }));
+                  setPayoutUpiId(e.target.value);
+                  if (bankFormErrors.payoutUpiId) {
+                    setBankFormErrors((prev) => ({ ...prev, payoutUpiId: undefined }));
                   }
                 }}
-                placeholder="Re-enter bank account number"
+                placeholder="e.g. username@okhdfcbank or 9876543210@paytm"
                 className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
-                  bankFormErrors.confirmAccountNumber ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                  bankFormErrors.payoutUpiId ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                 } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono`}
               />
-              {bankFormErrors.confirmAccountNumber && (
-                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.confirmAccountNumber}</p>
+              <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                Payouts are sent directly to your UPI address automatically through Cashfree Easy Split upon campaign approval.
+              </p>
+              {bankFormErrors.payoutUpiId && (
+                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.payoutUpiId}</p>
               )}
-            </div>
-
-            {/* IFSC Code */}
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                IFSC code <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={bankIfscCode}
-                onChange={(e) => {
-                  setBankIfscCode(e.target.value.toUpperCase());
-                  if (bankFormErrors.ifscCode) {
-                    setBankFormErrors((prev) => ({ ...prev, ifscCode: undefined }));
-                  }
-                }}
-                maxLength={11}
-                placeholder="e.g. HDFC0001234"
-                className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
-                  bankFormErrors.ifscCode ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono uppercase`}
-              />
-              {bankFormErrors.ifscCode && (
-                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.ifscCode}</p>
-              )}
-            </div>
-
-            {/* Account Type */}
-            <div>
-              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
-                Account type
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setBankAccountType('SAVINGS')}
-                  className={`py-2.5 px-3 rounded-lg border text-xs font-mono transition-all text-left flex items-center justify-between ${
-                    bankAccountType === 'SAVINGS'
-                      ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
-                      : 'border-[#E5E5DE] dark:border-zinc-800 text-[#71717A] hover:border-zinc-400'
-                  }`}
-                >
-                  <span>Savings Account</span>
-                  {bankAccountType === 'SAVINGS' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBankAccountType('CURRENT')}
-                  className={`py-2.5 px-3 rounded-lg border text-xs font-mono transition-all text-left flex items-center justify-between ${
-                    bankAccountType === 'CURRENT'
-                      ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
-                      : 'border-[#E5E5DE] dark:border-zinc-800 text-[#71717A] hover:border-zinc-400'
-                  }`}
-                >
-                  <span>Current Account</span>
-                  {bankAccountType === 'CURRENT' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                </button>
-              </div>
             </div>
 
             <div className="p-3 bg-[#F4F4F0] dark:bg-zinc-900/70 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg flex items-start gap-2.5">
               <ShieldCheck className="w-4 h-4 text-[#047857] shrink-0 mt-0.5" />
               <p className="text-[11px] text-[#52525B] dark:text-zinc-400 leading-relaxed">
-                Your bank details are encrypted using AES-256-GCM. We never expose your full bank account number. Payouts are safely routed via Cashfree.
+                Direct UPI disbursements. No bank account or IFSC numbers required. Verified securely via Cashfree Easy Split.
               </p>
             </div>
           </div>

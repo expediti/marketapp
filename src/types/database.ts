@@ -1315,6 +1315,7 @@ export interface Database {
           id: string;
           user_id: string;
           account_holder_name: string;
+          payout_upi_id: string | null;
           bank_account_last4: string;
           ifsc_code: string;
           account_type: string;
@@ -1328,8 +1329,9 @@ export interface Database {
           id?: string;
           user_id: string;
           account_holder_name: string;
-          bank_account_last4: string;
-          ifsc_code: string;
+          payout_upi_id?: string | null;
+          bank_account_last4?: string;
+          ifsc_code?: string;
           account_type?: string;
           cashfree_vendor_id?: string | null;
           verification_status?: string;
@@ -1341,6 +1343,7 @@ export interface Database {
           id?: string;
           user_id?: string;
           account_holder_name?: string;
+          payout_upi_id?: string | null;
           bank_account_last4?: string;
           ifsc_code?: string;
           account_type?: string;

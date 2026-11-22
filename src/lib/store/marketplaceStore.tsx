@@ -2125,7 +2125,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const acceptDealProposal = async (proposalId: string): Promise<Order> => {
     if (!currentUser) throw new Error('Must be logged in to accept deal proposal');
 
-    // Campaign restriction: Creator must have verified bank payouts before confirming a campaign deal
+    // Campaign restriction: Creator must have UPI payout setup before confirming a campaign deal
     if (isSupabaseConfigured) {
       let creatorIdToCheck = activeRole === 'creator' ? currentUser.id : null;
       if (!creatorIdToCheck) {
@@ -2141,18 +2141,32 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       if (creatorIdToCheck) {
         const { data: payoutProf } = await (supabase as any)
           .from('creator_payout_profiles')
-          .select('verification_status, cashfree_vendor_id')
+          .select('verification_status, cashfree_vendor_id, payout_upi_id')
           .eq('user_id', creatorIdToCheck)
           .maybeSingle();
 
-        const isVerified =
-          payoutProf?.verification_status === 'VERIFIED' &&
-          Boolean(payoutProf?.cashfree_vendor_id && payoutProf.cashfree_vendor_id.trim());
+        const { data: creatorProf } = await (supabase as any)
+          .from('creator_profiles')
+          .select('payout_upi_id')
+          .eq('id', creatorIdToCheck)
+          .maybeSingle();
 
-        if (!isVerified) {
-          throw new Error(
-            'Creator bank payout setup is required before confirming a campaign deal. Please complete bank verification in Settings → Payouts.'
-          );
+        const hasUpi = Boolean(
+          payoutProf?.payout_upi_id?.trim() ||
+          creatorProf?.payout_upi_id?.trim() ||
+          (payoutProf?.verification_status === 'VERIFIED' && payoutProf?.cashfree_vendor_id?.trim())
+        );
+
+        if (!hasUpi) {
+          if (activeRole === 'creator') {
+            throw new Error(
+              'Creator UPI payout setup is required before confirming a campaign deal. Please set up your UPI ID in Settings → Payouts.'
+            );
+          } else {
+            throw new Error(
+              'Creator must configure their payout UPI ID in Settings → Payouts before this deal can be accepted.'
+            );
+          }
         }
       }
     }

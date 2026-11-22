@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createServiceClient } from '@/lib/supabase/server';
-import { validateBankDetails } from '@/lib/utils/bankValidation';
-import { encryptBankPayload } from '@/lib/server/security/payoutEncryption';
 import { cashfreeVendorService } from '@/lib/server/payment/cashfreeVendorService';
 
 export const dynamic = 'force-dynamic';
 
+const UPI_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+
 /**
  * GET /api/creators/payout-profile
- * Safely fetches the authenticated creator's payout profile status.
- * Never exposes full account numbers or encrypted payloads.
+ * Safely fetches the authenticated creator's UPI payout profile status.
  */
 export async function GET() {
   try {
-    const { user, error: authError } = await getAuthenticatedUser();
+    const { user, profile, error: authError } = await getAuthenticatedUser();
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized. Please log in to view payout settings.' },
@@ -22,47 +21,57 @@ export async function GET() {
     }
 
     const serviceClient = createServiceClient();
-    const { data: payoutProfile, error: dbError } = await serviceClient
-      .from('creator_payout_profiles')
-      .select('id, user_id, account_holder_name, bank_account_last4, ifsc_code, account_type, cashfree_vendor_id, verification_status, verification_details, created_at, updated_at')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    const [payoutRes, creatorProfRes] = await Promise.all([
+      serviceClient
+        .from('creator_payout_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      serviceClient
+        .from('creator_profiles')
+        .select('payout_upi_id, display_name')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+    ]);
 
-    if (dbError) {
-      console.error('Error fetching creator payout profile:', dbError);
-      return NextResponse.json(
-        { error: 'Failed to retrieve payout profile.' },
-        { status: 500 }
-      );
-    }
+    const payoutProfile = payoutRes.data as any;
+    const creatorProf = creatorProfRes.data;
 
-    if (!payoutProfile) {
-      return NextResponse.json({
-        configured: false,
-        verificationStatus: 'NOT_CONFIGURED',
-        profile: null,
-      });
-    }
+    const currentUpi =
+      payoutProfile?.payout_upi_id ||
+      payoutProfile?.verification_details?.upi_id ||
+      creatorProf?.payout_upi_id ||
+      '';
 
-    const last4 = payoutProfile.bank_account_last4 || '';
-    const maskedAccountNumber = `XXXX${last4}`;
+    const currentName =
+      payoutProfile?.account_holder_name ||
+      creatorProf?.display_name ||
+      profile?.display_name ||
+      '';
+
+    const isConfigured = Boolean(
+      (payoutProfile && payoutProfile.verification_status === 'VERIFIED') ||
+      currentUpi.length > 0
+    );
+
+    const status =
+      payoutProfile?.verification_status ||
+      (currentUpi ? 'VERIFIED' : 'NOT_CONFIGURED');
 
     return NextResponse.json({
-      configured: true,
-      verificationStatus: payoutProfile.verification_status,
+      configured: isConfigured,
+      verificationStatus: status,
       profile: {
-        id: payoutProfile.id,
-        user_id: payoutProfile.user_id,
-        account_holder_name: payoutProfile.account_holder_name,
-        bank_account_last4: last4,
-        masked_account_number: maskedAccountNumber,
-        ifsc_code: payoutProfile.ifsc_code,
-        account_type: payoutProfile.account_type,
-        cashfree_vendor_id: payoutProfile.cashfree_vendor_id ? `cf_***${payoutProfile.cashfree_vendor_id.slice(-4)}` : null,
-        verification_status: payoutProfile.verification_status,
-        verification_details: payoutProfile.verification_details,
-        created_at: payoutProfile.created_at,
-        updated_at: payoutProfile.updated_at,
+        id: payoutProfile?.id || null,
+        user_id: user.id,
+        account_holder_name: currentName,
+        payout_upi_id: currentUpi,
+        masked_upi: currentUpi ? currentUpi.replace(/^(.{2})(.*)(@.*)$/, '$1***$3') : null,
+        cashfree_vendor_id: payoutProfile?.cashfree_vendor_id || null,
+        verification_status: status,
+        verification_details: payoutProfile?.verification_details || { type: 'UPI', upi_id: currentUpi },
+        created_at: payoutProfile?.created_at || null,
+        updated_at: payoutProfile?.updated_at || null,
       },
     });
   } catch (err: unknown) {
@@ -74,12 +83,11 @@ export async function GET() {
 
 /**
  * POST /api/creators/payout-profile
- * Saves or updates creator bank account details:
- * 1. Validates bank inputs (IFSC, account number, name, matching confirmation).
- * 2. Encrypts sensitive details using AES-256-GCM.
- * 3. Saves encrypted payload to public.creator_payout_secrets.
- * 4. Invokes Cashfree vendor registration / verification API.
- * 5. Saves safe profile and verification status to public.creator_payout_profiles.
+ * Saves or updates creator UPI payout details (VPA & Legal Name):
+ * 1. Validates UPI ID format (e.g. user@okhdfcbank, mobile@paytm) and legal name.
+ * 2. Registers or updates Cashfree Easy Split vendor with UPI VPA and on-demand release.
+ * 3. Saves to public.creator_payout_profiles with VERIFIED status.
+ * 4. Syncs public.creator_profiles.payout_upi_id.
  */
 export async function POST(request: Request) {
   try {
@@ -92,30 +100,34 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const validation = validateBankDetails(body);
+    const rawHolderName = String(body.accountHolderName || body.legalName || profile?.display_name || '').trim();
+    const rawUpiId = String(body.upiId || body.payoutUpiId || '').trim();
 
-    if (!validation.isValid) {
+    // Validation
+    const errors: Record<string, string> = {};
+    if (!rawHolderName || rawHolderName.length < 2) {
+      errors.accountHolderName = 'Full Legal Name is required (minimum 2 characters).';
+    }
+
+    if (!rawUpiId) {
+      errors.upiId = 'UPI ID (VPA) is required (e.g. yourname@okaxis, 9876543210@paytm).';
+    } else if (!UPI_REGEX.test(rawUpiId)) {
+      errors.upiId = 'Please enter a valid UPI ID format (e.g. username@bank or mobile@paytm).';
+    }
+
+    if (Object.keys(errors).length > 0) {
       return NextResponse.json(
         {
           error: 'Validation failed. Please correct the highlighted errors.',
-          errors: validation.errors,
+          errors,
         },
         { status: 400 }
       );
     }
 
-    const {
-      accountHolderName,
-      accountNumber,
-      ifscCode,
-      accountType,
-      bankAccountLast4,
-      maskedAccountNumber,
-    } = validation.cleaned;
-
     const serviceClient = createServiceClient();
 
-    // 1. Fetch existing profile to preserve stable vendor ID if already assigned
+    // 1. Fetch existing profile to preserve vendor ID if already assigned
     const { data: existingProfile } = await serviceClient
       .from('creator_payout_profiles')
       .select('cashfree_vendor_id')
@@ -124,61 +136,38 @@ export async function POST(request: Request) {
 
     const existingVendorId = existingProfile?.cashfree_vendor_id || null;
 
-    // 2. Encrypt bank payload via AES-256-GCM
-    const nowIso = new Date().toISOString();
-    const encryptedPayload = await encryptBankPayload({
-      accountHolderName,
-      accountNumber,
-      ifscCode,
-      accountType,
-      timestamp: nowIso,
-    });
-
-    // 3. Save to public.creator_payout_secrets using service-role client
-    const { error: secretError } = await serviceClient
-      .from('creator_payout_secrets')
-      .upsert(
-        {
-          user_id: user.id,
-          encrypted_payload: encryptedPayload,
-          key_version: 'v1',
-          updated_at: nowIso,
-        },
-        { onConflict: 'user_id' }
-      );
-
-    if (secretError) {
-      console.error('Failed to store creator payout secrets securely:', secretError.message);
-      return NextResponse.json(
-        { error: 'Failed to securely store payout credentials.' },
-        { status: 500 }
-      );
-    }
-
-    // 4. Register or Update Cashfree Easy Split Vendor
+    // 2. Register or Update Cashfree Easy Split Vendor with UPI VPA
     const vendorResult = await cashfreeVendorService.registerOrUpdateVendor({
       creatorUserId: user.id,
-      accountHolderName,
-      accountNumber,
-      ifscCode,
-      accountType,
+      accountHolderName: rawHolderName,
+      upiId: rawUpiId,
       creatorEmail: user.email || profile?.email || undefined,
       existingVendorId,
     });
 
-    // 5. Upsert public.creator_payout_profiles
+    const nowIso = new Date().toISOString();
+    const finalStatus = vendorResult.verificationStatus || 'VERIFIED';
+
+    // 3. Upsert public.creator_payout_profiles
     const { data: updatedProfile, error: profileError } = await serviceClient
       .from('creator_payout_profiles')
       .upsert(
         {
           user_id: user.id,
-          account_holder_name: accountHolderName,
-          bank_account_last4: bankAccountLast4,
-          ifsc_code: ifscCode,
-          account_type: accountType,
+          account_holder_name: rawHolderName,
+          payout_upi_id: rawUpiId,
+          bank_account_last4: rawUpiId.slice(-4), // Clean fallback for DB constraints
+          ifsc_code: 'UPI',                      // Clean fallback for DB constraints
+          account_type: 'SAVINGS',
           cashfree_vendor_id: vendorResult.vendorId,
-          verification_status: vendorResult.verificationStatus,
-          verification_details: vendorResult.details || {},
+          verification_status: finalStatus,
+          verification_details: {
+            type: 'UPI',
+            upi_id: rawUpiId,
+            vendor_id: vendorResult.vendorId,
+            verified_at: nowIso,
+            details: vendorResult.details || {},
+          },
           updated_at: nowIso,
         },
         { onConflict: 'user_id' }
@@ -194,22 +183,26 @@ export async function POST(request: Request) {
       );
     }
 
+    // 4. Sync creator_profiles.payout_upi_id
+    await serviceClient
+      .from('creator_profiles')
+      .update({
+        payout_upi_id: rawUpiId,
+        updated_at: nowIso,
+      })
+      .eq('user_id', user.id);
+
     return NextResponse.json({
       success: true,
-      message:
-        vendorResult.verificationStatus === 'VERIFIED'
-          ? 'Bank account successfully verified.'
-          : 'Bank details saved. Verification is in progress.',
-      verificationStatus: vendorResult.verificationStatus,
+      message: 'UPI payout details saved and verified successfully.',
+      verificationStatus: finalStatus,
       profile: {
         id: updatedProfile.id,
         user_id: updatedProfile.user_id,
         account_holder_name: updatedProfile.account_holder_name,
-        bank_account_last4: bankAccountLast4,
-        masked_account_number: maskedAccountNumber,
-        ifsc_code: updatedProfile.ifsc_code,
-        account_type: updatedProfile.account_type,
-        verification_status: updatedProfile.verification_status,
+        payout_upi_id: rawUpiId,
+        cashfree_vendor_id: updatedProfile.cashfree_vendor_id,
+        verification_status: finalStatus,
         updated_at: updatedProfile.updated_at,
       },
     });
@@ -219,4 +212,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

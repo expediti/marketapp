@@ -576,10 +576,11 @@ export interface CreatorPayoutProfile {
   id: string;
   user_id: string;
   account_holder_name: string;
-  bank_account_last4: string;
-  masked_account_number: string;
-  ifsc_code: string;
-  account_type: 'SAVINGS' | 'CURRENT';
+  payout_upi_id?: string;
+  bank_account_last4?: string;
+  masked_account_number?: string;
+  ifsc_code?: string;
+  account_type?: 'SAVINGS' | 'CURRENT';
   cashfree_vendor_id?: string | null;
   verification_status: PayoutVerificationStatus;
   verification_details?: Record<string, any>;

@@ -427,7 +427,7 @@ export function ConversationChat({
     }
   };
 
-  // Confirm platform payment via Cashfree Checkout
+  // Confirm platform payment via Cashfree Checkout (Stage 1: 50% upfront)
   const handleConfirmPayment = async () => {
     if (!activeOrder) return;
     setIsPaying(true);
@@ -446,6 +446,30 @@ export function ConversationChat({
     } catch (err: any) {
       console.error('Failed to process payment:', err);
       alert(err.message || 'Failed to process payment');
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  // Confirm final 50% payment via Cashfree Checkout (Stage 2: Final 50% after approval)
+  const handleConfirmFinalPayment = async () => {
+    if (!activeOrder) return;
+    setIsPaying(true);
+    try {
+      const res = await payOrderWithCashfree(
+        activeOrder.id,
+        'FINAL',
+        currentUser?.display_name,
+        currentUser?.email
+      );
+      if (res.success) {
+        // Final payment complete
+      } else if (res.status !== 'CANCELLED') {
+        alert(res.error || 'Final payment failed. You can retry payment.');
+      }
+    } catch (err: any) {
+      console.error('Failed to process final payment:', err);
+      alert(err.message || 'Failed to process final payment');
     } finally {
       setIsPaying(false);
     }
@@ -511,28 +535,66 @@ export function ConversationChat({
     })),
   ].sort((a, b) => a.timestamp - b.timestamp);
 
-  const isOrderPaid = Boolean(
+  const firstInstalment = activeOrder
+    ? (activeOrder.first_payment_amount ?? Math.round(activeOrder.total_amount * 0.5))
+    : 0;
+  const secondInstalment = activeOrder
+    ? (activeOrder.second_payment_amount ?? (activeOrder.total_amount - firstInstalment))
+    : 0;
+
+  const orderAny = activeOrder as any;
+  const isFirstPaid = Boolean(
     activeOrder && (
+      activeOrder.initial_paid_at ||
+      orderAny.first_payment_status === 'PAID' ||
       activeOrder.payment_status === 'PAID' ||
+      orderAny.payment_status === 'PARTIALLY_PAID' ||
       activeOrder.order_status === 'PAID' ||
+      orderAny.order_status === 'FIRST_PAID' ||
       activeOrder.order_status === 'WORK_STARTED' ||
       activeOrder.order_status === 'IN_PROGRESS' ||
+      activeOrder.order_status === 'PREVIEW_SUBMITTED' ||
       activeOrder.order_status === 'DELIVERED' ||
       activeOrder.order_status === 'REVISION_REQUESTED' ||
       activeOrder.order_status === 'APPROVED' ||
       activeOrder.order_status === 'AUTO_APPROVED' ||
+      activeOrder.order_status === 'AWAITING_FINAL_PAYMENT' ||
+      activeOrder.order_status === 'FINAL_PAYMENT_PENDING' ||
+      activeOrder.order_status === 'READY_FOR_FINAL_DELIVERY' ||
+      orderAny.order_status === 'FINAL_DELIVERED' ||
       activeOrder.order_status === 'COMPLETED'
     )
   );
 
+  const isFinalPaid = Boolean(
+    activeOrder && (
+      activeOrder.final_paid_at ||
+      orderAny.second_payment_status === 'PAID' ||
+      activeOrder.order_status === 'COMPLETED'
+    )
+  );
+
+  const isReadyForFinalPayment = Boolean(
+    activeOrder && isFirstPaid && !isFinalPaid && (
+      activeOrder.order_status === 'APPROVED' ||
+      activeOrder.order_status === 'AUTO_APPROVED' ||
+      activeOrder.order_status === 'AWAITING_FINAL_PAYMENT' ||
+      activeOrder.order_status === 'FINAL_PAYMENT_PENDING' ||
+      activeOrder.order_status === 'READY_FOR_FINAL_DELIVERY'
+    )
+  );
+
+  const isOrderPaid = isFirstPaid;
+
   // Status subtitle helper
   const getStatusSubtitle = () => {
     if (!activeOrder) return 'Active Negotiation';
-    if (!isOrderPaid) return 'Waiting for payment';
-    if (activeOrder.order_status === 'DELIVERED') return 'Delivery Submitted';
+    if (!isFirstPaid) return 'Awaiting 1st 50% Upfront Payment';
+    if (isReadyForFinalPayment) return 'Preview Approved • Awaiting Final 50%';
+    if (activeOrder.order_status === 'DELIVERED' || activeOrder.order_status === 'PREVIEW_SUBMITTED') return 'Preview Submitted';
     if (activeOrder.order_status === 'REVISION_REQUESTED') return 'Revision Requested';
     if (activeOrder.order_status === 'COMPLETED') return 'Completed';
-    return 'In Production';
+    return 'In Production (50% Escrow Funded)';
   };
 
   const deliveryUrl =
@@ -695,17 +757,31 @@ export function ConversationChat({
                 </Button>
               ) : null}
 
-              {/* Pay Now shortcut if unpaid business */}
-              {isMeBusiness && activeOrder && !isOrderPaid && (
+              {/* Pay Now shortcut if unpaid 1st stage business */}
+              {isMeBusiness && activeOrder && !isFirstPaid && (
                 <Button
                   variant="primary"
                   size="sm"
                   disabled={isPaying}
                   onClick={handleConfirmPayment}
-                  className="text-xs h-7 px-2.5 bg-[#047857] hover:bg-[#065F46] text-white"
+                  className="text-xs h-7 px-2.5 bg-[#047857] hover:bg-[#065F46] text-white font-bold"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  <span>Pay ₹{activeOrder.total_amount.toLocaleString('en-IN')}</span>
+                  <span>Pay 50% (₹{firstInstalment.toLocaleString('en-IN')})</span>
+                </Button>
+              )}
+
+              {/* Pay Final 50% shortcut if approved business */}
+              {isMeBusiness && activeOrder && isReadyForFinalPayment && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isPaying}
+                  onClick={handleConfirmFinalPayment}
+                  className="text-xs h-7 px-2.5 bg-[#FF5416] hover:bg-[#E04810] text-white font-bold"
+                >
+                  <CreditCard className="w-3 h-3 mr-1" />
+                  <span>Pay Final 50% (₹{secondInstalment.toLocaleString('en-IN')})</span>
                 </Button>
               )}
             </div>
@@ -843,12 +919,95 @@ export function ConversationChat({
                   </form>
                 ) : (
                   <p className="text-xs text-[#71717A] dark:text-zinc-400">
-                    {isOrderPaid
-                      ? 'Creator is working on the order.'
-                      : 'Waiting for business payment to start work.'}
+                    {isFirstPaid
+                      ? '✓ 1st 50% Escrow Secured. Creator is working on the video.'
+                      : 'Waiting for business 50% upfront payment to start work.'}
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TWO-STAGE WORKFLOW NOTICE BANNER */}
+          {activeOrder && (
+            <div className="shrink-0 border-b border-[#E5E5DE] dark:border-zinc-800">
+              {!isFirstPaid ? (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-l-4 border-l-amber-500 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-amber-900 dark:text-amber-200">
+                        {isMeBusiness
+                          ? 'Deal Confirmed — Upfront 50% Payment Required'
+                          : 'Deal Confirmed — Waiting for Upfront 50% Payment'}
+                      </p>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                        {isMeBusiness
+                          ? `Pay ₹${firstInstalment.toLocaleString('en-IN')} (50%) via Cashfree Checkout to secure escrow so ${otherPartyName} can begin video production.`
+                          : `Please wait for ${otherPartyName} to complete the upfront 50% escrow payment before you begin video production. We'll notify you once payment is secured.`}
+                      </p>
+                    </div>
+                  </div>
+                  {isMeBusiness && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isPaying}
+                      onClick={handleConfirmPayment}
+                      className="bg-[#047857] hover:bg-[#065F46] text-white text-xs font-bold shrink-0 self-end sm:self-auto"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 mr-1" />
+                      <span>Pay 50% Upfront (₹{firstInstalment.toLocaleString('en-IN')})</span>
+                    </Button>
+                  )}
+                </div>
+              ) : isReadyForFinalPayment ? (
+                <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border-l-4 border-l-purple-500 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-purple-900 dark:text-purple-200">
+                        {isMeBusiness
+                          ? 'Video Preview Approved — Pay Final 50% to Complete'
+                          : 'Video Preview Approved — Awaiting Final Payout Release'}
+                      </p>
+                      <p className="text-[11px] text-purple-800 dark:text-purple-300">
+                        {isMeBusiness
+                          ? `Pay the remaining ₹${secondInstalment.toLocaleString('en-IN')} (50%) via Cashfree Checkout to release payout directly to the creator's UPI ID.`
+                          : `The business approved your preview! Payout of ₹${secondInstalment.toLocaleString('en-IN')} will be credited to your UPI ID upon final release.`}
+                      </p>
+                    </div>
+                  </div>
+                  {isMeBusiness && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isPaying}
+                      onClick={handleConfirmFinalPayment}
+                      className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold shrink-0 self-end sm:self-auto"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 mr-1" />
+                      <span>Pay Final 50% (₹{secondInstalment.toLocaleString('en-IN')})</span>
+                    </Button>
+                  )}
+                </div>
+              ) : isFinalPaid ? (
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-l-emerald-500 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    ✓ Campaign Completed & Fully Settled. Creator payout disbursed via Cashfree Easy Split to UPI.
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-l-emerald-500 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    {isMeCreator
+                      ? '✓ 1st 50% Escrow Secured! You can now start creating the video and submit your Reel preview link below.'
+                      : `✓ 1st 50% Escrow Secured. ${otherPartyName} has been notified to produce your video.`}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1276,14 +1435,14 @@ export function ConversationChat({
         </div>
       )}
 
-      {/* Campaign Restriction: Bank Payout Verification Alert Modal */}
+      {/* Campaign Restriction: UPI Payout Setup Alert Modal */}
       {payoutAlertError && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#18181B] border border-amber-200 dark:border-amber-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
               <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                 <AlertCircle className="w-5 h-5" />
-                <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
+                <h3 className="font-mono text-base font-bold">UPI Payout Setup Required</h3>
               </div>
               <button
                 type="button"
@@ -1297,7 +1456,7 @@ export function ConversationChat({
             <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
               <p>{payoutAlertError}</p>
               <p className="text-[11px] text-[#71717A]">
-                To confirm this campaign deal and receive disbursements via Cashfree Easy Split, please set up and verify your bank account details.
+                To confirm this campaign deal and receive disbursements via Cashfree Easy Split, please configure your UPI address in Settings → Payouts.
               </p>
             </div>
 
