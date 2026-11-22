@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 import { getPaymentProvider } from '@/lib/server/payment';
 
 export const dynamic = 'force-dynamic';
@@ -34,21 +34,76 @@ export async function POST(request: Request) {
 
     const { providerOrderId, providerPaymentId, status, instalmentType, eventType, rawEvent } = webhookResult;
 
-    // Handle Easy Split Vendor Settlement webhooks
-    if (eventType && (eventType.includes('SETTLEMENT') || eventType.includes('TRANSFER'))) {
-      const settlementData = (rawEvent as any)?.data || {};
-      const splitRef = settlementData.split_id || settlementData.settlement_id || settlementData.reference_id;
-      const settlementStatus = (settlementData.status || settlementData.transfer_status || '').toUpperCase();
+    // Handle Easy Split Vendor Status Change webhooks
+    if (eventType && (eventType.includes('VENDOR') || eventType.includes('VENDOR_STATUS_CHANGE'))) {
+      const vendorData = (rawEvent as any)?.data || (rawEvent as any)?.vendor || rawEvent;
+      const vendorId = vendorData?.vendor_id || vendorData?.vendorId;
+      const vendorStatus = (vendorData?.status || vendorData?.vendor_status || '').toUpperCase();
 
-      if (splitRef && (settlementStatus === 'SETTLED' || settlementStatus === 'SUCCESS')) {
-        const supabase = await createClient();
+      if (vendorId) {
+        const supabase = createServiceClient();
+        const verificationStatus = (vendorStatus === 'ACTIVE' || vendorStatus === 'SUCCESS')
+          ? 'VERIFIED'
+          : (vendorStatus === 'REJECTED' || vendorStatus === 'FAILED')
+          ? 'REJECTED'
+          : 'PENDING_VERIFICATION';
+
         await (supabase as any)
-          .from('campaign_splits')
+          .from('creator_payout_profiles')
           .update({
-            settlement_status: 'SETTLED',
+            verification_status: verificationStatus,
             updated_at: new Date().toISOString(),
           })
-          .eq('provider_split_reference', splitRef);
+          .eq('cashfree_vendor_id', vendorId);
+      }
+
+      return NextResponse.json({ success: true, processed: true, eventType });
+    }
+
+    // Handle Easy Split Vendor Settlement webhooks
+    if (eventType && (eventType.includes('SETTLEMENT') || eventType.includes('TRANSFER') || eventType.includes('VENDOR_SETTLEMENT'))) {
+      const settlementData = (rawEvent as any)?.data || (rawEvent as any)?.settlement || rawEvent || {};
+      const splitRef = settlementData.split_id || settlementData.settlement_id || settlementData.reference_id || settlementData.transfer_id;
+      const orderRef = settlementData.order_id || settlementData.provider_order_id;
+      const settlementStatus = (settlementData.status || settlementData.transfer_status || settlementData.settlement_status || '').toUpperCase();
+
+      const isSettled = settlementStatus === 'SETTLED' || settlementStatus === 'SUCCESS' || settlementStatus === 'COMPLETED';
+
+      if (isSettled) {
+        const supabase = createServiceClient();
+        const now = new Date().toISOString();
+
+        if (splitRef) {
+          const { data: updatedSplit } = await (supabase as any)
+            .from('campaign_splits')
+            .update({
+              settlement_status: 'SETTLED',
+              updated_at: now,
+            })
+            .eq('provider_split_reference', splitRef)
+            .select('order_id')
+            .maybeSingle();
+
+          if (updatedSplit?.order_id) {
+            await (supabase as any)
+              .from('orders')
+              .update({
+                payout_status: 'RELEASED',
+                updated_at: now,
+              })
+              .eq('id', updatedSplit.order_id);
+          }
+        }
+
+        if (orderRef) {
+          await (supabase as any)
+            .from('orders')
+            .update({
+              payout_status: 'RELEASED',
+              updated_at: now,
+            })
+            .or(`id.eq.${orderRef},order_number.eq.${orderRef}`);
+        }
       }
 
       return NextResponse.json({ success: true, processed: true, eventType });
@@ -58,7 +113,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, ignored: 'No providerOrderId present' });
     }
 
-    const supabase = await createClient();
+    const supabase = createServiceClient();
 
     // Look up payment by provider_order_id
     const { data: paymentRecord } = await (supabase as any)

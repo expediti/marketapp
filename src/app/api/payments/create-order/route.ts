@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { getPaymentProvider } from '@/lib/server/payment';
+import { cashfreeVendorService } from '@/lib/server/payment/cashfreeVendorService';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +79,8 @@ export async function POST(request: Request) {
     }
 
     // Calculate Two-Stage (50% initial + 50% final) amounts
+    const subtotal = Number((order as any).subtotal || order.creator_total_amount || (lockedTotalAmount / 1.05));
+
     const initialAmount = order.first_payment_amount
       ? Number(order.first_payment_amount)
       : Math.round(lockedTotalAmount * 0.5 * 100) / 100;
@@ -88,10 +91,14 @@ export async function POST(request: Request) {
     const stageAmount = paymentStage === 'FINAL' ? finalAmount : initialAmount;
     const amountInPaise = Math.round(stageAmount * 100);
 
-    // Commission calculations for Easy Split
-    const commissionPct = Number(order.platform_commission_percentage || 10.00);
-    const platformInstalmentShare = Math.round(stageAmount * (commissionPct / 100.0) * 100) / 100;
-    const creatorInstalmentShare = Math.round((stageAmount - platformInstalmentShare) * 100) / 100;
+    // 5% Platform Fee added on top: Creator receives 100% of their quoted price (50% per stage)
+    // and platform retains 5% fee (50% per stage).
+    const commissionPct = Number(order.platform_commission_percentage || 5.00);
+    const creatorStageSubtotal = paymentStage === 'FINAL'
+      ? Math.round((subtotal - Math.round(subtotal * 0.5 * 100) / 100) * 100) / 100
+      : Math.round(subtotal * 0.5 * 100) / 100;
+    const platformInstalmentShare = Math.round((stageAmount - creatorStageSubtotal) * 100) / 100;
+    const creatorInstalmentShare = creatorStageSubtotal;
 
     // 6. Workflow state verification per stage
     if (paymentStage === 'INITIAL') {
@@ -169,17 +176,40 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Fetch creator payout profile for Cashfree Easy Split vendor ID
+    // 8. Fetch creator payout profile with service client for Cashfree Easy Split vendor ID
+    const serviceClient = createServiceClient();
     const creatorUserId = order.creator_user_id || order.creator_id;
-    const { data: creatorPayoutProfile } = await supabase
+    const { data: creatorPayoutProfile } = await serviceClient
       .from('creator_payout_profiles')
-      .select('cashfree_vendor_id, verification_status')
+      .select('cashfree_vendor_id, verification_status, payout_upi_id, account_holder_name')
       .eq('user_id', creatorUserId)
       .maybeSingle();
 
-    const creatorVendorId =
-      creatorPayoutProfile?.cashfree_vendor_id ||
-      `cr_${creatorUserId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24)}`;
+    let creatorVendorId = creatorPayoutProfile?.cashfree_vendor_id;
+
+    // If creator has a UPI ID saved but vendor ID wasn't registered on Cashfree yet, register now on-the-fly:
+    if (!creatorVendorId && creatorPayoutProfile?.payout_upi_id) {
+      try {
+        const vResult = await cashfreeVendorService.registerOrUpdateVendor({
+          creatorUserId,
+          accountHolderName: creatorPayoutProfile.account_holder_name || 'Creator Partner',
+          upiId: creatorPayoutProfile.payout_upi_id,
+        });
+        if (vResult?.vendorId) {
+          creatorVendorId = vResult.vendorId;
+          await serviceClient
+            .from('creator_payout_profiles')
+            .update({ cashfree_vendor_id: creatorVendorId, verification_status: 'VERIFIED' })
+            .eq('user_id', creatorUserId);
+        }
+      } catch (e) {
+        console.warn('Auto-registering Cashfree vendor on the fly failed:', e);
+      }
+    }
+
+    if (!creatorVendorId) {
+      creatorVendorId = `cr_${creatorUserId.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase().slice(0, 32)}`;
+    }
 
     // 9. Call provider-independent order creation
     const orderResult = await provider.createPaymentOrder({

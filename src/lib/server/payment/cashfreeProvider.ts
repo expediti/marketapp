@@ -127,6 +127,32 @@ export class CashfreePaymentProvider implements IPaymentProvider {
 
     if (!response.ok) {
       const errorMsg = data?.message || data?.error_description || 'Failed to create Cashfree order';
+
+      // Resilience: If Easy Split vendor is pending or not found on Cashfree, retry without order_splits
+      // so the business owner's checkout is never blocked and funds are safely collected in platform escrow.
+      if (orderSplits.length > 0 && (errorMsg.toLowerCase().includes('vendor') || response.status === 400)) {
+        console.warn('Retrying Cashfree order creation without order_splits due to vendor setup status:', errorMsg);
+        delete payload.order_splits;
+        const retryRes = await fetch(`${this.getBaseUrl()}/orders`, {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(payload),
+        });
+
+        const retryData = await retryRes.json().catch(() => ({}));
+        if (retryRes.ok && retryData.payment_session_id) {
+          return {
+            provider: this.providerName,
+            providerOrderId: retryData.order_id,
+            paymentSessionId: retryData.payment_session_id,
+            amountInPaise: params.amountInPaise,
+            currency: retryData.order_currency || 'INR',
+            instalmentType: params.instalmentType,
+            rawResponse: retryData,
+          };
+        }
+      }
+
       throw new Error(`Cashfree Order Creation Failed: ${errorMsg}`);
     }
 

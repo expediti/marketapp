@@ -102,6 +102,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const rawHolderName = String(body.accountHolderName || body.legalName || profile?.display_name || '').trim();
     const rawUpiId = String(body.upiId || body.payoutUpiId || '').trim();
+    const rawPan = body.pan ? String(body.pan).trim().toUpperCase() : undefined;
+    const rawPhone = body.phone ? String(body.phone).trim() : (user.phone || (user.user_metadata as any)?.phone || undefined);
 
     // Validation
     const errors: Record<string, string> = {};
@@ -113,6 +115,10 @@ export async function POST(request: Request) {
       errors.upiId = 'UPI ID (VPA) is required (e.g. yourname@okaxis, 9876543210@paytm).';
     } else if (!UPI_REGEX.test(rawUpiId)) {
       errors.upiId = 'Please enter a valid UPI ID format (e.g. username@bank or mobile@paytm).';
+    }
+
+    if (rawPan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(rawPan)) {
+      errors.pan = 'Please enter a valid 10-character PAN number format (e.g. ABCDE1234F).';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -141,7 +147,9 @@ export async function POST(request: Request) {
       creatorUserId: user.id,
       accountHolderName: rawHolderName,
       upiId: rawUpiId,
+      pan: rawPan,
       creatorEmail: user.email || profile?.email || undefined,
+      creatorPhone: rawPhone,
       existingVendorId,
     });
 

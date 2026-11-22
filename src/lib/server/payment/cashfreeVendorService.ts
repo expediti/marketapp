@@ -11,6 +11,7 @@ export interface RegisterVendorParams {
   creatorUserId: string;
   accountHolderName: string;
   upiId?: string;
+  pan?: string;
   accountNumber?: string;
   ifscCode?: string;
   accountType?: 'SAVINGS' | 'CURRENT';
@@ -43,13 +44,13 @@ export class CashfreeVendorService {
    * e.g., 'cr_6a2b8e...'
    */
   getStableVendorId(creatorUserId: string): string {
-    const cleanId = creatorUserId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    return `cr_${cleanId.slice(0, 24)}`;
+    const cleanId = creatorUserId.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
+    return `cr_${cleanId.slice(0, 32)}`;
   }
 
   /**
    * Registers or updates a creator as a Cashfree Easy Split Vendor with deferred/on-demand settlement.
-   * Enables verify_account to trigger Cashfree penny-drop / bank account verification.
+   * Enables UPI-only onboarding with schedule_option: 4.
    */
   async registerOrUpdateVendor(params: RegisterVendorParams): Promise<RegisterVendorResult> {
     const vendorId = params.existingVendorId || this.getStableVendorId(params.creatorUserId);
@@ -102,6 +103,13 @@ export class CashfreeVendorService {
       vendorPayload.verify_account = true;
     }
 
+    if (params.pan && params.pan.trim()) {
+      vendorPayload.kyc_details = {
+        account_type: 'INDIVIDUAL',
+        pan: params.pan.trim().toUpperCase(),
+      };
+    }
+
     const patchPayload: Record<string, any> = {
       status: 'ACTIVE',
       name: params.accountHolderName,
@@ -122,6 +130,13 @@ export class CashfreeVendorService {
         ifsc: params.ifscCode,
       };
       patchPayload.verify_account = true;
+    }
+
+    if (params.pan && params.pan.trim()) {
+      patchPayload.kyc_details = {
+        account_type: 'INDIVIDUAL',
+        pan: params.pan.trim().toUpperCase(),
+      };
     }
 
     try {

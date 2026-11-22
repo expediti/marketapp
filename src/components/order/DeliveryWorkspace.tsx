@@ -48,14 +48,15 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
 
   // Financial calculations
   const totalAmount = Number(order.total_amount || 0);
+  const subtotal = Number(order.subtotal || order.creator_total_amount || (totalAmount / 1.05));
   const initialPaymentAmount =
     order.first_payment_amount ?? order.initial_payment_amount ?? Math.round(totalAmount * 0.5 * 100) / 100;
   const finalPaymentAmount =
     order.second_payment_amount ?? order.final_payment_amount ?? Math.round((totalAmount - initialPaymentAmount) * 100) / 100;
 
-  const commissionPct = Number(order.platform_commission_percentage || 10.00);
-  const platformCommissionTotal = order.platform_commission_amount ?? Math.round(totalAmount * (commissionPct / 100.0) * 100) / 100;
-  const creatorShareTotal = order.creator_total_amount ?? (totalAmount - platformCommissionTotal);
+  const commissionPct = Number(order.platform_commission_percentage || 5.00);
+  const platformCommissionTotal = order.platform_commission_amount ?? order.platform_fee ?? Math.round(subtotal * (commissionPct / 100.0) * 100) / 100;
+  const creatorShareTotal = order.creator_total_amount ?? subtotal;
 
   // Status flags
   const isInitialPaid = Boolean(

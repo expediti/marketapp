@@ -2128,7 +2128,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (isSupabaseConfigured) {
       const { data, error } = await (supabase as any).rpc('accept_deal_proposal', {
         p_proposal_id: proposalId,
-        p_commission_percentage: 10.00,
+        p_commission_percentage: 5.00,
       });
 
       if (error) {

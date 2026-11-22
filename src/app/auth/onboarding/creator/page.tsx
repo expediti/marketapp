@@ -550,6 +550,22 @@ export default function CreatorOnboardingPage() {
             throw new Error(`Failed to save reel work samples: ${reelError.message}`);
           }
         }
+
+        // 5. Auto-register Cashfree Easy Split Vendor if UPI ID was provided
+        if (payoutUpiId.trim()) {
+          try {
+            await fetch('/api/creators/payout-profile', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                accountHolderName: bankAccountHolderName.trim() || displayName || 'Creator Partner',
+                upiId: payoutUpiId.trim(),
+              }),
+            });
+          } catch (payoutErr) {
+            console.warn('Initial creator payout registration note:', payoutErr);
+          }
+        }
       }
 
       const validSubmittedReels: string[] = [manualReel1Url, manualReel2Url, manualReel3Url].map((r: string) => r.trim()).filter(Boolean);

@@ -191,6 +191,7 @@ function CreatorDashboardContent() {
 
   // Update Bank Form State
   const [updateBankHolder, setUpdateBankHolder] = useState('');
+  const [updatePan, setUpdatePan] = useState('');
   const [updateBankAccNum, setUpdateBankAccNum] = useState('');
   const [updateConfirmBankAccNum, setUpdateConfirmBankAccNum] = useState('');
   const [updateBankIfsc, setUpdateBankIfsc] = useState('');
@@ -632,6 +633,7 @@ function CreatorDashboardContent() {
 
     const holder = updateBankHolder.trim();
     const upi = payoutUpiId.trim();
+    const pan = updatePan.trim().toUpperCase();
 
     const errMap: Record<string, string> = {};
     if (!holder || holder.length < 2) {
@@ -642,6 +644,9 @@ function CreatorDashboardContent() {
       errMap.upi = 'Please enter your UPI ID (VPA).';
     } else if (!upiRegex.test(upi)) {
       errMap.upi = 'Invalid UPI ID format (e.g. username@okhdfcbank or 9876543210@paytm).';
+    }
+    if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan)) {
+      errMap.pan = 'Invalid PAN format (e.g. ABCDE1234F).';
     }
 
     if (Object.keys(errMap).length > 0) {
@@ -657,6 +662,7 @@ function CreatorDashboardContent() {
         body: JSON.stringify({
           accountHolderName: holder,
           upiId: upi,
+          pan: pan || undefined,
         }),
       });
 
@@ -2340,6 +2346,29 @@ function CreatorDashboardContent() {
                     </p>
                     {updateBankErrors.upi && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.upi}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      PAN Card Number <span className="text-[#71717A] font-normal">(Optional for verification)</span>
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      maxLength={10}
+                      value={updatePan}
+                      onChange={(e) => setUpdatePan(e.target.value.toUpperCase())}
+                      placeholder="e.g. ABCDE1234F"
+                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                        updateBankErrors.pan ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                      } rounded text-[#121214] dark:text-white font-mono uppercase focus:outline-none focus:border-[#FF5416]`}
+                    />
+                    <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                      Optional: Assists in seamless Cashfree sub-merchant compliance for higher transaction volumes.
+                    </p>
+                    {updateBankErrors.pan && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.pan}</p>
                     )}
                   </div>
 

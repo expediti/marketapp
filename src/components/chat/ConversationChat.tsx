@@ -306,6 +306,24 @@ export function ConversationChat({
 
   // Accept deal proposal (receiving participant only)
   const handleAcceptTerms = async (proposalId: string) => {
+    // If creator is accepting, guard that payout UPI ID is configured and verified
+    if (isMeCreator) {
+      try {
+        const res = await fetch('/api/creators/payout-profile');
+        if (res.ok) {
+          const data = await res.json();
+          if (!data?.configured || (data?.verificationStatus !== 'VERIFIED' && !data?.profile?.payout_upi_id)) {
+            setPayoutAlertError(
+              'Creator must configure their payout UPI ID in Settings → Payouts before this deal can be accepted.'
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not verify creator UPI profile status:', err);
+      }
+    }
+
     setAcceptingProposalId(proposalId);
     setPayoutAlertError(null);
     try {
@@ -321,6 +339,7 @@ export function ConversationChat({
         isMeCreator &&
         (msg.toLowerCase().includes('payout') ||
           msg.toLowerCase().includes('bank') ||
+          msg.toLowerCase().includes('upi') ||
           msg.toLowerCase().includes('settings → payouts'))
       ) {
         setPayoutAlertError(msg);
@@ -1166,10 +1185,26 @@ export function ConversationChat({
                         <div className="grid grid-cols-2 gap-2 py-1.5 border-y border-[#ECECE6] dark:border-zinc-800 text-[11px]">
                           <div>
                             <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
-                              Agreed Price
+                              Creator Quoted Price
                             </span>
                             <span className="font-bold text-[#121214] dark:text-white">
                               ₹{prop.price.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
+                              Total (+5% Platform Fee)
+                            </span>
+                            <span className="font-bold text-[#FF5416]">
+                              ₹{(prop.price + Math.round(prop.price * 0.05)).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[#71717A] dark:text-zinc-400 block text-[10px]">
+                              2-Stage Split (50% Upfront)
+                            </span>
+                            <span className="font-medium text-[#121214] dark:text-white">
+                              ₹{Math.round((prop.price + Math.round(prop.price * 0.05)) * 0.5).toLocaleString('en-IN')} / stage
                             </span>
                           </div>
                           <div>
@@ -1318,6 +1353,11 @@ export function ConversationChat({
                     onChange={(e) => setProposalPrice(e.target.value)}
                     className="w-full px-3 py-2 bg-[#FBFBFA] dark:bg-zinc-800 border border-[#E5E5DE] dark:border-zinc-700 rounded-lg text-[#121214] dark:text-white"
                   />
+                  {Number(proposalPrice) > 0 && (
+                    <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                      +5% Platform fee: ₹{Math.round(Number(proposalPrice) * 0.05).toLocaleString('en-IN')} • Total: ₹{(Number(proposalPrice) + Math.round(Number(proposalPrice) * 0.05)).toLocaleString('en-IN')} (Creator gets 100% of price)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="font-bold text-[#121214] dark:text-white block mb-1">
