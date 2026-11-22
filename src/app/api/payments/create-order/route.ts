@@ -169,13 +169,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Fetch creator profile for vendor split ID if available
+    // 8. Fetch creator payout profile for Cashfree Easy Split vendor ID
     const creatorUserId = order.creator_user_id || order.creator_id;
-    const { data: creatorProfile } = await supabase
-      .from('creator_profiles')
-      .select('payout_upi_id, user_id')
+    const { data: creatorPayoutProfile } = await supabase
+      .from('creator_payout_profiles')
+      .select('cashfree_vendor_id, verification_status')
       .eq('user_id', creatorUserId)
       .maybeSingle();
+
+    const creatorVendorId =
+      creatorPayoutProfile?.cashfree_vendor_id ||
+      `cr_${creatorUserId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24)}`;
 
     // 9. Call provider-independent order creation
     const orderResult = await provider.createPaymentOrder({
@@ -190,12 +194,13 @@ export async function POST(request: Request) {
         email: user.email || '',
       },
       splitDetails: {
-        creatorVendorId: creatorProfile?.payout_upi_id || creatorUserId,
+        creatorVendorId,
         creatorAmountInPaise: Math.round(creatorInstalmentShare * 100),
         platformAmountInPaise: Math.round(platformInstalmentShare * 100),
       },
       notes: {
         creator_user_id: creatorUserId,
+        creator_vendor_id: creatorVendorId,
         commission_percentage: String(commissionPct),
       },
     });
@@ -247,7 +252,7 @@ export async function POST(request: Request) {
             payment_id: targetPaymentId,
             order_id: order.id,
             instalment_type: paymentStage,
-            vendor_id: creatorProfile?.payout_upi_id || creatorUserId,
+            vendor_id: creatorVendorId,
             vendor_role: 'creator',
             amount: creatorInstalmentShare,
             amount_in_paise: Math.round(creatorInstalmentShare * 100),

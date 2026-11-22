@@ -46,9 +46,30 @@ export async function POST(request: Request) {
       razorpay_signature,
     } = body;
 
-    const targetProviderOrderId = provider_order_id || razorpay_order_id;
-    const targetProviderPaymentId = provider_payment_id || razorpay_payment_id;
+    const targetProviderPaymentId = provider_payment_id || body.cf_payment_id || razorpay_payment_id;
     const targetSignature = signature || razorpay_signature;
+    let targetProviderOrderId = provider_order_id || body.cf_order_id || body.cashfree_order_id || razorpay_order_id;
+
+    // 3. Look up order and payment in Supabase
+    const supabase = await createClient();
+
+    let targetOrderId = order_id;
+    let paymentRecord: any = null;
+
+    if (!targetProviderOrderId && targetOrderId) {
+      const { data: latestPayment } = await (supabase as any)
+        .from('payments')
+        .select('*')
+        .eq('order_id', targetOrderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestPayment?.provider_order_id) {
+        targetProviderOrderId = latestPayment.provider_order_id;
+        paymentRecord = latestPayment;
+      }
+    }
 
     if (!targetProviderOrderId) {
       return NextResponse.json(
@@ -56,12 +77,6 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
-    // 3. Look up order and payment in Supabase
-    const supabase = await createClient();
-
-    let targetOrderId = order_id;
-    let paymentRecord: any = null;
 
     if (targetProviderOrderId) {
       const { data: payRec } = await (supabase as any)

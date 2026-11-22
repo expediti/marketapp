@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { triggerCashfreeEasySplitSettlement } from '@/lib/server/cashfree';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,8 @@ export const dynamic = 'force-dynamic';
  * 4. Supabase pg_cron extension calling process_auto_approvals()
  *
  * Automatically verifies any orders in 'DELIVERED' status where
- * auto_approve_deadline <= NOW() and approves them.
+ * auto_approve_deadline <= NOW(), approves them, releases Cashfree Easy Split
+ * settlements, and sets payout_status = 'RELEASED'.
  */
 export async function GET(request: Request) {
   try {
@@ -40,9 +42,54 @@ export async function GET(request: Request) {
       );
     }
 
+    // Release Cashfree Easy Split settlements for any auto-approved or completed orders awaiting release
+    const { data: pendingSettlementOrders } = await (supabase as any)
+      .from('orders')
+      .select('id, order_number')
+      .in('order_status', ['AUTO_APPROVED', 'COMPLETED'])
+      .eq('payout_status', 'PAYOUT_PENDING');
+
+    if (pendingSettlementOrders && pendingSettlementOrders.length > 0) {
+      const now = new Date().toISOString();
+      for (const pOrder of pendingSettlementOrders) {
+        const { data: splits } = await (supabase as any)
+          .from('campaign_splits')
+          .select('*')
+          .eq('order_id', pOrder.id);
+
+        if (splits && splits.length > 0) {
+          for (const split of splits) {
+            if (split.vendor_role === 'creator' && split.settlement_status !== 'SETTLED') {
+              try {
+                await triggerCashfreeEasySplitSettlement({
+                  orderId: pOrder.order_number || pOrder.id,
+                  vendorId: split.vendor_id,
+                  amountInPaise: split.amount_in_paise,
+                  remarks: `Auto-approval settlement release for Order #${pOrder.order_number}`,
+                });
+              } catch (settleErr) {
+                console.warn('Notice triggering Cashfree Easy Split in cron:', settleErr);
+              }
+            }
+          }
+
+          await (supabase as any)
+            .from('campaign_splits')
+            .update({ settlement_status: 'SETTLED', updated_at: now })
+            .eq('order_id', pOrder.id);
+        }
+
+        await (supabase as any)
+          .from('orders')
+          .update({ payout_status: 'RELEASED', updated_at: now })
+          .eq('id', pOrder.id);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       auto_approved_orders: count ?? 0,
+      settlements_released: pendingSettlementOrders?.length ?? 0,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

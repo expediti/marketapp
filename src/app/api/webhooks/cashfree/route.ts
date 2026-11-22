@@ -32,7 +32,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 400 });
     }
 
-    const { providerOrderId, providerPaymentId, status, instalmentType } = webhookResult;
+    const { providerOrderId, providerPaymentId, status, instalmentType, eventType, rawEvent } = webhookResult;
+
+    // Handle Easy Split Vendor Settlement webhooks
+    if (eventType && (eventType.includes('SETTLEMENT') || eventType.includes('TRANSFER'))) {
+      const settlementData = (rawEvent as any)?.data || {};
+      const splitRef = settlementData.split_id || settlementData.settlement_id || settlementData.reference_id;
+      const settlementStatus = (settlementData.status || settlementData.transfer_status || '').toUpperCase();
+
+      if (splitRef && (settlementStatus === 'SETTLED' || settlementStatus === 'SUCCESS')) {
+        const supabase = await createClient();
+        await (supabase as any)
+          .from('campaign_splits')
+          .update({
+            settlement_status: 'SETTLED',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('provider_split_reference', splitRef);
+      }
+
+      return NextResponse.json({ success: true, processed: true, eventType });
+    }
 
     if (!providerOrderId) {
       return NextResponse.json({ received: true, ignored: 'No providerOrderId present' });

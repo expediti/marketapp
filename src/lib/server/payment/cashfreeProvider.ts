@@ -1,5 +1,9 @@
-import crypto from 'node:crypto';
-import { getServerRuntimeSecret } from '@/lib/server/razorpay';
+import {
+  getCashfreeCredentials,
+  getServerRuntimeSecret,
+  verifyCashfreeWebhookSignature,
+  triggerCashfreeEasySplitSettlement,
+} from '@/lib/server/cashfree';
 import {
   IPaymentProvider,
   PaymentOrderParams,
@@ -18,60 +22,29 @@ import {
  * Cashfree Payments & Easy Split Adapter
  * 
  * Supports two-instalment campaign orders and Cashfree Easy Split vendor allocation.
- * Safe for Cloudflare Worker environment. Credentials never exposed to client.
+ * Safe for Cloudflare Worker environment (100% Web Crypto & Fetch API).
+ * Credentials never exposed to client.
  */
 export class CashfreePaymentProvider implements IPaymentProvider {
   readonly providerName = 'cashfree';
 
-  private getAppId(): string | undefined {
-    return (
-      getServerRuntimeSecret('CASHFREE_APP_ID') ||
-      getServerRuntimeSecret('NEXT_PUBLIC_CASHFREE_APP_ID')
-    );
-  }
-
-  private getSecretKey(): string | undefined {
-    return getServerRuntimeSecret('CASHFREE_SECRET_KEY');
-  }
-
-  private getWebhookSecret(): string | undefined {
-    return (
-      getServerRuntimeSecret('CASHFREE_WEBHOOK_SECRET') ||
-      getServerRuntimeSecret('CASHFREE_SECRET_KEY')
-    );
-  }
-
-  private getEnvironment(): 'SANDBOX' | 'PRODUCTION' {
-    const env = getServerRuntimeSecret('CASHFREE_ENVIRONMENT')?.toUpperCase();
-    return env === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX';
-  }
-
-  private getBaseUrl(): string {
-    return this.getEnvironment() === 'PRODUCTION'
-      ? 'https://api.cashfree.com/pg'
-      : 'https://sandbox.cashfree.com/pg';
-  }
-
   isConfigured(): boolean {
-    const appId = this.getAppId();
-    const secretKey = this.getSecretKey();
-    return Boolean(appId && secretKey);
+    return Boolean(getCashfreeCredentials());
   }
 
   getPublicConfig(): Record<string, string> {
+    const creds = getCashfreeCredentials();
     return {
       provider: this.providerName,
-      environment: this.getEnvironment().toLowerCase(),
-      appId: this.getAppId() || '',
+      environment: creds ? creds.environment.toLowerCase() : 'sandbox',
+      appId: creds?.appId || '',
       isConfigured: String(this.isConfigured()),
     };
   }
 
   private getHeaders(): Record<string, string> {
-    const appId = this.getAppId();
-    const secretKey = this.getSecretKey();
-
-    if (!appId || !secretKey) {
+    const creds = getCashfreeCredentials();
+    if (!creds) {
       throw new Error(
         'Cashfree credentials (CASHFREE_APP_ID / CASHFREE_SECRET_KEY) are not configured on the server.'
       );
@@ -79,17 +52,23 @@ export class CashfreePaymentProvider implements IPaymentProvider {
 
     return {
       'Content-Type': 'application/json',
-      'x-client-id': appId,
-      'x-client-secret': secretKey,
-      'x-api-version': '2023-08-01',
+      'x-client-id': creds.appId,
+      'x-client-secret': creds.secretKey,
+      'x-api-version': creds.apiVersion,
     };
   }
 
+  private getBaseUrl(): string {
+    const creds = getCashfreeCredentials();
+    return creds?.baseUrl || 'https://sandbox.cashfree.com/pg';
+  }
+
   /**
-   * Creates a Cashfree Payment Order with optional Easy Split instruction.
+   * Creates a Cashfree Payment Order with Easy Split instruction.
    */
   async createPaymentOrder(params: PaymentOrderParams): Promise<PaymentOrderResult> {
-    if (!this.isConfigured()) {
+    const creds = getCashfreeCredentials();
+    if (!creds) {
       throw new Error(
         'Cashfree credentials not configured. Please configure CASHFREE_APP_ID and CASHFREE_SECRET_KEY in server secrets.'
       );
@@ -97,9 +76,10 @@ export class CashfreePaymentProvider implements IPaymentProvider {
 
     const orderAmountInRupees = Math.round((params.amountInPaise / 100) * 100) / 100;
     const stageSuffix = params.instalmentType.toLowerCase();
-    const cashfreeOrderId = `${params.orderNumber.replace(/[^a-zA-Z0-9_-]/g, '')}_${stageSuffix}_${Date.now().toString(36)}`;
+    const cleanNumber = params.orderNumber.replace(/[^a-zA-Z0-9_-]/g, '');
+    const cashfreeOrderId = `${cleanNumber}_${stageSuffix}_${Date.now().toString(36)}`;
 
-    // Optional Easy Split specification (if vendor ID is provided for creator)
+    // Easy Split specification (if vendor ID is provided for creator)
     const orderSplits: Array<{ vendor_id: string; amount: number }> = [];
     if (params.splitDetails?.creatorVendorId && params.splitDetails.creatorAmountInPaise > 0) {
       const creatorAmount = Math.round((params.splitDetails.creatorAmountInPaise / 100) * 100) / 100;
@@ -109,18 +89,20 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       });
     }
 
+    const appUrl = getServerRuntimeSecret('NEXT_PUBLIC_APP_URL') || 'https://marketmyidea.online';
+
     const payload: Record<string, any> = {
       order_id: cashfreeOrderId,
       order_amount: orderAmountInRupees,
       order_currency: params.currency || 'INR',
       customer_details: {
         customer_id: params.customer.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50),
-        customer_email: params.customer.email,
+        customer_email: params.customer.email || 'customer@marketmyidea.online',
         customer_phone: params.customer.phone || '9999999999',
         customer_name: params.customer.name || 'Business Partner',
       },
       order_meta: {
-        return_url: `${getServerRuntimeSecret('NEXT_PUBLIC_APP_URL') || 'https://marketmyidea.online'}/orders/${params.orderId}?cf_order_id={order_id}`,
+        return_url: `${appUrl}/orders/${params.orderId}?cf_order_id={order_id}`,
       },
       order_note: `Campaign Order #${params.orderNumber} (${params.instalmentType} 50%)`,
       order_tags: {
@@ -141,11 +123,25 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       const errorMsg = data?.message || data?.error_description || 'Failed to create Cashfree order';
       throw new Error(`Cashfree Order Creation Failed: ${errorMsg}`);
+    }
+
+    // If order created but splits weren't attached at creation and we have split details,
+    // attach split rule via Easy Split Order Split API
+    if (orderSplits.length > 0 && !data.order_splits) {
+      try {
+        await fetch(`${this.getBaseUrl()}/easy-split/orders/${encodeURIComponent(cashfreeOrderId)}/split`, {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify({ split: orderSplits }),
+        });
+      } catch (splitErr) {
+        console.warn('Notice attaching Easy Split rule to Cashfree order:', splitErr);
+      }
     }
 
     return {
@@ -162,13 +158,27 @@ export class CashfreePaymentProvider implements IPaymentProvider {
 
   /**
    * Verifies payment status directly with Cashfree Orders & Payments API.
+   * Edge-safe via standard fetch.
    */
   async verifyPayment(params: PaymentVerificationParams): Promise<PaymentVerificationResult> {
     if (!this.isConfigured()) {
       throw new Error('Cashfree credentials not configured on the server.');
     }
 
-    const response = await fetch(
+    // 1. Check order status on Cashfree
+    const orderRes = await fetch(
+      `${this.getBaseUrl()}/orders/${encodeURIComponent(params.providerOrderId)}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      }
+    );
+
+    const orderData = await orderRes.json().catch(() => ({}));
+    const isOrderPaid = orderRes.ok && orderData.order_status === 'PAID';
+
+    // 2. Fetch payments list for this order
+    const paymentsRes = await fetch(
       `${this.getBaseUrl()}/orders/${encodeURIComponent(params.providerOrderId)}/payments`,
       {
         method: 'GET',
@@ -176,18 +186,16 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       }
     );
 
-    const paymentsList = await response.json();
-
-    if (!response.ok || !Array.isArray(paymentsList)) {
-      throw new Error('Failed to fetch payment status from Cashfree');
-    }
+    const paymentsList = await paymentsRes.json().catch(() => []);
 
     // Find successful payment
-    const successPayment = paymentsList.find(
-      (p: any) => p.payment_status === 'SUCCESS' || p.payment_status === 'CAPTURED'
-    );
+    const successPayment = Array.isArray(paymentsList)
+      ? paymentsList.find(
+        (p: any) => p.payment_status === 'SUCCESS' || p.payment_status === 'CAPTURED'
+      )
+      : null;
 
-    if (!successPayment) {
+    if (!isOrderPaid && !successPayment) {
       return {
         isVerified: false,
         status: 'PENDING',
@@ -195,58 +203,46 @@ export class CashfreePaymentProvider implements IPaymentProvider {
         providerOrderId: params.providerOrderId,
         amountInPaise: 0,
         verifiedAt: new Date().toISOString(),
-        rawResponse: paymentsList,
+        rawResponse: { order: orderData, payments: paymentsList },
       };
     }
 
-    const amountInPaise = Math.round(Number(successPayment.payment_amount) * 100);
+    const paymentAmount = successPayment?.payment_amount || orderData.order_amount;
+    const amountInPaise = Math.round(Number(paymentAmount) * 100);
+    const paymentId = String(
+      successPayment?.cf_payment_id ||
+      successPayment?.payment_id ||
+      params.providerPaymentId ||
+      params.providerOrderId
+    );
 
     return {
       isVerified: true,
       status: 'PAID',
-      providerPaymentId: String(successPayment.cf_payment_id || successPayment.payment_id),
+      providerPaymentId: paymentId,
       providerOrderId: params.providerOrderId,
       amountInPaise,
-      paymentMethod: successPayment.payment_group || successPayment.payment_method,
-      verifiedAt: successPayment.payment_time || new Date().toISOString(),
-      rawResponse: successPayment,
+      paymentMethod: successPayment?.payment_group || successPayment?.payment_method || 'CASHFREE',
+      verifiedAt: successPayment?.payment_time || new Date().toISOString(),
+      rawResponse: successPayment || orderData,
     };
   }
 
   /**
-   * Verifies and processes Cashfree webhook signatures.
-   * Cashfree signature algorithm: HMAC-SHA256 of `${timestamp}${rawBody}` with CASHFREE_WEBHOOK_SECRET.
+   * Verifies and processes Cashfree webhook signatures using Web Crypto API.
+   * Edge-safe.
    */
   async processWebhook(
     rawBody: string,
     headers: Record<string, string | null>
   ): Promise<PaymentWebhookResult> {
+    const creds = getCashfreeCredentials();
     const signature = headers['x-webhook-signature'];
     const timestamp = headers['x-webhook-timestamp'];
-    const webhookSecret = this.getWebhookSecret();
 
-    if (!webhookSecret) {
-      throw new Error('Cashfree webhook secret is not configured.');
-    }
-
-    let isSignatureValid = false;
-    if (signature && timestamp) {
-      try {
-        const payload = `${timestamp}${rawBody}`;
-        const expectedSignature = crypto
-          .createHmac('sha256', webhookSecret)
-          .update(payload)
-          .digest('base64');
-
-        const expectedBuf = Buffer.from(expectedSignature, 'utf-8');
-        const receivedBuf = Buffer.from(signature, 'utf-8');
-        if (expectedBuf.length === receivedBuf.length) {
-          isSignatureValid = crypto.timingSafeEqual(expectedBuf, receivedBuf);
-        }
-      } catch (err) {
-        console.error('Cashfree signature verification error:', err);
-      }
-    }
+    const isSignatureValid = creds
+      ? await verifyCashfreeWebhookSignature(rawBody, signature, timestamp, creds.webhookSecret)
+      : false;
 
     let parsedEvent: any = {};
     try {
@@ -264,8 +260,20 @@ export class CashfreePaymentProvider implements IPaymentProvider {
     const paymentStatus = paymentData?.payment_status;
 
     let status: 'PAID' | 'FAILED' | 'PENDING' = 'PENDING';
-    if (paymentStatus === 'SUCCESS') status = 'PAID';
-    else if (paymentStatus === 'FAILED' || paymentStatus === 'USER_DROPPED') status = 'FAILED';
+    if (
+      paymentStatus === 'SUCCESS' ||
+      eventType === 'PAYMENT_SUCCESS_WEBHOOK' ||
+      eventType === 'PAYMENT_SUCCESS'
+    ) {
+      status = 'PAID';
+    } else if (
+      paymentStatus === 'FAILED' ||
+      paymentStatus === 'USER_DROPPED' ||
+      eventType === 'PAYMENT_FAILED_WEBHOOK' ||
+      eventType === 'PAYMENT_USER_DROPPED_WEBHOOK'
+    ) {
+      status = 'FAILED';
+    }
 
     const tags = orderData?.order_tags || {};
 
@@ -277,13 +285,17 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       orderId: tags.order_id,
       instalmentType: tags.instalment_type as any,
       status,
-      amountInPaise: paymentData?.payment_amount ? Math.round(Number(paymentData.payment_amount) * 100) : undefined,
+      amountInPaise: paymentData?.payment_amount
+        ? Math.round(Number(paymentData.payment_amount) * 100)
+        : orderData?.order_amount
+          ? Math.round(Number(orderData.order_amount) * 100)
+          : undefined,
       rawEvent: parsedEvent,
     };
   }
 
   /**
-   * Cashfree Easy Split post-payment split instruction (if not handled at order creation).
+   * Cashfree Easy Split post-payment split instruction.
    */
   async createSplit(params: PaymentSplitParams): Promise<PaymentSplitResult> {
     if (!this.isConfigured()) {
@@ -296,15 +308,15 @@ export class CashfreePaymentProvider implements IPaymentProvider {
     }));
 
     const response = await fetch(
-      `${this.getBaseUrl()}/orders/${encodeURIComponent(params.providerPaymentId)}/split`,
+      `${this.getBaseUrl()}/easy-split/orders/${encodeURIComponent(params.providerPaymentId)}/split`,
       {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({ splits: splitsPayload }),
+        body: JSON.stringify({ split: splitsPayload }),
       }
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     return {
       success: response.ok,
@@ -333,7 +345,7 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       headers: this.getHeaders(),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(`Failed to lookup Cashfree order: ${data?.message || 'Error'}`);
     }
@@ -371,7 +383,7 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       };
     }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     let status: 'SETTLED' | 'UNSETTLED' | 'FAILED' | 'ON_HOLD' = 'UNSETTLED';
     if (data.status === 'SETTLED') status = 'SETTLED';
     else if (data.status === 'FAILED') status = 'FAILED';
@@ -414,7 +426,7 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       }
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(`Cashfree Refund Failed: ${data?.message || 'Error'}`);
     }

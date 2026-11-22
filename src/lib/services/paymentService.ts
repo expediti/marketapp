@@ -1,13 +1,13 @@
 /**
- * Payment Service Abstraction Layer (Razorpay Integration)
+ * Payment Service Abstraction Layer (Cashfree & Multi-Provider Integration)
  * 
  * Flow:
  * Deal confirmed (DEAL_CONFIRMED) -> Business clicks Pay Now ->
- * Backend creates Razorpay order (/api/payments/create-order) ->
- * Razorpay Standard Checkout opens -> Business pays ->
- * Server verifies signature & status (/api/payments/verify) ->
- * Supabase payment and order become PAID ->
- * Creator notified -> Creator can "Mark as Started".
+ * Backend creates Cashfree order (/api/payments/create-order) with Easy Split ->
+ * Cashfree Checkout Modal opens -> Business pays ->
+ * Server verifies payment status (/api/payments/verify) ->
+ * Supabase payment and order become PARTIALLY_PAID (INITIAL) or PAID (FINAL) ->
+ * Creator notified -> Creator proceeds with deliverables.
  * 
  * Note: The frontend NEVER decides payment succeeded.
  * Backend verification is the authoritative source of truth.
@@ -18,25 +18,34 @@ export interface CreatePaymentOrderParams {
   stage?: 'INITIAL' | 'FINAL';
   subtotal?: number;
   currency?: string;
+  preferredProvider?: string;
   notes?: Record<string, string>;
 }
 
 export interface PaymentOrderResult {
   success: boolean;
-  keyId: string;
-  orderId: string; // Razorpay order id
+  keyId?: string;
+  orderId: string; // Provider order id
+  paymentSessionId?: string;
+  checkoutUrl?: string;
   amount: number; // in paise
   currency: string;
   orderNumber: string;
   stage?: 'INITIAL' | 'FINAL';
+  provider?: string;
 }
 
 export interface VerifyPaymentParams {
   orderId: string;
   stage?: 'INITIAL' | 'FINAL';
-  razorpay_payment_id: string;
-  razorpay_order_id: string;
-  razorpay_signature: string;
+  provider?: string;
+  provider_order_id?: string;
+  provider_payment_id?: string;
+  payment_session_id?: string;
+  signature?: string;
+  razorpay_payment_id?: string;
+  razorpay_order_id?: string;
+  razorpay_signature?: string;
 }
 
 export interface IPaymentService {
@@ -51,14 +60,14 @@ export interface IPaymentService {
 }
 
 class PaymentService implements IPaymentService {
-  private platformFeePercentage: number = 0.05; // 5% platform fee
+  private platformFeePercentage: number = 0.10; // 10% platform fee standard
 
   calculatePlatformFee(subtotal: number): number {
     return Math.round(subtotal * this.platformFeePercentage * 100) / 100;
   }
 
   /**
-   * Request server-side creation of a Razorpay Order.
+   * Request server-side creation of a Payment Order (defaults to Cashfree).
    * The server authenticates caller, verifies ownership, and calculates stage amount from Supabase.
    */
   async createPaymentOrder(params: CreatePaymentOrderParams): Promise<PaymentOrderResult> {
@@ -68,6 +77,7 @@ class PaymentService implements IPaymentService {
       body: JSON.stringify({
         order_id: params.orderId,
         stage: params.stage || 'INITIAL',
+        preferred_provider: params.preferredProvider || 'cashfree',
       }),
     });
 
@@ -78,34 +88,48 @@ class PaymentService implements IPaymentService {
 
     return {
       success: true,
-      keyId: data.key_id,
-      orderId: data.order_id,
+      keyId: data.key_id || '',
+      orderId: data.provider_order_id || data.order_id,
+      paymentSessionId: data.payment_session_id,
+      checkoutUrl: data.checkout_url,
       amount: data.amount,
       currency: data.currency,
       orderNumber: data.order_number,
       stage: data.stage || params.stage || 'INITIAL',
+      provider: data.provider || 'cashfree',
     };
   }
 
   /**
-   * Server-side signature verification.
-   * Client-side code sends the Razorpay payment credentials for HMAC-SHA256 signature verification.
+   * Server-side payment verification.
+   * Client-side code sends credentials for authoritative server verification.
    */
   async verifyPayment(params: VerifyPaymentParams): Promise<{ success: boolean; status: string; stage?: string }> {
     const response = await fetch('/api/payments/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        order_id: params.orderId,
+        stage: params.stage,
+        provider: params.provider || 'cashfree',
+        provider_order_id: params.provider_order_id || params.razorpay_order_id,
+        provider_payment_id: params.provider_payment_id || params.razorpay_payment_id,
+        signature: params.signature || params.razorpay_signature,
+        razorpay_order_id: params.razorpay_order_id,
+        razorpay_payment_id: params.razorpay_payment_id,
+        razorpay_signature: params.razorpay_signature,
+      }),
     });
 
     const data = await response.json();
     if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Payment signature verification failed.');
+      throw new Error(data.error || 'Payment verification failed.');
     }
 
     return {
       success: true,
       status: data.status || 'PAID',
+      stage: data.stage || params.stage,
     };
   }
 

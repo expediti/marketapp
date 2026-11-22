@@ -24,6 +24,7 @@ import { moderationService } from '@/lib/services/moderationService';
 import { payoutService } from '@/lib/services/payoutService';
 import { paymentService } from '@/lib/services/paymentService';
 import { startRazorpayPayment } from '@/lib/services/razorpayClient';
+import { startCashfreePayment } from '@/lib/services/cashfreeClient';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface MarketplaceContextType {
@@ -72,6 +73,12 @@ interface MarketplaceContextType {
   endCollaboration: (conversationId: string, reason?: string) => Promise<void>;
   cancelConfirmedDeal: (orderId: string, reason?: string) => Promise<void>;
   simulatePaymentSuccess: (orderId: string) => Promise<void>;
+  payOrderWithCashfree: (
+    orderId: string,
+    stage?: 'INITIAL' | 'FINAL',
+    customerName?: string,
+    customerEmail?: string
+  ) => Promise<{ success: boolean; status: string; stage?: 'INITIAL' | 'FINAL'; error?: string }>;
   payOrderWithRazorpay: (
     orderId: string,
     stage?: 'INITIAL' | 'FINAL',
@@ -1472,6 +1479,27 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   }): Promise<CollaborationRequest> => {
     if (!currentUser) throw new Error('Must be logged in to send a request');
 
+    // Campaign restriction: Creator must have verified bank payouts before sending a request
+    if (activeRole === 'creator' || currentUser.id === params.creatorUserId) {
+      if (isSupabaseConfigured) {
+        const { data: payoutProf } = await (supabase as any)
+          .from('creator_payout_profiles')
+          .select('verification_status, cashfree_vendor_id')
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+
+        const isVerified =
+          payoutProf?.verification_status === 'VERIFIED' &&
+          Boolean(payoutProf?.cashfree_vendor_id && payoutProf.cashfree_vendor_id.trim());
+
+        if (!isVerified) {
+          throw new Error(
+            'Creator bank payout setup is required before sending a campaign request. Please complete bank verification in Settings → Payouts.'
+          );
+        }
+      }
+    }
+
     // Prevent duplicate active pending requests
     const existing = collaborationRequests.find(
       (r) =>
@@ -1555,6 +1583,27 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (!currentUser) throw new Error('Must be logged in to accept request');
     const req = collaborationRequests.find((r) => r.id === requestId);
     if (!req) throw new Error('Request not found');
+
+    // Campaign restriction: Creator must have verified bank payouts before accepting a request
+    if (activeRole === 'creator' || currentUser.id === req.creator_user_id) {
+      if (isSupabaseConfigured) {
+        const { data: payoutProf } = await (supabase as any)
+          .from('creator_payout_profiles')
+          .select('verification_status, cashfree_vendor_id')
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+
+        const isVerified =
+          payoutProf?.verification_status === 'VERIFIED' &&
+          Boolean(payoutProf?.cashfree_vendor_id && payoutProf.cashfree_vendor_id.trim());
+
+        if (!isVerified) {
+          throw new Error(
+            'Creator bank payout setup is required before accepting a campaign request. Please complete bank verification in Settings → Payouts.'
+          );
+        }
+      }
+    }
 
     const now = new Date().toISOString();
 
@@ -2094,6 +2143,38 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const acceptDealProposal = async (proposalId: string): Promise<Order> => {
     if (!currentUser) throw new Error('Must be logged in to accept deal proposal');
 
+    // Campaign restriction: Creator must have verified bank payouts before confirming a campaign deal
+    if (isSupabaseConfigured) {
+      let creatorIdToCheck = activeRole === 'creator' ? currentUser.id : null;
+      if (!creatorIdToCheck) {
+        for (const [cId, plist] of Object.entries(dealProposals)) {
+          if (plist.some((p) => p.id === proposalId)) {
+            const conv = conversations.find((c) => c.id === cId);
+            creatorIdToCheck = conv?.creator_user_id || null;
+            break;
+          }
+        }
+      }
+
+      if (creatorIdToCheck) {
+        const { data: payoutProf } = await (supabase as any)
+          .from('creator_payout_profiles')
+          .select('verification_status, cashfree_vendor_id')
+          .eq('user_id', creatorIdToCheck)
+          .maybeSingle();
+
+        const isVerified =
+          payoutProf?.verification_status === 'VERIFIED' &&
+          Boolean(payoutProf?.cashfree_vendor_id && payoutProf.cashfree_vendor_id.trim());
+
+        if (!isVerified) {
+          throw new Error(
+            'Creator bank payout setup is required before confirming a campaign deal. Please complete bank verification in Settings → Payouts.'
+          );
+        }
+      }
+    }
+
     if (isSupabaseConfigured) {
       const { data, error } = await (supabase as any).rpc('accept_deal_proposal', {
         p_proposal_id: proposalId,
@@ -2275,7 +2356,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const payOrderWithRazorpay = async (
+  const payOrderWithCashfree = async (
     orderId: string,
     stage: 'INITIAL' | 'FINAL' = 'INITIAL',
     customerName?: string,
@@ -2283,7 +2364,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   ): Promise<{ success: boolean; status: string; stage?: 'INITIAL' | 'FINAL'; error?: string }> => {
     if (!currentUser) throw new Error('Must be logged in to pay for an order');
 
-    const result = await startRazorpayPayment({
+    const result = await startCashfreePayment({
       orderId,
       stage,
       customerName: customerName || currentUser.display_name,
@@ -2327,6 +2408,15 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     }
 
     return result;
+  };
+
+  const payOrderWithRazorpay = async (
+    orderId: string,
+    stage: 'INITIAL' | 'FINAL' = 'INITIAL',
+    customerName?: string,
+    customerEmail?: string
+  ): Promise<{ success: boolean; status: string; stage?: 'INITIAL' | 'FINAL'; error?: string }> => {
+    return payOrderWithCashfree(orderId, stage, customerName, customerEmail);
   };
 
   const submitPrivatePreview = async (
@@ -3800,6 +3890,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         endCollaboration,
         cancelConfirmedDeal,
         simulatePaymentSuccess,
+        payOrderWithCashfree,
         payOrderWithRazorpay,
         submitPrivatePreview,
         publishAndCompleteOrder,

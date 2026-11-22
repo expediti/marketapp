@@ -565,3 +565,25 @@ export interface AdminAction {
   created_at: string;
 }
 
+export type PayoutVerificationStatus =
+  | 'NOT_CONFIGURED'
+  | 'PENDING_VERIFICATION'
+  | 'VERIFIED'
+  | 'REJECTED'
+  | 'ACTION_REQUIRED';
+
+export interface CreatorPayoutProfile {
+  id: string;
+  user_id: string;
+  account_holder_name: string;
+  bank_account_last4: string;
+  masked_account_number: string;
+  ifsc_code: string;
+  account_type: 'SAVINGS' | 'CURRENT';
+  cashfree_vendor_id?: string | null;
+  verification_status: PayoutVerificationStatus;
+  verification_details?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+

@@ -2,6 +2,7 @@ import { IPaymentProvider } from './types';
 import { CashfreePaymentProvider } from './cashfreeProvider';
 import { RazorpayPaymentProvider } from './razorpayProvider';
 import { MockPaymentProvider } from './mockProvider';
+import { getServerRuntimeSecret } from '@/lib/server/cashfree';
 
 export * from './types';
 export { CashfreePaymentProvider } from './cashfreeProvider';
@@ -22,10 +23,11 @@ const providers: Record<string, IPaymentProvider> = {
  * Resolves the appropriate payment provider.
  * 
  * Precedence:
- * 1. Explicitly requested provider
- * 2. Cashfree (Primary intended provider for two-instalment + Easy Split)
- * 3. Razorpay (Legacy fallback if configured)
- * 4. Mock (Test environment only)
+ * 1. Explicitly requested provider (e.g. 'cashfree' or 'razorpay')
+ * 2. Cashfree (Primary intended provider for two-stage escrow + Easy Split)
+ * 3. Mock (If in test environment)
+ * 4. Razorpay (Only if explicitly forced via FORCE_RAZORPAY=true)
+ * 5. Default to Cashfree provider
  */
 export function getPaymentProvider(preferredProvider?: string): IPaymentProvider {
   if (preferredProvider && providers[preferredProvider.toLowerCase()]) {
@@ -37,8 +39,9 @@ export function getPaymentProvider(preferredProvider?: string): IPaymentProvider
     return cashfreeProviderInstance;
   }
 
-  // Priority 2: Razorpay fallback if configured
-  if (razorpayProviderInstance.isConfigured()) {
+  // Priority 2: Forced Razorpay fallback only if explicitly enabled
+  const forceRazorpay = getServerRuntimeSecret('FORCE_RAZORPAY') === 'true';
+  if (forceRazorpay && razorpayProviderInstance.isConfigured()) {
     return razorpayProviderInstance;
   }
 
@@ -47,6 +50,6 @@ export function getPaymentProvider(preferredProvider?: string): IPaymentProvider
     return mockProviderInstance;
   }
 
-  // Default to Cashfree provider (will report unconfigured safely without throwing during initialization)
+  // Default to Cashfree provider (will report unconfigured safely if credentials not yet configured)
   return cashfreeProviderInstance;
 }

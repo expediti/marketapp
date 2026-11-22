@@ -23,16 +23,17 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { order_id, razorpay_order_id, error_code, error_description, reason } = body;
+    const { order_id, provider_order_id, razorpay_order_id, error_code, error_description, reason } = body;
+    const targetOrderIdParam = provider_order_id || razorpay_order_id;
 
     const failureReason = error_description || reason || 'Payment cancelled or failed';
 
     const supabase = await createClient();
 
-    // Call record_payment_failure RPC if razorpay_order_id is available
-    if (razorpay_order_id) {
+    // Call record_payment_failure RPC if order ID is available
+    if (targetOrderIdParam) {
       const { data, error: rpcError } = await (supabase as any).rpc('record_payment_failure', {
-        p_razorpay_order_id: razorpay_order_id,
+        p_razorpay_order_id: targetOrderIdParam,
         p_reason: failureReason,
         p_error_code: error_code || null,
         p_error_description: error_description || null,

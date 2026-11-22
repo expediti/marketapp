@@ -38,6 +38,7 @@ import {
   ExternalLink,
   RotateCcw,
   ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ConversationChatProps {
@@ -65,7 +66,7 @@ export function ConversationChat({
     acceptDealProposal,
     endCollaboration,
     cancelConfirmedDeal,
-    payOrderWithRazorpay,
+    payOrderWithCashfree,
     markWorkStarted,
     submitDelivery,
     approveDelivery,
@@ -120,6 +121,7 @@ export function ConversationChat({
   // Proposal modal state
   const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
   const [editingProposal, setEditingProposal] = useState<DealProposal | null>(null);
+  const [payoutAlertError, setPayoutAlertError] = useState<string | null>(null);
   const [proposalDeliverable, setProposalDeliverable] = useState('');
   const [proposalPrice, setProposalPrice] = useState<number | string>(5000);
   const [proposalDeadline, setProposalDeadline] = useState('');
@@ -293,11 +295,21 @@ export function ConversationChat({
   // Accept deal proposal (receiving participant only)
   const handleAcceptTerms = async (proposalId: string) => {
     setAcceptingProposalId(proposalId);
+    setPayoutAlertError(null);
     try {
       await acceptDealProposal(proposalId);
     } catch (err: any) {
       console.error('Failed to accept terms:', err);
-      alert(err.message || 'Failed to accept deal terms');
+      const msg = err.message || 'Failed to accept deal terms';
+      if (
+        msg.toLowerCase().includes('payout') ||
+        msg.toLowerCase().includes('bank') ||
+        msg.toLowerCase().includes('settings → payouts')
+      ) {
+        setPayoutAlertError(msg);
+      } else {
+        alert(msg);
+      }
     } finally {
       setAcceptingProposalId(null);
     }
@@ -403,12 +415,12 @@ export function ConversationChat({
     }
   };
 
-  // Confirm platform payment via Razorpay Standard Checkout
+  // Confirm platform payment via Cashfree Checkout
   const handleConfirmPayment = async () => {
     if (!activeOrder) return;
     setIsPaying(true);
     try {
-      const res = await payOrderWithRazorpay(
+      const res = await payOrderWithCashfree(
         activeOrder.id,
         'INITIAL',
         currentUser?.display_name,
@@ -1245,6 +1257,52 @@ export function ConversationChat({
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Campaign Restriction: Bank Payout Verification Alert Modal */}
+      {payoutAlertError && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-amber-200 dark:border-amber-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="w-5 h-5" />
+                <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayoutAlertError(null)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
+              <p>{payoutAlertError}</p>
+              <p className="text-[11px] text-[#71717A]">
+                To confirm this campaign deal and receive disbursements via Cashfree Easy Split, please set up and verify your bank account details.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPayoutAlertError(null)}
+                className="text-xs"
+              >
+                Close
+              </Button>
+              <Link
+                href="/dashboard/creator?tab=settings&section=payouts"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF5416] text-white text-xs font-bold hover:bg-[#E04810] transition-colors"
+              >
+                <span>Settings → Payouts</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </div>
         </div>
       )}

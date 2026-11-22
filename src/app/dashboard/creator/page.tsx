@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { reelStorageService } from '@/lib/services/reelStorageService';
 import { ReelVideo } from '@/components/marketplace/ReelVideo';
-import { CreatorReel, ReelType, CreatorPackage, Campaign } from '@/types/marketplace';
+import { CreatorReel, ReelType, CreatorPackage, Campaign, CreatorPayoutProfile, PayoutVerificationStatus } from '@/types/marketplace';
 import { ConversationChat } from '@/components/chat/ConversationChat';
 import { CreatorCampaignCard } from '@/components/campaign/CreatorCampaignCard';
 import { CreatorEarningsView } from '@/components/campaign/CreatorEarningsView';
@@ -42,8 +42,12 @@ import {
   Sparkles,
   Bell,
   DollarSign,
+  Landmark,
+  ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { validateAndNormalizeUpiId } from '@/lib/utils/upiValidation';
+import { validateBankDetails, maskAccountNumber } from '@/lib/utils/bankValidation';
 import { parseInstagramUrl, parseInstagramProfileUrl } from '@/lib/utils/instagram';
 import { INSTAGRAM_OAUTH_ENABLED } from '@/lib/config/features';
 
@@ -175,6 +179,23 @@ function CreatorDashboardContent() {
   const [isSavingUpi, setIsSavingUpi] = useState(false);
   const [upiError, setUpiError] = useState<string | null>(null);
   const [upiSuccessMessage, setUpiSuccessMessage] = useState<string | null>(null);
+
+  // Bank Payout Profile State (Cashfree Easy Split)
+  const [bankPayoutProfile, setBankPayoutProfile] = useState<CreatorPayoutProfile | null>(null);
+  const [isLoadingPayoutProfile, setIsLoadingPayoutProfile] = useState(false);
+  const [isUpdateBankModalOpen, setIsUpdateBankModalOpen] = useState(false);
+  const [settingsSubTab, setSettingsSubTab] = useState<'payouts' | 'upi' | 'danger'>('payouts');
+  const [payoutAlertModalMessage, setPayoutAlertModalMessage] = useState<string | null>(null);
+
+  // Update Bank Form State
+  const [updateBankHolder, setUpdateBankHolder] = useState('');
+  const [updateBankAccNum, setUpdateBankAccNum] = useState('');
+  const [updateConfirmBankAccNum, setUpdateConfirmBankAccNum] = useState('');
+  const [updateBankIfsc, setUpdateBankIfsc] = useState('');
+  const [updateBankType, setUpdateBankType] = useState<'SAVINGS' | 'CURRENT'>('SAVINGS');
+  const [updateBankErrors, setUpdateBankErrors] = useState<Record<string, string>>({});
+  const [isSavingBankDetails, setIsSavingBankDetails] = useState(false);
+  const [bankSaveSuccessMsg, setBankSaveSuccessMsg] = useState<string | null>(null);
 
   // Instagram Reel URL input state
   const [instagramReelUrl, setInstagramReelUrl] = useState('');
@@ -394,12 +415,37 @@ function CreatorDashboardContent() {
     setIsLoadingAuth(false);
   }, [router]);
 
+  const fetchPayoutProfile = useCallback(async () => {
+    setIsLoadingPayoutProfile(true);
+    try {
+      const res = await fetch('/api/creators/payout-profile');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          setBankPayoutProfile(data.profile);
+        } else {
+          setBankPayoutProfile(null);
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching payout profile:', err);
+    } finally {
+      setIsLoadingPayoutProfile(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadDbCreator();
-  }, [loadDbCreator]);
+    fetchPayoutProfile();
+  }, [loadDbCreator, fetchPayoutProfile]);
 
-  // Synchronize URL tab parameter and Instagram OAuth status
+  // Synchronize URL tab and section parameter and Instagram OAuth status
   useEffect(() => {
+    const sectionParam = searchParams.get('section');
+    if (sectionParam === 'payouts' || sectionParam === 'upi' || sectionParam === 'danger') {
+      setSettingsSubTab(sectionParam as any);
+    }
+
     if (tabParam) {
       if (tabParam === 'overview' || tabParam === 'dashboard') setActiveTab('home');
       else if (tabParam === 'campaigns') setActiveTab('orders');
@@ -552,14 +598,103 @@ function CreatorDashboardContent() {
   const creatorId = dbCreator?.user_id || currentUser?.id || '';
 
   const handleAcceptCollabRequest = async (requestId: string) => {
+    // Campaign restriction: Verify creator bank payouts before accepting
+    if (bankPayoutProfile?.verification_status !== 'VERIFIED') {
+      setPayoutAlertModalMessage(
+        'Creator bank payout setup is required before accepting a campaign request. Please complete bank verification in Settings → Payouts.'
+      );
+      return;
+    }
+
     setProcessingRequestId(requestId);
     try {
       await acceptCollaborationRequest(requestId);
       setActiveTab('messages');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to accept collaboration request:', err);
+      const msg = err?.message || 'Failed to accept collaboration request';
+      setPayoutAlertModalMessage(msg);
     } finally {
       setProcessingRequestId(null);
+    }
+  };
+
+  const handleOpenUpdateBankModal = () => {
+    setUpdateBankHolder(bankPayoutProfile?.account_holder_name || dbCreator?.display_name || '');
+    setUpdateBankAccNum('');
+    setUpdateConfirmBankAccNum('');
+    setUpdateBankIfsc(bankPayoutProfile?.ifsc_code || '');
+    setUpdateBankType((bankPayoutProfile?.account_type as any) || 'SAVINGS');
+    setUpdateBankErrors({});
+    setBankSaveSuccessMsg(null);
+    setIsUpdateBankModalOpen(true);
+  };
+
+  const handleSaveBankDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUpdateBankErrors({});
+    setBankSaveSuccessMsg(null);
+
+    const validation = validateBankDetails({
+      accountHolderName: updateBankHolder,
+      accountNumber: updateBankAccNum,
+      confirmAccountNumber: updateConfirmBankAccNum,
+      ifscCode: updateBankIfsc,
+      accountType: updateBankType,
+    });
+
+    if (!validation.isValid) {
+      const errMap: Record<string, string> = {};
+      if (validation.errors.accountHolderName) errMap.holder = validation.errors.accountHolderName;
+      if (validation.errors.accountNumber) errMap.accNum = validation.errors.accountNumber;
+      if (validation.errors.confirmAccountNumber) errMap.confirmAccNum = validation.errors.confirmAccountNumber;
+      if (validation.errors.ifscCode) errMap.ifsc = validation.errors.ifscCode;
+      setUpdateBankErrors(errMap);
+      return;
+    }
+
+    setIsSavingBankDetails(true);
+    try {
+      const res = await fetch('/api/creators/payout-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountHolderName: updateBankHolder,
+          accountNumber: updateBankAccNum,
+          confirmAccountNumber: updateConfirmBankAccNum,
+          ifscCode: updateBankIfsc,
+          accountType: updateBankType,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.errors) {
+          const errMap: Record<string, string> = {};
+          if (data.errors.accountHolderName) errMap.holder = data.errors.accountHolderName;
+          if (data.errors.accountNumber) errMap.accNum = data.errors.accountNumber;
+          if (data.errors.confirmAccountNumber) errMap.confirmAccNum = data.errors.confirmAccountNumber;
+          if (data.errors.ifscCode) errMap.ifsc = data.errors.ifscCode;
+          setUpdateBankErrors(errMap);
+        } else {
+          setUpdateBankErrors({ general: data.error || 'Failed to update bank details' });
+        }
+        setIsSavingBankDetails(false);
+        return;
+      }
+
+      await fetchPayoutProfile();
+      setBankSaveSuccessMsg('Bank details saved. Verification in progress.');
+      setTimeout(() => {
+        setIsUpdateBankModalOpen(false);
+        setBankSaveSuccessMsg(null);
+      }, 1200);
+    } catch (err: unknown) {
+      setUpdateBankErrors({
+        general: err instanceof Error ? err.message : 'Network error saving bank details',
+      });
+    } finally {
+      setIsSavingBankDetails(false);
     }
   };
 
@@ -1923,90 +2058,530 @@ function CreatorDashboardContent() {
       {/* 6. SETTINGS TAB */}
       {activeTab === 'settings' && (
         <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-xl p-5 sm:p-6 space-y-6 shadow-sm">
-          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
-            <span className="editorial-label text-[#FF5416]">Payouts & Preferences</span>
-            <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
-              Creator Settings
-            </h3>
-          </div>
-
-          {/* Payout Details */}
-          <div className="space-y-3 max-w-md text-xs">
+          <div className="border-b border-[#ECECE6] dark:border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h4 className="font-bold text-sm text-[#121214] dark:text-white">Payout Details (UPI ID)</h4>
-              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5">
-                This UPI ID is used only for manual direct payouts. It is private, confidential, and never shown to businesses or on public discovery.
-              </p>
+              <span className="editorial-label text-[#FF5416]">Payouts & Preferences</span>
+              <h3 className="text-base font-bold text-[#121214] dark:text-white mt-0.5">
+                Creator Settings
+              </h3>
             </div>
 
-            <div>
-              <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
-                UPI ID (e.g. name@upi or phone@paytm)
-              </label>
-              <input
-                type="text"
-                value={payoutUpiId}
-                onChange={(e) => {
-                  setPayoutUpiId(e.target.value);
-                  if (upiError) setUpiError(null);
-                  if (upiSuccessMessage) setUpiSuccessMessage(null);
-                }}
-                onBlur={() => {
-                  if (payoutUpiId.trim()) {
-                    const res = validateAndNormalizeUpiId(payoutUpiId);
-                    if (!res.isValid) {
-                      setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
-                    } else {
-                      setPayoutUpiId(res.value);
-                      setUpiError(null);
+            {/* Settings Sub-Navigation */}
+            <div className="flex items-center gap-1.5 p-1 bg-[#F4F4F0] dark:bg-zinc-900 rounded-lg text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('payouts')}
+                className={`px-3 py-1.5 rounded-md transition-all ${
+                  settingsSubTab === 'payouts'
+                    ? 'bg-white dark:bg-zinc-800 text-[#FF5416] font-bold shadow-xs'
+                    : 'text-[#71717A] hover:text-[#121214] dark:hover:text-white'
+                }`}
+              >
+                Bank Payouts
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('upi')}
+                className={`px-3 py-1.5 rounded-md transition-all ${
+                  settingsSubTab === 'upi'
+                    ? 'bg-white dark:bg-zinc-800 text-[#FF5416] font-bold shadow-xs'
+                    : 'text-[#71717A] hover:text-[#121214] dark:hover:text-white'
+                }`}
+              >
+                UPI Details
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('danger')}
+                className={`px-3 py-1.5 rounded-md transition-all ${
+                  settingsSubTab === 'danger'
+                    ? 'bg-white dark:bg-zinc-800 text-red-600 font-bold shadow-xs'
+                    : 'text-[#71717A] hover:text-red-600 dark:hover:text-red-400'
+                }`}
+              >
+                Account
+              </button>
+            </div>
+          </div>
+
+          {/* SECTION A: BANK PAYOUTS (CASHFREE EASY SPLIT) */}
+          {settingsSubTab === 'payouts' && (
+            <div className="space-y-6 max-w-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-sm text-[#121214] dark:text-white flex items-center gap-2">
+                    <Landmark className="w-4 h-4 text-[#FF5416]" />
+                    <span>Bank Payout Setup & Verification</span>
+                  </h4>
+                  <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-1 max-w-lg">
+                    Bank details are encrypted and verified through Cashfree for automated campaign payouts. A verified bank account is required to send, accept, or confirm campaign deals.
+                  </p>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchPayoutProfile}
+                  disabled={isLoadingPayoutProfile}
+                  className="text-xs shrink-0"
+                  title="Refresh verification status"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isLoadingPayoutProfile ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </Button>
+              </div>
+
+              {/* Status Display Card */}
+              <div className="p-4 sm:p-5 rounded-xl border border-[#E5E5DE] dark:border-zinc-800 bg-[#FBFBFA] dark:bg-zinc-900/60 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#ECECE6] dark:border-zinc-800">
+                  <span className="text-xs font-semibold text-[#71717A] dark:text-zinc-400 uppercase tracking-wider font-mono">
+                    Verification Status
+                  </span>
+                  <div>
+                    {(() => {
+                      const st = bankPayoutProfile?.verification_status || 'NOT_CONFIGURED';
+                      if (st === 'VERIFIED') {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-[#047857] dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Verified
+                          </span>
+                        );
+                      }
+                      if (st === 'PENDING_VERIFICATION') {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                            <Clock className="w-3.5 h-3.5 animate-pulse" />
+                            Pending verification
+                          </span>
+                        );
+                      }
+                      if (st === 'REJECTED') {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            Rejected
+                          </span>
+                        );
+                      }
+                      if (st === 'ACTION_REQUIRED') {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            Action required
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Not configured
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Status Explanation Note */}
+                <div className="text-xs text-[#52525B] dark:text-zinc-300 leading-relaxed font-mono">
+                  {(!bankPayoutProfile || bankPayoutProfile.verification_status === 'NOT_CONFIGURED') && (
+                    <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
+                      ⚠️ Bank details have not been set up. Click <strong>Configure Bank Details</strong> below to enable campaign requests and deals.
+                    </p>
+                  )}
+                  {bankPayoutProfile?.verification_status === 'PENDING_VERIFICATION' && (
+                    <p className="text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-900">
+                      ℹ️ Bank account details have been recorded safely and are awaiting automated confirmation from Cashfree.
+                    </p>
+                  )}
+                  {bankPayoutProfile?.verification_status === 'VERIFIED' && (
+                    <p className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-900">
+                      ✓ Your bank account is verified. You can send campaign requests, accept brand briefs, and confirm deals.
+                    </p>
+                  )}
+                  {bankPayoutProfile?.verification_status === 'REJECTED' && (
+                    <p className="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-900">
+                      ✕ Bank verification was rejected. Please review your account holder name, account number, and IFSC code, then click Update Bank Details.
+                    </p>
+                  )}
+                  {bankPayoutProfile?.verification_status === 'ACTION_REQUIRED' && (
+                    <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
+                      ⚠️ Additional action is required for your bank account. Please update or confirm your bank details.
+                    </p>
+                  )}
+                </div>
+
+                {/* Details Grid */}
+                {bankPayoutProfile ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Account Holder Name</span>
+                      <span className="font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
+                        {bankPayoutProfile.account_holder_name}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Masked Account Number</span>
+                      <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block tracking-wider">
+                        {bankPayoutProfile.masked_account_number || `XXXX${bankPayoutProfile.bank_account_last4}`}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">IFSC Code</span>
+                      <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
+                        {bankPayoutProfile.ifsc_code}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                      <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Account Type</span>
+                      <span className="font-mono text-sm text-[#121214] dark:text-white mt-0.5 block font-bold">
+                        {bankPayoutProfile.account_type || 'SAVINGS'}
+                      </span>
+                    </div>
+
+                    {bankPayoutProfile.updated_at && (
+                      <div className="sm:col-span-2 text-[11px] text-[#71717A] dark:text-zinc-400 font-mono">
+                        Last updated: {new Date(bankPayoutProfile.updated_at).toLocaleString('en-IN', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-xs text-[#71717A] dark:text-zinc-400 space-y-2">
+                    <p>No bank details configured yet.</p>
+                  </div>
+                )}
+
+                <div className="pt-3 border-t border-[#ECECE6] dark:border-zinc-800 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#71717A] dark:text-zinc-400">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#047857]" />
+                    <span>AES-256-GCM Encrypted Storage</span>
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleOpenUpdateBankModal}
+                    className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+                  >
+                    <Edit2 className="w-3.5 h-3.5 mr-1" />
+                    <span>{bankPayoutProfile ? 'Update Bank Details' : 'Configure Bank Details'}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION B: MANUAL PAYOUT DETAILS (UPI ID) */}
+          {settingsSubTab === 'upi' && (
+            <div className="space-y-4 max-w-md text-xs">
+              <div>
+                <h4 className="font-bold text-sm text-[#121214] dark:text-white">Manual Payouts (UPI ID)</h4>
+                <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 leading-relaxed">
+                  This optional UPI ID is preserved for manual direct payouts. It is private, confidential, and never shown to businesses or on public discovery.
+                </p>
+              </div>
+
+              <div>
+                <label className="block mb-1 font-semibold text-[#121214] dark:text-white">
+                  UPI ID (e.g. name@upi or phone@paytm)
+                </label>
+                <input
+                  type="text"
+                  value={payoutUpiId}
+                  onChange={(e) => {
+                    setPayoutUpiId(e.target.value);
+                    if (upiError) setUpiError(null);
+                    if (upiSuccessMessage) setUpiSuccessMessage(null);
+                  }}
+                  onBlur={() => {
+                    if (payoutUpiId.trim()) {
+                      const res = validateAndNormalizeUpiId(payoutUpiId);
+                      if (!res.isValid) {
+                        setUpiError(res.error || 'Please enter a valid UPI ID (e.g., name@upi)');
+                      } else {
+                        setPayoutUpiId(res.value);
+                        setUpiError(null);
+                      }
                     }
-                  }
+                  }}
+                  placeholder="name@upi"
+                  className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                    upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                  } rounded focus:outline-none focus:border-[#FF5416] font-mono`}
+                />
+              </div>
+
+              {upiError && <p className="text-xs text-red-600">{upiError}</p>}
+              {upiSuccessMessage && <p className="text-xs text-[#047857]">{upiSuccessMessage}</p>}
+
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isSavingUpi}
+                onClick={handleSavePayoutUpi}
+                className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+              >
+                <span>{isSavingUpi ? 'Saving...' : 'Save Payout UPI ID'}</span>
+              </Button>
+            </div>
+          )}
+
+          {/* SECTION C: DANGER ZONE (DELETE ACCOUNT) */}
+          {settingsSubTab === 'danger' && (
+            <div className="space-y-4 max-w-xl text-xs">
+              <div>
+                <span className="editorial-label text-red-600 dark:text-red-400">Danger Zone</span>
+                <h4 className="font-bold text-sm text-red-600 dark:text-red-400 mt-0.5">Delete Creator Account</h4>
+                <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 max-w-xl leading-relaxed">
+                  Permanently deletes your creator profile, public listings, Instagram connection, and account credentials. Historical completed order records and invoices are retained where required by law.
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDeleteConfirmText('');
+                  setDeleteAccountError(null);
+                  setIsDeleteModalOpen(true);
                 }}
-                placeholder="name@upi"
-                className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
-                  upiError ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
-                } rounded focus:outline-none focus:border-[#FF5416]`}
-              />
+                className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40 text-xs font-bold"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                <span>Delete Account</span>
+              </Button>
             </div>
+          )}
 
-            {upiError && <p className="text-xs text-red-600">{upiError}</p>}
-            {upiSuccessMessage && <p className="text-xs text-[#047857]">{upiSuccessMessage}</p>}
+          {/* Update Bank Details Modal */}
+          {isUpdateBankModalOpen && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-[#18181B] border border-[#E5E5DE] dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Landmark className="w-5 h-5 text-[#FF5416]" />
+                    <h3 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                      {bankPayoutProfile ? 'Update Bank Details' : 'Configure Bank Details'}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsUpdateBankModalOpen(false)}
+                    className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
 
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={isSavingUpi}
-              onClick={handleSavePayoutUpi}
-              className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs"
-            >
-              <span>{isSavingUpi ? 'Saving...' : 'Save Payout UPI ID'}</span>
-            </Button>
-          </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Re-verification Requirement</span>
+                  </p>
+                  <p>
+                    When bank details change, any existing verification is invalidated and re-verification is required. You will not retain Verified status until Cashfree confirms the new details.
+                  </p>
+                </div>
 
-          {/* Danger Zone: Delete Account */}
-          <div className="pt-6 border-t border-red-200 dark:border-red-950/60 space-y-3">
-            <div>
-              <span className="editorial-label text-red-600 dark:text-red-400">Danger Zone</span>
-              <h4 className="font-bold text-sm text-red-600 dark:text-red-400 mt-0.5">Delete Creator Account</h4>
-              <p className="text-[11px] text-[#71717A] dark:text-zinc-400 mt-0.5 max-w-xl">
-                Permanently deletes your creator profile, public listings, Instagram connection, and account credentials. Historical completed order records and invoices are retained where required by law.
-              </p>
+                {updateBankErrors.general && (
+                  <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs">
+                    {updateBankErrors.general}
+                  </div>
+                )}
+
+                {bankSaveSuccessMsg && (
+                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-[#047857] dark:text-emerald-400 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{bankSaveSuccessMsg}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveBankDetails} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      Account Holder Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={updateBankHolder}
+                      onChange={(e) => setUpdateBankHolder(e.target.value)}
+                      placeholder="Full name as printed on passbook"
+                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                        updateBankErrors.holder ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                      } rounded text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
+                    />
+                    {updateBankErrors.holder && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.holder}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      Bank Account Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={updateBankAccNum}
+                      onChange={(e) => setUpdateBankAccNum(e.target.value)}
+                      placeholder="9 to 18 digits"
+                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                        updateBankErrors.accNum ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                      } rounded text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
+                    />
+                    {updateBankErrors.accNum && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.accNum}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      Confirm Bank Account Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={updateConfirmBankAccNum}
+                      onChange={(e) => setUpdateConfirmBankAccNum(e.target.value)}
+                      placeholder="Re-enter bank account number"
+                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                        updateBankErrors.confirmAccNum ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                      } rounded text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
+                    />
+                    {updateBankErrors.confirmAccNum && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.confirmAccNum}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      IFSC Code <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={updateBankIfsc}
+                      maxLength={11}
+                      onChange={(e) => setUpdateBankIfsc(e.target.value.toUpperCase())}
+                      placeholder="e.g. HDFC0001234"
+                      className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                        updateBankErrors.ifsc ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                      } rounded text-[#121214] dark:text-white font-mono uppercase focus:outline-none focus:border-[#FF5416]`}
+                    />
+                    {updateBankErrors.ifsc && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.ifsc}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      Account Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUpdateBankType('SAVINGS')}
+                        className={`py-2 px-3 rounded border text-xs font-mono font-medium ${
+                          updateBankType === 'SAVINGS'
+                            ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
+                            : 'border-[#E5E5DE] dark:border-zinc-700 text-[#71717A]'
+                        }`}
+                      >
+                        Savings Account
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUpdateBankType('CURRENT')}
+                        className={`py-2 px-3 rounded border text-xs font-mono font-medium ${
+                          updateBankType === 'CURRENT'
+                            ? 'border-[#FF5416] bg-[#FFF2EC]/60 dark:bg-[#27140B]/60 text-[#FF5416] font-bold'
+                            : 'border-[#E5E5DE] dark:border-zinc-700 text-[#71717A]'
+                        }`}
+                      >
+                        Current Account
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ECECE6] dark:border-zinc-800">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => setIsUpdateBankModalOpen(false)}
+                      disabled={isSavingBankDetails}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      type="submit"
+                      disabled={isSavingBankDetails}
+                      className="bg-[#FF5416] hover:bg-[#E04810] text-white font-bold"
+                    >
+                      {isSavingBankDetails ? 'Saving...' : 'Save Bank Details'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
             </div>
+          )}
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setDeleteConfirmText('');
-                setDeleteAccountError(null);
-                setIsDeleteModalOpen(true);
-              }}
-              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40 text-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
-              <span>Delete Account</span>
-            </Button>
-          </div>
+          {/* Campaign Restriction Alert Modal */}
+          {payoutAlertModalMessage && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-[#18181B] border border-amber-200 dark:border-amber-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-5 h-5" />
+                    <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
+                  </div>
+                  <button
+                    onClick={() => setPayoutAlertModalMessage(null)}
+                    className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
+                  <p>{payoutAlertModalMessage}</p>
+                  <p className="text-[11px] text-[#71717A]">
+                    To receive campaign disbursements through Cashfree Easy Split, please set up and verify your bank account details.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPayoutAlertModalMessage(null)}
+                    className="text-xs"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setPayoutAlertModalMessage(null);
+                      setActiveTab('settings');
+                      setSettingsSubTab('payouts');
+                    }}
+                    className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+                  >
+                    <span>Go to Settings → Payouts</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Account Deletion Confirmation Modal */}
           {isDeleteModalOpen && (

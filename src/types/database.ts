@@ -1310,6 +1310,75 @@ export interface Database {
         };
         Relationships: [];
       };
+      creator_payout_profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_holder_name: string;
+          bank_account_last4: string;
+          ifsc_code: string;
+          account_type: string;
+          cashfree_vendor_id: string | null;
+          verification_status: string;
+          verification_details: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_holder_name: string;
+          bank_account_last4: string;
+          ifsc_code: string;
+          account_type?: string;
+          cashfree_vendor_id?: string | null;
+          verification_status?: string;
+          verification_details?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          account_holder_name?: string;
+          bank_account_last4?: string;
+          ifsc_code?: string;
+          account_type?: string;
+          cashfree_vendor_id?: string | null;
+          verification_status?: string;
+          verification_details?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      creator_payout_secrets: {
+        Row: {
+          id: string;
+          user_id: string;
+          encrypted_payload: string;
+          key_version: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          encrypted_payload: string;
+          key_version?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          encrypted_payload?: string;
+          key_version?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
