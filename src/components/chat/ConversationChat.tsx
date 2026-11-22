@@ -77,6 +77,18 @@ export function ConversationChat({
   const [selectedConvId, setSelectedConvId] = useState<string | null>(
     initialConversationId || activeConversationId || null
   );
+
+  useEffect(() => {
+    if (activeConversationId) {
+      setSelectedConvId(activeConversationId);
+    }
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    if (initialConversationId) {
+      setSelectedConvId(initialConversationId);
+    }
+  }, [initialConversationId]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
@@ -633,7 +645,10 @@ export function ConversationChat({
               {/* Mobile Back Button */}
               <button
                 type="button"
-                onClick={() => setSelectedConvId(null)}
+                onClick={() => {
+                  setSelectedConvId(null);
+                  setActiveConversationId(null);
+                }}
                 className="md:hidden p-1.5 -ml-1 text-[#71717A] hover:text-[#121214] dark:hover:text-white rounded-lg hover:bg-[#ECECE6] dark:hover:bg-zinc-800 shrink-0"
                 aria-label="Back to conversations"
               >

@@ -135,6 +135,8 @@ function CreatorDashboardContent() {
     campaigns = [],
     refreshData,
     submitCreatorManualVerification,
+    activeConversationId,
+    setActiveConversationId,
   } = useMarketplace();
 
   const [activeTab, setActiveTab] = useState<TabKey>('home');
@@ -598,18 +600,14 @@ function CreatorDashboardContent() {
   const creatorId = dbCreator?.user_id || currentUser?.id || '';
 
   const handleAcceptCollabRequest = async (requestId: string) => {
-    // Campaign restriction: Verify creator bank payouts before accepting
-    if (bankPayoutProfile?.verification_status !== 'VERIFIED') {
-      setPayoutAlertModalMessage(
-        'Creator bank payout setup is required before accepting a campaign request. Please complete bank verification in Settings → Payouts.'
-      );
-      return;
-    }
-
     setProcessingRequestId(requestId);
     try {
-      await acceptCollaborationRequest(requestId);
+      const conv = await acceptCollaborationRequest(requestId);
+      if (conv?.id) {
+        setActiveConversationId(conv.id);
+      }
       setActiveTab('messages');
+      router.push('/dashboard/creator?tab=messages');
     } catch (err: any) {
       console.error('Failed to accept collaboration request:', err);
       const msg = err?.message || 'Failed to accept collaboration request';
@@ -1435,7 +1433,10 @@ function CreatorDashboardContent() {
               Collaboration Messages & Negotiations
             </h3>
           </div>
-          <ConversationChat role="creator" />
+          <ConversationChat
+            role="creator"
+            initialConversationId={activeConversationId || undefined}
+          />
         </div>
       )}
 
@@ -2532,57 +2533,6 @@ function CreatorDashboardContent() {
             </div>
           )}
 
-          {/* Campaign Restriction Alert Modal */}
-          {payoutAlertModalMessage && (
-            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-[#18181B] border border-amber-200 dark:border-amber-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="w-5 h-5" />
-                    <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
-                  </div>
-                  <button
-                    onClick={() => setPayoutAlertModalMessage(null)}
-                    className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
-                  <p>{payoutAlertModalMessage}</p>
-                  <p className="text-[11px] text-[#71717A]">
-                    To receive campaign disbursements through Cashfree Easy Split, please set up and verify your bank account details.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPayoutAlertModalMessage(null)}
-                    className="text-xs"
-                  >
-                    Close
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      setPayoutAlertModalMessage(null);
-                      setActiveTab('settings');
-                      setSettingsSubTab('payouts');
-                    }}
-                    className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
-                  >
-                    <span>Go to Settings → Payouts</span>
-                    <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Account Deletion Confirmation Modal */}
           {isDeleteModalOpen && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2653,6 +2603,57 @@ function CreatorDashboardContent() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Campaign Restriction Alert Modal (Always available across all tabs) */}
+      {payoutAlertModalMessage && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#18181B] border border-amber-200 dark:border-amber-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-5 h-5" />
+                <h3 className="font-mono text-base font-bold">Bank Verification Required</h3>
+              </div>
+              <button
+                onClick={() => setPayoutAlertModalMessage(null)}
+                className="text-[#71717A] hover:text-[#121214] dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-[#52525B] dark:text-zinc-300 font-mono leading-relaxed">
+              <p>{payoutAlertModalMessage}</p>
+              <p className="text-[11px] text-[#71717A]">
+                To receive campaign disbursements through Cashfree Easy Split, please set up and verify your bank account details.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECECE6] dark:border-zinc-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPayoutAlertModalMessage(null)}
+                className="text-xs"
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setPayoutAlertModalMessage(null);
+                  setActiveTab('settings');
+                  setSettingsSubTab('payouts');
+                }}
+                className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+              >
+                <span>Go to Settings → Payouts</span>
+                <ArrowRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

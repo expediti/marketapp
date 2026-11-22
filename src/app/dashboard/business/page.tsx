@@ -75,6 +75,8 @@ function BusinessDashboardContent() {
     collaborationRequests,
     cancelCollaborationRequest,
     conversations,
+    activeConversationId,
+    setActiveConversationId,
   } = useMarketplace();
 
   const tabParam = searchParams.get('tab');
@@ -84,7 +86,40 @@ function BusinessDashboardContent() {
   const [pageError, setPageError] = useState<string | null>(null);
 
   // Filter for orders tab
-  const [orderFilter, setOrderFilter] = useState<'ALL' | 'ONGOING' | 'COMPLETED'>('ALL');
+  const [orderFilter, setOrderFilter] = useState<'ALL' | 'ONGOING' | 'COMPLETED' | 'REQUESTS'>('ALL');
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+
+  const sentRequests = React.useMemo(() => {
+    return (collaborationRequests || []).filter(
+      (r) => r.business_user_id === currentUser?.id
+    );
+  }, [collaborationRequests, currentUser?.id]);
+
+  const pendingSentRequests = React.useMemo(() => {
+    return sentRequests.filter((r) => r.status === 'PENDING' || r.status === 'REQUESTED');
+  }, [sentRequests]);
+
+  const handleCancelRequest = async (requestId: string) => {
+    if (!confirm('Are you sure you want to cancel this collaboration request?')) return;
+    setCancellingRequestId(requestId);
+    try {
+      await cancelCollaborationRequest(requestId);
+    } catch (err: any) {
+      console.error('Error cancelling collaboration request:', err);
+      alert(err.message || 'Failed to cancel request');
+    } finally {
+      setCancellingRequestId(null);
+    }
+  };
+
+  const handleOpenConversationForRequest = (requestId: string) => {
+    const conv = conversations.find((c) => c.request_id === requestId);
+    if (conv?.id) {
+      setActiveConversationId(conv.id);
+    }
+    setActiveTab('messages');
+    router.push('/dashboard/business?tab=messages');
+  };
 
   // Discover filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -599,6 +634,137 @@ function BusinessDashboardContent() {
             </div>
           </div>
 
+          {/* Sent Collaboration Requests / Outreach Hub */}
+          <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
+              <div className="flex items-center gap-2">
+                <Send className="w-4 h-4 text-[#FF5416]" />
+                <h2 className="font-mono text-base font-bold text-[#121214] dark:text-white">
+                  Sent Collaboration Requests
+                </h2>
+                {pendingSentRequests.length > 0 && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 font-bold">
+                    {pendingSentRequests.length} Awaiting Response
+                  </span>
+                )}
+              </div>
+              <span className="text-xs font-mono text-[#71717A] dark:text-[#A1A1AA]">
+                Total Outreach: {sentRequests.length}
+              </span>
+            </div>
+
+            {sentRequests.length === 0 ? (
+              <div className="py-8 text-center border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-xl space-y-2">
+                <p className="font-mono text-xs text-[#71717A] dark:text-[#A1A1AA]">
+                  You haven&apos;t sent any collaboration requests yet. Pitch creators that reach your target audience.
+                </p>
+                <Link href="/discover">
+                  <Button variant="primary" size="sm">
+                    <Search className="w-3.5 h-3.5 mr-1" />
+                    <span>Find Influencers</span>
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#ECECE6] dark:divide-[#27272A]">
+                {sentRequests.map((req) => {
+                  const creatorName =
+                    req.creator?.display_name ||
+                    req.creator?.profile?.display_name ||
+                    'Influencer';
+                  const creatorNiche = req.creator?.niche || 'Creator';
+                  const creatorCity = req.creator?.city || req.creator?.profile?.city || '';
+                  const pkgName = req.package?.name || req.campaign?.campaign_name || 'Collaboration Proposal';
+                  const budget = Number(req.package?.price || req.proposed_budget || 0);
+                  const isPending = req.status === 'PENDING' || req.status === 'REQUESTED';
+                  const isAccepted = req.status === 'ACCEPTED';
+                  const isDeclined = req.status === 'DECLINED';
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="py-3.5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                            {creatorName}
+                          </strong>
+                          {creatorNiche && (
+                            <span className="text-[11px] text-[#71717A] dark:text-[#A1A1AA]">
+                              • {creatorNiche} {creatorCity ? `• ${creatorCity}` : ''}
+                            </span>
+                          )}
+                          <span
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                              isPending
+                                ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                : isAccepted
+                                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : isDeclined
+                                ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700'
+                            }`}
+                          >
+                            {isPending
+                              ? '⏳ Awaiting Influencer Response'
+                              : isAccepted
+                              ? '✓ Accepted • Ready to Chat'
+                              : isDeclined
+                              ? '✕ Declined'
+                              : 'Cancelled'}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] font-mono">
+                          Package: <strong>{pkgName}</strong>
+                          {budget > 0 && ` • ₹${budget.toLocaleString('en-IN')}`}
+                          {req.created_at && (
+                            <span className="text-[#71717A] text-[11px] ml-2">
+                              • Sent on {new Date(req.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </p>
+
+                        {req.message && (
+                          <p className="text-xs text-[#52525B] dark:text-zinc-300 bg-[#FBFBFA] dark:bg-[#18181B] p-2.5 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 italic">
+                            &quot;{req.message}&quot;
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {isAccepted && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleOpenConversationForRequest(req.id)}
+                            className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                            <span>Open Chat & Negotiate →</span>
+                          </Button>
+                        )}
+
+                        {isPending && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cancellingRequestId === req.id}
+                            onClick={() => handleCancelRequest(req.id)}
+                            className="text-[#71717A] hover:text-red-600 text-xs"
+                          >
+                            {cancellingRequestId === req.id ? 'Cancelling...' : 'Cancel Request'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Active Promotions Summary */}
           <div className="bg-white dark:bg-[#121214] border border-[#E5E5DE] dark:border-[#27272A] rounded-2xl p-6 space-y-4 shadow-xs">
             <div className="flex items-center justify-between border-b border-[#ECECE6] dark:border-[#27272A] pb-3">
@@ -765,24 +931,144 @@ function BusinessDashboardContent() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex items-center gap-1 bg-[#F4F4F0] dark:bg-[#18181B] p-1 rounded-lg font-mono text-xs">
-              {(['ALL', 'ONGOING', 'COMPLETED'] as const).map((filter) => (
+            <div className="flex items-center gap-1 bg-[#F4F4F0] dark:bg-[#18181B] p-1 rounded-lg font-mono text-xs overflow-x-auto">
+              {(['ALL', 'ONGOING', 'COMPLETED', 'REQUESTS'] as const).map((filter) => (
                 <button
                   key={filter}
                   onClick={() => setOrderFilter(filter)}
-                  className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     orderFilter === filter
                       ? 'bg-white dark:bg-[#27272A] text-[#121214] dark:text-white font-bold shadow-xs'
                       : 'text-[#71717A] dark:text-[#A1A1AA] hover:text-[#121214] dark:hover:text-white'
                   }`}
                 >
-                  {filter === 'ALL' ? 'All' : filter === 'ONGOING' ? 'Ongoing' : 'Completed'}
+                  {filter === 'ALL'
+                    ? 'All Orders'
+                    : filter === 'ONGOING'
+                    ? 'Ongoing'
+                    : filter === 'COMPLETED'
+                    ? 'Completed'
+                    : `Sent Requests (${sentRequests.length})`}
                 </button>
               ))}
             </div>
           </div>
 
-          {filteredOrders.length === 0 ? (
+          {orderFilter === 'REQUESTS' ? (
+            sentRequests.length === 0 ? (
+              <div className="py-16 text-center border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-xl space-y-3">
+                <Send className="w-8 h-8 text-[#A1A1AA] mx-auto" />
+                <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                  No outreach requests sent yet
+                </h3>
+                <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] max-w-sm mx-auto">
+                  Browse the creator directory and pitch influencers directly to start campaigns.
+                </p>
+                <Link href="/discover">
+                  <Button variant="primary" size="sm">
+                    Find Influencers
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#ECECE6] dark:divide-[#27272A]">
+                {sentRequests.map((req) => {
+                  const creatorName =
+                    req.creator?.display_name ||
+                    req.creator?.profile?.display_name ||
+                    'Influencer';
+                  const creatorNiche = req.creator?.niche || 'Creator';
+                  const creatorCity = req.creator?.city || req.creator?.profile?.city || '';
+                  const pkgName = req.package?.name || req.campaign?.campaign_name || 'Collaboration Proposal';
+                  const budget = Number(req.package?.price || req.proposed_budget || 0);
+                  const isPending = req.status === 'PENDING' || req.status === 'REQUESTED';
+                  const isAccepted = req.status === 'ACCEPTED';
+                  const isDeclined = req.status === 'DECLINED';
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="py-4 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="font-mono text-sm font-bold text-[#121214] dark:text-white">
+                            {creatorName}
+                          </strong>
+                          {creatorNiche && (
+                            <span className="text-[11px] text-[#71717A] dark:text-[#A1A1AA]">
+                              • {creatorNiche} {creatorCity ? `• ${creatorCity}` : ''}
+                            </span>
+                          )}
+                          <span
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                              isPending
+                                ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                : isAccepted
+                                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : isDeclined
+                                ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700'
+                            }`}
+                          >
+                            {isPending
+                              ? '⏳ Awaiting Influencer Response'
+                              : isAccepted
+                              ? '✓ Accepted • Ready to Chat'
+                              : isDeclined
+                              ? '✕ Declined'
+                              : 'Cancelled'}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-[#52525B] dark:text-[#A1A1AA] font-mono">
+                          Package: <strong>{pkgName}</strong>
+                          {budget > 0 && ` • ₹${budget.toLocaleString('en-IN')}`}
+                          {req.created_at && (
+                            <span className="text-[#71717A] text-[11px] ml-2">
+                              • Sent on {new Date(req.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </p>
+
+                        {req.message && (
+                          <p className="text-xs text-[#52525B] dark:text-zinc-300 bg-[#FBFBFA] dark:bg-[#18181B] p-2.5 rounded-lg border border-[#E5E5DE] dark:border-zinc-800 italic">
+                            &quot;{req.message}&quot;
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {isAccepted && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleOpenConversationForRequest(req.id)}
+                            className="bg-[#FF5416] hover:bg-[#E04810] text-white text-xs font-bold"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                            <span>Open Chat & Negotiate →</span>
+                          </Button>
+                        )}
+
+                        {isPending && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cancellingRequestId === req.id}
+                            onClick={() => handleCancelRequest(req.id)}
+                            className="text-[#71717A] hover:text-red-600 text-xs"
+                          >
+                            {cancellingRequestId === req.id ? 'Cancelling...' : 'Cancel Request'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : filteredOrders.length === 0 ? (
             <div className="py-16 text-center border border-dashed border-[#E5E5DE] dark:border-[#27272A] rounded-xl space-y-3">
               <ShoppingBag className="w-8 h-8 text-[#A1A1AA] mx-auto" />
               <h3 className="font-mono text-sm font-bold text-[#121214] dark:text-white">
@@ -839,7 +1125,7 @@ function BusinessDashboardContent() {
               Chat directly with distribution partners once a collaboration request is accepted.
             </p>
           </div>
-          <ConversationChat role="business" />
+          <ConversationChat role="business" initialConversationId={activeConversationId || undefined} />
         </div>
       )}
 

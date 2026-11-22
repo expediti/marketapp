@@ -650,7 +650,3 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
     </div>
   );
 }
-  );
-}
-  );
-}

@@ -474,16 +474,19 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       const userIdsList = Array.from(userIdsToFetch);
       let relatedProfiles: any[] = [];
       let relatedBizProfiles: any[] = [];
+      let relatedCreatorProfiles: any[] = [];
       let relatedPackages: any[] = [];
 
       if (userIdsList.length > 0) {
-        const [profRes, bprofRes, pkgRes] = await Promise.all([
+        const [profRes, bprofRes, cprofRes, pkgRes] = await Promise.all([
           supabase.from('profiles').select('*').in('id', userIdsList),
           supabase.from('business_profiles').select('*').in('user_id', userIdsList),
+          supabase.from('creator_profiles').select('*').in('user_id', userIdsList),
           supabase.from('creator_packages').select('*').in('creator_id', userIdsList),
         ]);
         relatedProfiles = profRes.data || [];
         relatedBizProfiles = bprofRes.data || [];
+        relatedCreatorProfiles = cprofRes.data || [];
         relatedPackages = pkgRes.data || [];
       }
 
@@ -510,6 +513,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       // Helper to build CreatorProfile
       const resolveCreator = (cId: string): CreatorProfile => {
         const p = relatedProfiles.find((pr) => pr.id === cId);
+        const cp = relatedCreatorProfiles.find((c) => c.user_id === cId);
         const pkgs = relatedPackages.filter((pkg) => pkg.creator_id === cId);
         return {
           user_id: cId,
@@ -518,28 +522,28 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
             ? {
                 id: p.id,
                 role: (p.role as any) || 'creator',
-                display_name: p.display_name || 'Creator',
+                display_name: cp?.display_name || p.display_name || 'Creator',
                 email: p.email || '',
                 avatar_url: p.avatar_url,
-                city: p.city || 'India',
+                city: cp?.city || p.city || 'India',
                 created_at: p.created_at,
               }
             : undefined,
-          display_name: p?.display_name || 'Creator',
-          bio: '',
+          display_name: cp?.display_name || p?.display_name || 'Creator',
+          bio: cp?.bio || '',
           profile_image_path: p?.avatar_url || undefined,
           country: 'India',
-          city: p?.city || 'India',
-          niche: 'Technology',
-          follower_count: 0,
-          average_reach: 0,
-          engagement_rate: 0,
-          instagram_connected: false,
-          instagram_verified: false,
-          verification_status: 'unverified',
-          audience_age: { '18-24': 50, '25-34': 35, '35+': 15 },
-          audience_gender: { female: 50, male: 50 },
-          audience_locations: [],
+          city: cp?.city || p?.city || 'India',
+          niche: cp?.niche || 'Technology',
+          follower_count: Number(cp?.follower_count) || 0,
+          average_reach: Number(cp?.average_reach) || 0,
+          engagement_rate: Number(cp?.engagement_rate) || 0,
+          instagram_connected: Boolean(cp?.instagram_connected),
+          instagram_verified: Boolean(cp?.instagram_verified),
+          verification_status: (cp?.verification_status as any) || 'unverified',
+          audience_age: cp?.audience_age || { '18-24': 50, '25-34': 35, '35+': 15 },
+          audience_gender: cp?.audience_gender || { female: 50, male: 50 },
+          audience_locations: cp?.audience_locations || [],
           packages: pkgs.map((pkg) => ({
             id: pkg.id,
             creator_id: pkg.creator_id,
@@ -1584,27 +1588,6 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     const req = collaborationRequests.find((r) => r.id === requestId);
     if (!req) throw new Error('Request not found');
 
-    // Campaign restriction: Creator must have verified bank payouts before accepting a request
-    if (activeRole === 'creator' || currentUser.id === req.creator_user_id) {
-      if (isSupabaseConfigured) {
-        const { data: payoutProf } = await (supabase as any)
-          .from('creator_payout_profiles')
-          .select('verification_status, cashfree_vendor_id')
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
-
-        const isVerified =
-          payoutProf?.verification_status === 'VERIFIED' &&
-          Boolean(payoutProf?.cashfree_vendor_id && payoutProf.cashfree_vendor_id.trim());
-
-        if (!isVerified) {
-          throw new Error(
-            'Creator bank payout setup is required before accepting a campaign request. Please complete bank verification in Settings → Payouts.'
-          );
-        }
-      }
-    }
-
     const now = new Date().toISOString();
 
     let convId = `conv_${Date.now()}`;
@@ -1685,9 +1668,8 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     };
 
     setConversations((prev) => {
-      const exists = prev.some((c) => c.id === convId || c.request_id === requestId);
-      if (exists) return prev;
-      return [newConvObj, ...prev];
+      const filtered = prev.filter((c) => c.id !== convId && c.request_id !== requestId);
+      return [newConvObj, ...filtered];
     });
 
     setActiveConversationId(convId);
