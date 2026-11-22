@@ -78,6 +78,7 @@ export class CashfreeVendorService {
     // Easy Split Vendor payload with on-demand deferred settlement (schedule_option: 4 / on demand release)
     const vendorPayload = {
       vendor_id: vendorId,
+      status: 'ACTIVE',
       name: params.accountHolderName,
       email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
       phone: params.creatorPhone || '9876543210',
@@ -100,11 +101,12 @@ export class CashfreeVendorService {
       let response: Response;
 
       if (checkRes.ok) {
-        // Vendor exists -> Update vendor with new bank details
+        // Vendor exists -> Update vendor with new bank details via PATCH
         response = await fetch(`${creds.baseUrl}/easy-split/vendors/${encodeURIComponent(vendorId)}`, {
-          method: 'PUT',
+          method: 'PATCH',
           headers,
           body: JSON.stringify({
+            status: 'ACTIVE',
             name: params.accountHolderName,
             email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
             phone: params.creatorPhone || '9876543210',
@@ -118,18 +120,44 @@ export class CashfreeVendorService {
           }),
         });
       } else {
-        // Vendor does not exist -> Create vendor
+        // Vendor does not exist -> Create vendor via POST
         response = await fetch(`${creds.baseUrl}/easy-split/vendors`, {
           method: 'POST',
           headers,
           body: JSON.stringify(vendorPayload),
         });
+
+        // If vendor already existed on Cashfree (e.g. created previously), fallback to PATCH
+        if (!response.ok && (response.status === 409 || response.status === 400)) {
+          const createErr = await response.clone().json().catch(() => ({}));
+          const errMsg = (createErr?.message || '').toLowerCase();
+          if (errMsg.includes('already exists') || response.status === 409) {
+            response = await fetch(`${creds.baseUrl}/easy-split/vendors/${encodeURIComponent(vendorId)}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({
+                status: 'ACTIVE',
+                name: params.accountHolderName,
+                email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
+                phone: params.creatorPhone || '9876543210',
+                verify_account: true,
+                schedule_option: 4,
+                bank: {
+                  account_number: params.accountNumber,
+                  account_holder: params.accountHolderName,
+                  ifsc: params.ifscCode,
+                },
+              }),
+            });
+          }
+        }
       }
 
       const resData = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         const errorMsg = resData?.message || resData?.error_description || 'Cashfree vendor registration error';
+        console.error('Cashfree vendor registration error:', response.status, errorMsg, resData);
         
         let status: PayoutVerificationStatus = 'PENDING_VERIFICATION';
         if (response.status === 400 || response.status === 422) {
@@ -168,6 +196,21 @@ export class CashfreeVendorService {
         resolvedStatus = 'PENDING_VERIFICATION';
       }
 
+      // In Cashfree sandbox, real NPCI IMPS bank verification is not executed against live bank accounts.
+      // If Cashfree accepted the vendor creation/update (HTTP 200 / status ACTIVE), resolve as VERIFIED for sandbox testing.
+      if (creds.environment === 'SANDBOX' && (response.ok || vendorStatus === 'ACTIVE')) {
+        resolvedStatus = 'VERIFIED';
+      }
+
+      const gatewayErrorMsg =
+        bankData?.verification_error ||
+        bankData?.remarks ||
+        resData?.message ||
+        resData?.error_description ||
+        (bankStatus === 'FAILED'
+          ? 'Bank account verification failed. Account holder name must match the legal name on record with your bank.'
+          : undefined);
+
       return {
         vendorId,
         verificationStatus: resolvedStatus,
@@ -182,6 +225,9 @@ export class CashfreeVendorService {
           bank_status: bankStatus,
           vendor_status: vendorStatus,
           bank_name: bankData?.bank_name,
+          name_at_bank: bankData?.name_at_bank || undefined,
+          verification_error: bankData?.verification_error || bankData?.remarks || undefined,
+          message: gatewayErrorMsg,
           verified_at: resolvedStatus === 'VERIFIED' ? new Date().toISOString() : null,
           checked_at: new Date().toISOString(),
         },

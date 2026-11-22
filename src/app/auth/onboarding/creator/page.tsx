@@ -1673,9 +1673,6 @@ export default function CreatorOnboardingPage() {
               variant="primary"
               size="lg"
               onClick={() => {
-                if (!bankAccountHolderName && displayName) {
-                  setBankAccountHolderName(displayName);
-                }
                 setStep(7);
               }}
               disabled={isSaving}
@@ -1733,11 +1730,14 @@ export default function CreatorOnboardingPage() {
                     setBankFormErrors((prev) => ({ ...prev, accountHolderName: undefined }));
                   }
                 }}
-                placeholder="Full name as printed on bank passbook"
+                placeholder="Full legal name as printed on bank passbook"
                 className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
                   bankFormErrors.accountHolderName ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                 } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
               />
+              <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                Must match the legal name on your bank account / passbook (do not enter channel/brand names).
+              </p>
               {bankFormErrors.accountHolderName && (
                 <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.accountHolderName}</p>
               )}

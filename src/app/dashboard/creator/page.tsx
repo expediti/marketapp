@@ -682,7 +682,19 @@ function CreatorDashboardContent() {
       }
 
       await fetchPayoutProfile();
-      setBankSaveSuccessMsg('Bank details saved. Verification in progress.');
+      if (data.verificationStatus === 'VERIFIED') {
+        setBankSaveSuccessMsg('✓ Bank details verified successfully!');
+      } else if (data.verificationStatus === 'REJECTED') {
+        setUpdateBankErrors({
+          general:
+            data.message ||
+            'Bank verification was rejected by Cashfree. Please ensure your legal name, account number, and IFSC match your bank passbook.',
+        });
+        setIsSavingBankDetails(false);
+        return;
+      } else {
+        setBankSaveSuccessMsg('Bank details saved. Verification in progress.');
+      }
       setTimeout(() => {
         setIsUpdateBankModalOpen(false);
         setBankSaveSuccessMsg(null);
@@ -2201,9 +2213,31 @@ function CreatorDashboardContent() {
                     </p>
                   )}
                   {bankPayoutProfile?.verification_status === 'REJECTED' && (
-                    <p className="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-900">
-                      ✕ Bank verification was rejected. Please review your account holder name, account number, and IFSC code, then click Update Bank Details.
-                    </p>
+                    <div className="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3.5 rounded-lg border border-red-200 dark:border-red-900 space-y-2 text-xs">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>Bank verification was rejected by Cashfree.</span>
+                      </div>
+                      {Boolean(
+                        bankPayoutProfile?.verification_details?.message ||
+                        bankPayoutProfile?.verification_details?.verification_error ||
+                        bankPayoutProfile?.verification_details?.error
+                      ) && (
+                        <p className="bg-red-100/70 dark:bg-red-900/40 p-2 rounded text-[11px] font-mono">
+                          Gateway reason: {String(
+                            bankPayoutProfile?.verification_details?.message ||
+                            bankPayoutProfile?.verification_details?.verification_error ||
+                            bankPayoutProfile?.verification_details?.error
+                          )}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-red-600/90 dark:text-red-300">
+                        <strong>Most common cause:</strong> You entered your brand name <strong>&quot;{bankPayoutProfile?.account_holder_name}&quot;</strong> as the Account Holder Name. Indian banks verify against the legal personal name on your bank passbook/PAN (e.g., your real name, not &quot;The Expedition&quot;).
+                      </p>
+                      <p className="text-[11px] text-red-600/90 dark:text-red-300">
+                        Click <strong>Update Bank Details</strong> below and enter your exact legal name as printed on your bank passbook.
+                      </p>
+                    </div>
                   )}
                   {bankPayoutProfile?.verification_status === 'ACTION_REQUIRED' && (
                     <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
@@ -2411,11 +2445,14 @@ function CreatorDashboardContent() {
                       type="text"
                       value={updateBankHolder}
                       onChange={(e) => setUpdateBankHolder(e.target.value)}
-                      placeholder="Full name as printed on passbook"
+                      placeholder="Legal name as printed on bank passbook"
                       className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
                         updateBankErrors.holder ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                       } rounded text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
                     />
+                    <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                      Must match the legal name on your bank account / passbook (do not use channel/brand names for personal savings accounts).
+                    </p>
                     {updateBankErrors.holder && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.holder}</p>
                     )}
