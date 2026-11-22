@@ -309,14 +309,19 @@ export function ConversationChat({
     setAcceptingProposalId(proposalId);
     setPayoutAlertError(null);
     try {
-      await acceptDealProposal(proposalId);
+      const order = await acceptDealProposal(proposalId);
+      // If business owner accepted the deal, immediately open Cashfree checkout for the 50% upfront payment!
+      if (isMeBusiness && order?.id) {
+        await handleConfirmPayment(order.id);
+      }
     } catch (err: any) {
       console.error('Failed to accept terms:', err);
       const msg = err.message || 'Failed to accept deal terms';
       if (
-        msg.toLowerCase().includes('payout') ||
-        msg.toLowerCase().includes('bank') ||
-        msg.toLowerCase().includes('settings → payouts')
+        isMeCreator &&
+        (msg.toLowerCase().includes('payout') ||
+          msg.toLowerCase().includes('bank') ||
+          msg.toLowerCase().includes('settings → payouts'))
       ) {
         setPayoutAlertError(msg);
       } else {
@@ -428,12 +433,13 @@ export function ConversationChat({
   };
 
   // Confirm platform payment via Cashfree Checkout (Stage 1: 50% upfront)
-  const handleConfirmPayment = async () => {
-    if (!activeOrder) return;
+  const handleConfirmPayment = async (overrideOrderId?: string) => {
+    const targetOrderId = overrideOrderId || activeOrder?.id;
+    if (!targetOrderId) return;
     setIsPaying(true);
     try {
       const res = await payOrderWithCashfree(
-        activeOrder.id,
+        targetOrderId,
         'INITIAL',
         currentUser?.display_name,
         currentUser?.email
@@ -763,7 +769,7 @@ export function ConversationChat({
                   variant="primary"
                   size="sm"
                   disabled={isPaying}
-                  onClick={handleConfirmPayment}
+                  onClick={() => handleConfirmPayment()}
                   className="text-xs h-7 px-2.5 bg-[#047857] hover:bg-[#065F46] text-white font-bold"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
@@ -953,7 +959,7 @@ export function ConversationChat({
                       variant="primary"
                       size="sm"
                       disabled={isPaying}
-                      onClick={handleConfirmPayment}
+                      onClick={() => handleConfirmPayment()}
                       className="bg-[#047857] hover:bg-[#065F46] text-white text-xs font-bold shrink-0 self-end sm:self-auto"
                     >
                       <CreditCard className="w-3.5 h-3.5 mr-1" />

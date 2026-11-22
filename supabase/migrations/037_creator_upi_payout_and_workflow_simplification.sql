@@ -8,8 +8,7 @@ ALTER TABLE public.creator_payout_profiles
     ADD COLUMN IF NOT EXISTS payout_upi_id TEXT;
 
 -- 2. Drop the restrictive trigger on collaboration_requests
--- Chat & collaboration requests should never be blocked by payout setup;
--- Payout setup is only checked when confirming commercial deal proposals.
+-- Chat & collaboration requests should never be blocked by payout setup.
 DROP TRIGGER IF EXISTS trg_check_creator_payout_collaboration_requests ON public.collaboration_requests;
 
 -- 3. Sync existing UPI IDs and update status to VERIFIED
@@ -31,7 +30,11 @@ SET
     updated_at = NOW()
 WHERE (cashfree_vendor_id IS NOT NULL OR payout_upi_id IS NOT NULL);
 
--- 4. Update public.accept_deal_proposal with UPI-friendly verification check
+-- 4. Clean up all previous overloaded signatures of accept_deal_proposal to prevent ambiguity
+DROP FUNCTION IF EXISTS public.accept_deal_proposal(UUID);
+DROP FUNCTION IF EXISTS public.accept_deal_proposal(UUID, NUMERIC);
+
+-- 5. Create canonical public.accept_deal_proposal
 CREATE OR REPLACE FUNCTION public.accept_deal_proposal(
     p_proposal_id UUID,
     p_commission_percentage NUMERIC DEFAULT 10.00
@@ -55,9 +58,6 @@ DECLARE
     v_second_instalment NUMERIC(10,2);
     v_first_paise BIGINT;
     v_second_paise BIGINT;
-    v_payout_status TEXT;
-    v_payout_vendor_id TEXT;
-    v_payout_upi TEXT;
     v_now TIMESTAMPTZ := NOW();
 BEGIN
     v_caller_id := auth.uid();
@@ -94,23 +94,6 @@ BEGIN
 
     IF v_caller_id != v_conv.business_user_id AND v_caller_id != v_conv.creator_user_id THEN
         RAISE EXCEPTION 'You are not a participant in this conversation';
-    END IF;
-
-    -- Server-Side Campaign Deal Restriction:
-    -- Verify Creator UPI Payout Profile exists, verification_status is VERIFIED or payout_upi_id is present
-    SELECT verification_status, cashfree_vendor_id, payout_upi_id
-    INTO v_payout_status, v_payout_vendor_id, v_payout_upi
-    FROM public.creator_payout_profiles
-    WHERE user_id = v_conv.creator_user_id;
-
-    IF v_payout_upi IS NULL OR TRIM(v_payout_upi) = '' THEN
-        SELECT payout_upi_id INTO v_payout_upi
-        FROM public.creator_profiles
-        WHERE id = v_conv.creator_user_id;
-    END IF;
-
-    IF (v_payout_status IS DISTINCT FROM 'VERIFIED' AND (v_payout_upi IS NULL OR TRIM(v_payout_upi) = '')) THEN
-        RAISE EXCEPTION 'Creator UPI payout setup is required before confirming a campaign deal. Please set up your UPI ID in Settings → Payouts.';
     END IF;
 
     -- Mark proposal accepted
@@ -265,4 +248,3 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.accept_deal_proposal(UUID, NUMERIC) TO authenticated;
-

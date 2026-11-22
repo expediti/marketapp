@@ -2125,55 +2125,10 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const acceptDealProposal = async (proposalId: string): Promise<Order> => {
     if (!currentUser) throw new Error('Must be logged in to accept deal proposal');
 
-    // Campaign restriction: Creator must have UPI payout setup before confirming a campaign deal
-    if (isSupabaseConfigured) {
-      let creatorIdToCheck = activeRole === 'creator' ? currentUser.id : null;
-      if (!creatorIdToCheck) {
-        for (const [cId, plist] of Object.entries(dealProposals)) {
-          if (plist.some((p) => p.id === proposalId)) {
-            const conv = conversations.find((c) => c.id === cId);
-            creatorIdToCheck = conv?.creator_user_id || null;
-            break;
-          }
-        }
-      }
-
-      if (creatorIdToCheck) {
-        const { data: payoutProf } = await (supabase as any)
-          .from('creator_payout_profiles')
-          .select('verification_status, cashfree_vendor_id, payout_upi_id')
-          .eq('user_id', creatorIdToCheck)
-          .maybeSingle();
-
-        const { data: creatorProf } = await (supabase as any)
-          .from('creator_profiles')
-          .select('payout_upi_id')
-          .eq('id', creatorIdToCheck)
-          .maybeSingle();
-
-        const hasUpi = Boolean(
-          payoutProf?.payout_upi_id?.trim() ||
-          creatorProf?.payout_upi_id?.trim() ||
-          (payoutProf?.verification_status === 'VERIFIED' && payoutProf?.cashfree_vendor_id?.trim())
-        );
-
-        if (!hasUpi) {
-          if (activeRole === 'creator') {
-            throw new Error(
-              'Creator UPI payout setup is required before confirming a campaign deal. Please set up your UPI ID in Settings → Payouts.'
-            );
-          } else {
-            throw new Error(
-              'Creator must configure their payout UPI ID in Settings → Payouts before this deal can be accepted.'
-            );
-          }
-        }
-      }
-    }
-
     if (isSupabaseConfigured) {
       const { data, error } = await (supabase as any).rpc('accept_deal_proposal', {
         p_proposal_id: proposalId,
+        p_commission_percentage: 10.00,
       });
 
       if (error) {
