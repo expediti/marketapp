@@ -246,8 +246,8 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
           {/* Instalment 1 */}
           <div
             className={`p-3.5 rounded-lg border transition-all ${isInitialPaid
-                ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                : 'bg-[#FBFBFA] dark:bg-zinc-800/80 border-purple-200 dark:border-purple-800'
+              ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+              : 'bg-[#FBFBFA] dark:bg-zinc-800/80 border-purple-200 dark:border-purple-800'
               }`}
           >
             <div className="flex items-center justify-between">
@@ -281,10 +281,10 @@ export function DeliveryWorkspace({ order, onOpenDispute }: DeliveryWorkspacePro
           {/* Instalment 2 */}
           <div
             className={`p-3.5 rounded-lg border transition-all ${isFinalPaid
-                ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                : order.order_status === 'AWAITING_FINAL_PAYMENT' || order.order_status === 'PREVIEW_SUBMITTED'
-                  ? 'bg-purple-50/70 dark:bg-purple-950/20 border-purple-300 dark:border-purple-700'
-                  : 'bg-[#FBFBFA] dark:bg-zinc-800/80 border-[#E5E5DE] dark:border-zinc-800 opacity-80'
+              ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+              : order.order_status === 'AWAITING_FINAL_PAYMENT' || order.order_status === 'PREVIEW_SUBMITTED'
+                ? 'bg-purple-50/70 dark:bg-purple-950/20 border-purple-300 dark:border-purple-700'
+                : 'bg-[#FBFBFA] dark:bg-zinc-800/80 border-[#E5E5DE] dark:border-zinc-800 opacity-80'
               }`}
           >
             <div className="flex items-center justify-between">

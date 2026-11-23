@@ -84,17 +84,17 @@ export default function CreatorOnboardingPage() {
 
   // Step 7: Bank Payout Setup
   const [bankAccountHolderName, setBankAccountHolderName] = useState('');
+  const [payoutPhone, setPayoutPhone] = useState('');
+  const [payoutPan, setPayoutPan] = useState('');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
   const [confirmBankAccountNumber, setConfirmBankAccountNumber] = useState('');
   const [bankIfscCode, setBankIfscCode] = useState('');
   const [bankAccountType, setBankAccountType] = useState<'SAVINGS' | 'CURRENT'>('SAVINGS');
   const [bankFormErrors, setBankFormErrors] = useState<{
     accountHolderName?: string;
+    phone?: string;
     payoutUpiId?: string;
-    accountNumber?: string;
-    confirmAccountNumber?: string;
-    ifscCode?: string;
-    accountType?: string;
+    pan?: string;
     general?: string;
   }>({});
   const [isSubmittingPayout, setIsSubmittingPayout] = useState(false);
@@ -353,17 +353,30 @@ export default function CreatorOnboardingPage() {
   const handleSavePayoutAndContinue = async () => {
     setBankFormErrors({});
     const holder = bankAccountHolderName.trim();
+    const phone = payoutPhone.trim().replace(/\D/g, '').slice(-10);
     const upi = payoutUpiId.trim();
+    const pan = payoutPan.trim().toUpperCase();
 
     const errs: Record<string, string> = {};
-    if (!holder || holder.length < 2) {
-      errs.accountHolderName = 'Please enter your full legal name.';
+    const LEGAL_NAME_REGEX = /^[a-zA-Z\s./\-&]{2,100}$/;
+    if (!holder || !LEGAL_NAME_REGEX.test(holder)) {
+      errs.accountHolderName = 'Full Legal Name is required (matching PAN & UPI; letters, spaces, and . / - & only).';
     }
+
+    if (!phone || phone.length !== 10) {
+      errs.phone = '10-digit Indian mobile number is required (without +91).';
+    }
+
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
     if (!upi) {
-      errs.payoutUpiId = 'Please enter your UPI ID (VPA).';
+      errs.payoutUpiId = 'UPI ID (VPA) is required (e.g. name@oksbi).';
     } else if (!upiRegex.test(upi)) {
       errs.payoutUpiId = 'Invalid UPI ID format (e.g. username@bank or mobile@paytm).';
+    }
+
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!pan || !PAN_REGEX.test(pan)) {
+      errs.pan = 'Valid 10-character PAN card number is required (e.g. ABCDE1234F).';
     }
 
     if (Object.keys(errs).length > 0) {
@@ -378,7 +391,9 @@ export default function CreatorOnboardingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accountHolderName: holder,
+          phone: phone,
           upiId: upi,
+          pan: pan,
         }),
       });
 
@@ -387,7 +402,7 @@ export default function CreatorOnboardingPage() {
         if (data.errors) {
           setBankFormErrors(data.errors);
         } else {
-          setBankFormErrors({ general: data.error || 'Failed to save UPI payout details.' });
+          setBankFormErrors({ general: data.error || 'Failed to save UPI payout & KYC details.' });
         }
         setIsSubmittingPayout(false);
         return;
@@ -1756,10 +1771,42 @@ export default function CreatorOnboardingPage() {
                 } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
               />
               <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                Enter your real legal name as registered on your UPI app or bank account.
+                Must match your PAN card and UPI bank account.
               </p>
               {bankFormErrors.accountHolderName && (
                 <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.accountHolderName}</p>
+              )}
+            </div>
+
+            {/* 10-Digit Mobile Number */}
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                10-Digit Mobile Number <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-xs text-[#71717A] font-mono select-none">+91</span>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={payoutPhone}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    setPayoutPhone(clean);
+                    if (bankFormErrors.phone) {
+                      setBankFormErrors((prev) => ({ ...prev, phone: undefined }));
+                    }
+                  }}
+                  placeholder="9876543210"
+                  className={`w-full text-xs py-2.5 pl-11 pr-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
+                    bankFormErrors.phone ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                  } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono`}
+                />
+              </div>
+              <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                Indian mobile number linked with your UPI ID and Cashfree sub-merchant account.
+              </p>
+              {bankFormErrors.phone && (
+                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.phone}</p>
               )}
             </div>
 
@@ -1778,23 +1825,53 @@ export default function CreatorOnboardingPage() {
                     setBankFormErrors((prev) => ({ ...prev, payoutUpiId: undefined }));
                   }
                 }}
-                placeholder="e.g. username@okhdfcbank or 9876543210@paytm"
+                placeholder="e.g. username@oksbi or 9876543210@paytm"
                 className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
                   bankFormErrors.payoutUpiId ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
                 } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono`}
               />
               <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                Payouts are sent directly to your UPI address automatically through Cashfree Easy Split upon campaign approval.
+                Payouts are credited directly to this UPI address automatically via Cashfree Easy Split upon approval.
               </p>
               {bankFormErrors.payoutUpiId && (
                 <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.payoutUpiId}</p>
               )}
             </div>
 
+            {/* PAN Card Number */}
+            <div>
+              <label className="text-xs font-semibold text-[#121214] dark:text-white block mb-1">
+                PAN Card Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                autoComplete="off"
+                maxLength={10}
+                value={payoutPan}
+                onChange={(e) => {
+                  const val = e.target.value.toUpperCase().slice(0, 10);
+                  setPayoutPan(val);
+                  if (bankFormErrors.pan) {
+                    setBankFormErrors((prev) => ({ ...prev, pan: undefined }));
+                  }
+                }}
+                placeholder="e.g. ABCDE1234F"
+                className={`w-full text-xs py-2.5 px-3 bg-[#FBFBFA] dark:bg-zinc-900 border ${
+                  bankFormErrors.pan ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                } rounded-md text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416] font-mono uppercase`}
+              />
+              <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                Required for regulatory compliance and Cashfree sub-merchant KYC.
+              </p>
+              {bankFormErrors.pan && (
+                <p className="text-[11px] text-red-500 mt-1">{bankFormErrors.pan}</p>
+              )}
+            </div>
+
             <div className="p-3 bg-[#F4F4F0] dark:bg-zinc-900/70 border border-[#E5E5DE] dark:border-zinc-800 rounded-lg flex items-start gap-2.5">
               <ShieldCheck className="w-4 h-4 text-[#047857] shrink-0 mt-0.5" />
               <p className="text-[11px] text-[#52525B] dark:text-zinc-400 leading-relaxed">
-                Direct UPI disbursements. No bank account or IFSC numbers required. Verified securely via Cashfree Easy Split.
+                Direct UPI disbursements. Zero bank account numbers or IFSC codes required. Secured via Cashfree Easy Split.
               </p>
             </div>
           </div>

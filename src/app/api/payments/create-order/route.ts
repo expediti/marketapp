@@ -181,21 +181,35 @@ export async function POST(request: Request) {
     const creatorUserId = order.creator_user_id || order.creator_id;
     const { data: creatorPayoutProfile } = await serviceClient
       .from('creator_payout_profiles')
-      .select('cashfree_vendor_id, verification_status, payout_upi_id, account_holder_name')
+      .select('cashfree_vendor_id, verification_status, payout_upi_id, account_holder_name, phone, pan_number')
       .eq('user_id', creatorUserId)
       .maybeSingle();
 
+    const { data: creatorProfile } = await serviceClient
+      .from('profiles')
+      .select('email, display_name, phone')
+      .eq('id', creatorUserId)
+      .maybeSingle();
+
     let creatorVendorId = creatorPayoutProfile?.cashfree_vendor_id;
+    const creatorUpiId = creatorPayoutProfile?.payout_upi_id;
+    const creatorPhone = creatorPayoutProfile?.phone || (creatorProfile as any)?.phone;
+    const creatorPan = creatorPayoutProfile?.pan_number;
+    const creatorLegalName = creatorPayoutProfile?.account_holder_name || creatorProfile?.display_name || 'Creator Partner';
+    const creatorEmail = creatorProfile?.email;
 
     // If creator has a UPI ID saved but vendor ID wasn't registered on Cashfree yet, register now on-the-fly:
-    if (!creatorVendorId && creatorPayoutProfile?.payout_upi_id) {
+    if (!creatorVendorId && creatorUpiId) {
       try {
         const vResult = await cashfreeVendorService.registerOrUpdateVendor({
           creatorUserId,
-          accountHolderName: creatorPayoutProfile.account_holder_name || 'Creator Partner',
-          upiId: creatorPayoutProfile.payout_upi_id,
+          accountHolderName: creatorLegalName,
+          creatorPhone: creatorPhone || undefined,
+          creatorEmail: creatorEmail || undefined,
+          upiId: creatorUpiId,
+          pan: creatorPan || undefined,
         });
-        if (vResult?.vendorId) {
+        if (vResult?.vendorId && (vResult.verificationStatus === 'VERIFIED' || !vResult.error)) {
           creatorVendorId = vResult.vendorId;
           await serviceClient
             .from('creator_payout_profiles')
@@ -205,10 +219,6 @@ export async function POST(request: Request) {
       } catch (e) {
         console.warn('Auto-registering Cashfree vendor on the fly failed:', e);
       }
-    }
-
-    if (!creatorVendorId) {
-      creatorVendorId = `cr_${creatorUserId.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase().slice(0, 32)}`;
     }
 
     // 9. Call provider-independent order creation
@@ -223,14 +233,16 @@ export async function POST(request: Request) {
         name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'Business Partner',
         email: user.email || '',
       },
-      splitDetails: {
-        creatorVendorId,
-        creatorAmountInPaise: Math.round(creatorInstalmentShare * 100),
-        platformAmountInPaise: Math.round(platformInstalmentShare * 100),
-      },
+      splitDetails: creatorVendorId
+        ? {
+            creatorVendorId,
+            creatorAmountInPaise: Math.round(creatorInstalmentShare * 100),
+            platformAmountInPaise: Math.round(platformInstalmentShare * 100),
+          }
+        : undefined,
       notes: {
         creator_user_id: creatorUserId,
-        creator_vendor_id: creatorVendorId,
+        creator_vendor_id: creatorVendorId || 'UNCONFIGURED',
         commission_percentage: String(commissionPct),
       },
     });
@@ -321,6 +333,7 @@ export async function POST(request: Request) {
       stage: paymentStage,
       instalment_type: paymentStage,
       key_id: provider.getPublicConfig().keyId || provider.getPublicConfig().appId || '',
+      environment: provider.getPublicConfig().environment || 'sandbox',
     });
   } catch (err: any) {
     console.error('Error in /api/payments/create-order:', err);

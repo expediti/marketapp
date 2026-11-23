@@ -60,21 +60,40 @@ export function getServerRuntimeSecret(key: string): string | undefined {
 
 /**
  * Retrieves Cashfree gateway credentials and endpoints.
+ * Automatically trims keys and auto-detects sandbox/production environment.
  */
 export function getCashfreeCredentials(): CashfreeCredentials | null {
-  const appId =
+  const rawAppId =
     getServerRuntimeSecret('CASHFREE_APP_ID') ||
     getServerRuntimeSecret('NEXT_PUBLIC_CASHFREE_APP_ID');
-  const secretKey = getServerRuntimeSecret('CASHFREE_SECRET_KEY');
-  const webhookSecret =
-    getServerRuntimeSecret('CASHFREE_WEBHOOK_SECRET') || secretKey || '';
+  const rawSecretKey = getServerRuntimeSecret('CASHFREE_SECRET_KEY');
+  const rawWebhookSecret = getServerRuntimeSecret('CASHFREE_WEBHOOK_SECRET');
+
+  const appId = rawAppId ? rawAppId.trim() : '';
+  const secretKey = rawSecretKey ? rawSecretKey.trim() : '';
+  const webhookSecret = rawWebhookSecret ? rawWebhookSecret.trim() : secretKey;
 
   if (!appId || !secretKey || appId === 'your_cashfree_app_id' || secretKey === 'your_cashfree_secret_key') {
     return null;
   }
 
-  const rawEnv = (getServerRuntimeSecret('CASHFREE_ENVIRONMENT') || '').toUpperCase();
-  const environment: 'SANDBOX' | 'PRODUCTION' = rawEnv === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX';
+  const rawEnv = (getServerRuntimeSecret('CASHFREE_ENVIRONMENT') || '').trim().toUpperCase();
+
+  // Smart environment auto-routing:
+  // Cashfree Sandbox keys always start with or contain TEST (e.g. TEST10293847...)
+  // Production keys never start with TEST.
+  // If a test key is detected, route to SANDBOX.
+  // If a production key is detected, route to PRODUCTION (unless explicitly forced to SANDBOX).
+  const isTestKey = appId.toUpperCase().startsWith('TEST') || secretKey.toUpperCase().includes('TEST');
+  let environment: 'SANDBOX' | 'PRODUCTION';
+  if (isTestKey) {
+    environment = 'SANDBOX';
+  } else if (rawEnv === 'SANDBOX') {
+    environment = 'SANDBOX';
+  } else {
+    environment = 'PRODUCTION';
+  }
+
   const baseUrl =
     environment === 'PRODUCTION'
       ? 'https://api.cashfree.com/pg'

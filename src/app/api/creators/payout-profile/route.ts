@@ -49,6 +49,9 @@ export async function GET() {
       profile?.display_name ||
       '';
 
+    const currentPhone = payoutProfile?.phone || (profile as any)?.phone || user.phone || '';
+    const currentPan = payoutProfile?.pan_number || '';
+
     const isConfigured = Boolean(
       (payoutProfile && payoutProfile.verification_status === 'VERIFIED') ||
       currentUpi.length > 0
@@ -65,7 +68,9 @@ export async function GET() {
         id: payoutProfile?.id || null,
         user_id: user.id,
         account_holder_name: currentName,
+        phone: currentPhone,
         payout_upi_id: currentUpi,
+        pan_number: currentPan,
         masked_upi: currentUpi ? currentUpi.replace(/^(.{2})(.*)(@.*)$/, '$1***$3') : null,
         cashfree_vendor_id: payoutProfile?.cashfree_vendor_id || null,
         verification_status: status,
@@ -102,29 +107,35 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const rawHolderName = String(body.accountHolderName || body.legalName || profile?.display_name || '').trim();
     const rawUpiId = String(body.upiId || body.payoutUpiId || '').trim();
-    const rawPan = body.pan ? String(body.pan).trim().toUpperCase() : undefined;
-    const rawPhone = body.phone ? String(body.phone).trim() : (user.phone || (user.user_metadata as any)?.phone || undefined);
+    const rawPan = body.pan ? String(body.pan).trim().toUpperCase() : (body.pan_number ? String(body.pan_number).trim().toUpperCase() : '');
+    const rawPhone = String(body.phone || body.creatorPhone || (profile as any)?.phone || user.phone || '').trim().replace(/\D/g, '').slice(-10);
 
-    // Validation
+    // Validation - all 4 mandatory Cashfree Production Easy Split fields
     const errors: Record<string, string> = {};
-    if (!rawHolderName || rawHolderName.length < 2) {
-      errors.accountHolderName = 'Full Legal Name is required (minimum 2 characters).';
+    const LEGAL_NAME_REGEX = /^[a-zA-Z\s./\-&]{2,100}$/;
+    if (!rawHolderName || !LEGAL_NAME_REGEX.test(rawHolderName)) {
+      errors.accountHolderName = 'Full Legal Name is required (matching PAN & UPI; letters, spaces, and . / - & only).';
+    }
+
+    if (!rawPhone || rawPhone.length !== 10) {
+      errors.phone = 'Valid 10-digit Indian mobile number is required (without +91).';
     }
 
     if (!rawUpiId) {
-      errors.upiId = 'UPI ID (VPA) is required (e.g. yourname@okaxis, 9876543210@paytm).';
+      errors.upiId = 'UPI ID (VPA) is required (e.g. name@oksbi, 9876543210@paytm).';
     } else if (!UPI_REGEX.test(rawUpiId)) {
       errors.upiId = 'Please enter a valid UPI ID format (e.g. username@bank or mobile@paytm).';
     }
 
-    if (rawPan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(rawPan)) {
-      errors.pan = 'Please enter a valid 10-character PAN number format (e.g. ABCDE1234F).';
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!rawPan || !PAN_REGEX.test(rawPan)) {
+      errors.pan = 'Valid 10-character PAN card number is required (e.g. ABCDE1234F).';
     }
 
     if (Object.keys(errors).length > 0) {
       return NextResponse.json(
         {
-          error: 'Validation failed. Please correct the highlighted errors.',
+          error: Object.values(errors)[0] || 'Validation failed. Please correct the highlighted errors.',
           errors,
         },
         { status: 400 }
@@ -153,6 +164,17 @@ export async function POST(request: Request) {
       existingVendorId,
     });
 
+    if (vendorResult.error && (vendorResult.verificationStatus === 'REJECTED' || vendorResult.verificationStatus === 'ACTION_REQUIRED')) {
+      return NextResponse.json(
+        {
+          error: vendorResult.error,
+          verificationStatus: vendorResult.verificationStatus,
+          details: vendorResult.details,
+        },
+        { status: 400 }
+      );
+    }
+
     const nowIso = new Date().toISOString();
     const finalStatus = vendorResult.verificationStatus || 'VERIFIED';
 
@@ -163,7 +185,9 @@ export async function POST(request: Request) {
         {
           user_id: user.id,
           account_holder_name: rawHolderName,
+          phone: rawPhone,
           payout_upi_id: rawUpiId,
+          pan_number: rawPan,
           bank_account_last4: rawUpiId.slice(-4), // Clean fallback for DB constraints
           ifsc_code: 'UPI',                      // Clean fallback for DB constraints
           account_type: 'SAVINGS',
@@ -172,6 +196,8 @@ export async function POST(request: Request) {
           verification_details: {
             type: 'UPI',
             upi_id: rawUpiId,
+            pan: rawPan,
+            phone: rawPhone,
             vendor_id: vendorResult.vendorId,
             verified_at: nowIso,
             details: vendorResult.details || {},
@@ -191,24 +217,35 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Sync creator_profiles.payout_upi_id
-    await serviceClient
-      .from('creator_profiles')
-      .update({
-        payout_upi_id: rawUpiId,
-        updated_at: nowIso,
-      })
-      .eq('user_id', user.id);
+    // 4. Sync creator_profiles and profiles
+    await Promise.all([
+      serviceClient
+        .from('creator_profiles')
+        .update({
+          payout_upi_id: rawUpiId,
+          updated_at: nowIso,
+        })
+        .eq('user_id', user.id),
+      serviceClient
+        .from('profiles')
+        .update({
+          phone: rawPhone,
+          updated_at: nowIso,
+        })
+        .eq('id', user.id),
+    ]);
 
     return NextResponse.json({
       success: true,
-      message: 'UPI payout details saved and verified successfully.',
+      message: 'UPI payout details and KYC saved and verified successfully.',
       verificationStatus: finalStatus,
       profile: {
         id: updatedProfile.id,
         user_id: updatedProfile.user_id,
         account_holder_name: updatedProfile.account_holder_name,
+        phone: rawPhone,
         payout_upi_id: rawUpiId,
+        pan_number: rawPan,
         cashfree_vendor_id: updatedProfile.cashfree_vendor_id,
         verification_status: finalStatus,
         updated_at: updatedProfile.updated_at,

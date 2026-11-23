@@ -78,64 +78,74 @@ export class CashfreeVendorService {
     };
 
     const hasUpi = Boolean(params.upiId && params.upiId.trim());
+    const sanitizedName = params.accountHolderName.trim().replace(/[^a-zA-Z\s./\-&]/g, '').slice(0, 100);
+    const sanitizedPhone = (params.creatorPhone || '9876543210').replace(/\D/g, '').slice(-10);
+    const sanitizedUpi = params.upiId ? params.upiId.trim() : '';
+    const sanitizedPan = params.pan ? params.pan.trim().toUpperCase() : undefined;
 
-    // Build payload: prefer UPI VPA if provided, else bank details
+    // Build payload: exact Cashfree Production Create Vendor payload
     const vendorPayload: Record<string, any> = {
       vendor_id: vendorId,
       status: 'ACTIVE',
-      name: params.accountHolderName,
+      name: sanitizedName,
       email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
-      phone: params.creatorPhone || '9876543210',
+      phone: sanitizedPhone,
+      verify_account: true,
+      dashboard_access: false,
       schedule_option: 4, // 4 = ON DEMAND (funds held in escrow split until completion trigger)
     };
 
-    if (hasUpi) {
+    if (sanitizedUpi) {
       vendorPayload.upi = {
-        vpa: params.upiId!.trim(),
-        account_holder: params.accountHolderName,
+        vpa: sanitizedUpi,
+        account_holder: sanitizedName,
       };
     } else if (params.accountNumber && params.ifscCode) {
       vendorPayload.bank = {
         account_number: params.accountNumber,
-        account_holder: params.accountHolderName,
+        account_holder: sanitizedName,
         ifsc: params.ifscCode,
       };
       vendorPayload.verify_account = true;
     }
 
-    if (params.pan && params.pan.trim()) {
+    if (sanitizedPan) {
       vendorPayload.kyc_details = {
         account_type: 'INDIVIDUAL',
-        pan: params.pan.trim().toUpperCase(),
+        business_type: 'Social Media and Entertainment',
+        pan: sanitizedPan,
       };
     }
 
     const patchPayload: Record<string, any> = {
       status: 'ACTIVE',
-      name: params.accountHolderName,
+      name: sanitizedName,
       email: params.creatorEmail || `creator_${vendorId}@marketmyidea.online`,
-      phone: params.creatorPhone || '9876543210',
+      phone: sanitizedPhone,
+      verify_account: true,
+      dashboard_access: false,
       schedule_option: 4,
     };
 
-    if (hasUpi) {
+    if (sanitizedUpi) {
       patchPayload.upi = {
-        vpa: params.upiId!.trim(),
-        account_holder: params.accountHolderName,
+        vpa: sanitizedUpi,
+        account_holder: sanitizedName,
       };
     } else if (params.accountNumber && params.ifscCode) {
       patchPayload.bank = {
         account_number: params.accountNumber,
-        account_holder: params.accountHolderName,
+        account_holder: sanitizedName,
         ifsc: params.ifscCode,
       };
       patchPayload.verify_account = true;
     }
 
-    if (params.pan && params.pan.trim()) {
+    if (sanitizedPan) {
       patchPayload.kyc_details = {
         account_type: 'INDIVIDUAL',
-        pan: params.pan.trim().toUpperCase(),
+        business_type: 'Social Media and Entertainment',
+        pan: sanitizedPan,
       };
     }
 
@@ -182,7 +192,7 @@ export class CashfreeVendorService {
       if (!response.ok) {
         const errorMsg = resData?.message || resData?.error_description || 'Cashfree vendor registration error';
         console.error('Cashfree vendor registration error:', response.status, errorMsg, resData);
-        
+
         let status: PayoutVerificationStatus = 'PENDING_VERIFICATION';
         if (response.status === 400 || response.status === 422) {
           status = 'REJECTED';

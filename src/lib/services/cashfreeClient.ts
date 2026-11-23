@@ -112,7 +112,8 @@ export async function startCashfreePayment(params: StartCashfreePaymentParams): 
     }
 
     // 3. Open Cashfree Standard Checkout Modal
-    const environment = (process.env.NEXT_PUBLIC_CASHFREE_ENVIRONMENT || '').toLowerCase() === 'production'
+    const serverEnv = createData.environment ? String(createData.environment).toLowerCase() : '';
+    const environment = serverEnv === 'production' || (process.env.NEXT_PUBLIC_CASHFREE_ENVIRONMENT || '').toLowerCase() === 'production'
       ? 'production'
       : 'sandbox';
 

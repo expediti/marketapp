@@ -576,7 +576,9 @@ export interface CreatorPayoutProfile {
   id: string;
   user_id: string;
   account_holder_name: string;
+  phone?: string;
   payout_upi_id?: string;
+  pan_number?: string;
   bank_account_last4?: string;
   masked_account_number?: string;
   ifsc_code?: string;

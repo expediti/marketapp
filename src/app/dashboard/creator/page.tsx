@@ -191,6 +191,7 @@ function CreatorDashboardContent() {
 
   // Update Bank Form State
   const [updateBankHolder, setUpdateBankHolder] = useState('');
+  const [updateBankPhone, setUpdateBankPhone] = useState('');
   const [updatePan, setUpdatePan] = useState('');
   const [updateBankAccNum, setUpdateBankAccNum] = useState('');
   const [updateConfirmBankAccNum, setUpdateConfirmBankAccNum] = useState('');
@@ -620,7 +621,9 @@ function CreatorDashboardContent() {
 
   const handleOpenUpdateBankModal = () => {
     setUpdateBankHolder(bankPayoutProfile?.account_holder_name || dbCreator?.display_name || '');
+    setUpdateBankPhone(bankPayoutProfile?.phone || '');
     setPayoutUpiId(bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id || '');
+    setUpdatePan(bankPayoutProfile?.pan_number || '');
     setUpdateBankErrors({});
     setBankSaveSuccessMsg(null);
     setIsUpdateBankModalOpen(true);
@@ -632,21 +635,30 @@ function CreatorDashboardContent() {
     setBankSaveSuccessMsg(null);
 
     const holder = updateBankHolder.trim();
+    const phone = updateBankPhone.trim().replace(/\D/g, '').slice(-10);
     const upi = payoutUpiId.trim();
     const pan = updatePan.trim().toUpperCase();
 
     const errMap: Record<string, string> = {};
-    if (!holder || holder.length < 2) {
-      errMap.holder = 'Please enter your full legal name.';
+    const LEGAL_NAME_REGEX = /^[a-zA-Z\s./\-&]{2,100}$/;
+    if (!holder || !LEGAL_NAME_REGEX.test(holder)) {
+      errMap.holder = 'Full Legal Name is required (letters, spaces, and . / - & only).';
     }
+
+    if (!phone || phone.length !== 10) {
+      errMap.phone = '10-digit Indian mobile number is required (without +91).';
+    }
+
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
     if (!upi) {
-      errMap.upi = 'Please enter your UPI ID (VPA).';
+      errMap.upi = 'UPI ID (VPA) is required (e.g. username@okhdfcbank or 9876543210@paytm).';
     } else if (!upiRegex.test(upi)) {
       errMap.upi = 'Invalid UPI ID format (e.g. username@okhdfcbank or 9876543210@paytm).';
     }
-    if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan)) {
-      errMap.pan = 'Invalid PAN format (e.g. ABCDE1234F).';
+
+    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!pan || !PAN_REGEX.test(pan)) {
+      errMap.pan = 'Valid 10-character PAN format is required (e.g. ABCDE1234F).';
     }
 
     if (Object.keys(errMap).length > 0) {
@@ -661,8 +673,9 @@ function CreatorDashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accountHolderName: holder,
+          phone: phone,
           upiId: upi,
-          pan: pan || undefined,
+          pan: pan,
         }),
       });
 
@@ -671,10 +684,12 @@ function CreatorDashboardContent() {
         if (data.errors) {
           const mapped: Record<string, string> = {};
           if (data.errors.accountHolderName) mapped.holder = data.errors.accountHolderName;
+          if (data.errors.phone) mapped.phone = data.errors.phone;
           if (data.errors.payoutUpiId || data.errors.upiId) mapped.upi = data.errors.payoutUpiId || data.errors.upiId;
+          if (data.errors.pan) mapped.pan = data.errors.pan;
           setUpdateBankErrors(mapped);
         } else {
-          setUpdateBankErrors({ general: data.error || 'Failed to update payout details' });
+          setUpdateBankErrors({ general: data.error || 'Failed to update payout & KYC details' });
         }
         setIsSavingBankDetails(false);
         return;
@@ -682,7 +697,7 @@ function CreatorDashboardContent() {
 
       await fetchPayoutProfile();
       await loadDbCreator();
-      setBankSaveSuccessMsg('✓ UPI payout details verified successfully!');
+      setBankSaveSuccessMsg('✓ UPI payout and KYC details saved and verified successfully!');
       setTimeout(() => {
         setIsUpdateBankModalOpen(false);
         setBankSaveSuccessMsg(null);
@@ -2180,9 +2195,25 @@ function CreatorDashboardContent() {
                   </div>
 
                   <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">10-Digit Mobile</span>
+                    <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
+                      {bankPayoutProfile?.phone || (currentUser as any)?.phone || 'Not configured'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
                     <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">Payout UPI ID (VPA)</span>
                     <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block tracking-wider">
                       {bankPayoutProfile?.payout_upi_id || dbCreator?.payout_upi_id || 'Not configured'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white dark:bg-zinc-800 rounded-lg border border-[#E5E5DE] dark:border-zinc-700">
+                    <span className="text-[11px] text-[#71717A] dark:text-zinc-400 block">PAN Card Number</span>
+                    <span className="font-mono font-bold text-sm text-[#121214] dark:text-white mt-0.5 block">
+                      {bankPayoutProfile?.pan_number
+                        ? `${bankPayoutProfile.pan_number.slice(0, 2)}******${bankPayoutProfile.pan_number.slice(-2)}`
+                        : 'Not configured'}
                     </span>
                   </div>
 
@@ -2320,10 +2351,38 @@ function CreatorDashboardContent() {
                       } rounded text-[#121214] dark:text-white focus:outline-none focus:border-[#FF5416]`}
                     />
                     <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                      Legal personal name registered on your UPI or bank account.
+                      Legal personal name matching your PAN & UPI bank account (letters, spaces, and . / - & only).
                     </p>
                     {updateBankErrors.holder && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.holder}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#121214] dark:text-white mb-1">
+                      10-Digit Mobile Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex items-center">
+                      <span className="inline-flex items-center px-3 py-2 rounded-l border border-r-0 border-[#E5E5DE] dark:border-zinc-700 bg-[#F4F4F0] dark:bg-zinc-700 text-[#71717A] dark:text-zinc-300 font-mono text-xs">
+                        +91
+                      </span>
+                      <input
+                        type="tel"
+                        autoComplete="tel"
+                        maxLength={10}
+                        value={updateBankPhone}
+                        onChange={(e) => setUpdateBankPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        placeholder="9876543210"
+                        className={`w-full py-2 px-3 bg-[#FBFBFA] dark:bg-zinc-800 border ${
+                          updateBankErrors.phone ? 'border-red-500' : 'border-[#E5E5DE] dark:border-zinc-700'
+                        } rounded-r text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
+                      10-digit Indian phone number linked with your UPI / Cashfree account.
+                    </p>
+                    {updateBankErrors.phone && (
+                      <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.phone}</p>
                     )}
                   </div>
 
@@ -2342,7 +2401,7 @@ function CreatorDashboardContent() {
                       } rounded text-[#121214] dark:text-white font-mono focus:outline-none focus:border-[#FF5416]`}
                     />
                     <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                      Your payouts will be credited directly to this UPI address.
+                      Your payouts will be credited directly to this UPI address (no bank account or IFSC needed).
                     </p>
                     {updateBankErrors.upi && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.upi}</p>
@@ -2351,7 +2410,7 @@ function CreatorDashboardContent() {
 
                   <div>
                     <label className="block font-semibold text-[#121214] dark:text-white mb-1">
-                      PAN Card Number <span className="text-[#71717A] font-normal">(Optional for verification)</span>
+                      PAN Card Number <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -2365,7 +2424,7 @@ function CreatorDashboardContent() {
                       } rounded text-[#121214] dark:text-white font-mono uppercase focus:outline-none focus:border-[#FF5416]`}
                     />
                     <p className="text-[10px] text-[#71717A] dark:text-zinc-400 mt-1">
-                      Optional: Assists in seamless Cashfree sub-merchant compliance for higher transaction volumes.
+                      10-character PAN required by Cashfree Production for sub-merchant KYC.
                     </p>
                     {updateBankErrors.pan && (
                       <p className="text-[11px] text-red-500 mt-1">{updateBankErrors.pan}</p>

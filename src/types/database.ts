@@ -15,6 +15,7 @@ export interface Database {
           role: string | null;
           display_name: string;
           email: string;
+          phone: string | null;
           avatar_url: string | null;
           city: string | null;
           created_at: string;
@@ -25,6 +26,7 @@ export interface Database {
           role?: string | null;
           display_name?: string;
           email?: string;
+          phone?: string | null;
           avatar_url?: string | null;
           city?: string | null;
           created_at?: string;
@@ -35,6 +37,7 @@ export interface Database {
           role?: string | null;
           display_name?: string;
           email?: string;
+          phone?: string | null;
           avatar_url?: string | null;
           city?: string | null;
           created_at?: string;
@@ -1315,9 +1318,11 @@ export interface Database {
           id: string;
           user_id: string;
           account_holder_name: string;
+          phone: string | null;
           payout_upi_id: string | null;
-          bank_account_last4: string;
-          ifsc_code: string;
+          pan_number: string | null;
+          bank_account_last4: string | null;
+          ifsc_code: string | null;
           account_type: string;
           cashfree_vendor_id: string | null;
           verification_status: string;
@@ -1329,9 +1334,11 @@ export interface Database {
           id?: string;
           user_id: string;
           account_holder_name: string;
+          phone?: string | null;
           payout_upi_id?: string | null;
-          bank_account_last4?: string;
-          ifsc_code?: string;
+          pan_number?: string | null;
+          bank_account_last4?: string | null;
+          ifsc_code?: string | null;
           account_type?: string;
           cashfree_vendor_id?: string | null;
           verification_status?: string;
@@ -1343,9 +1350,11 @@ export interface Database {
           id?: string;
           user_id?: string;
           account_holder_name?: string;
+          phone?: string | null;
           payout_upi_id?: string | null;
-          bank_account_last4?: string;
-          ifsc_code?: string;
+          pan_number?: string | null;
+          bank_account_last4?: string | null;
+          ifsc_code?: string | null;
           account_type?: string;
           cashfree_vendor_id?: string | null;
           verification_status?: string;

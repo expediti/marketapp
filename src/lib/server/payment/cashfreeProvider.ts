@@ -133,6 +133,7 @@ export class CashfreePaymentProvider implements IPaymentProvider {
       if (orderSplits.length > 0 && (errorMsg.toLowerCase().includes('vendor') || response.status === 400)) {
         console.warn('Retrying Cashfree order creation without order_splits due to vendor setup status:', errorMsg);
         delete payload.order_splits;
+        payload.order_id = `${cashfreeOrderId}_r${Date.now().toString(36).slice(-4)}`;
         const retryRes = await fetch(`${this.getBaseUrl()}/orders`, {
           method: 'POST',
           headers: this.getHeaders(),
@@ -150,6 +151,8 @@ export class CashfreePaymentProvider implements IPaymentProvider {
             instalmentType: params.instalmentType,
             rawResponse: retryData,
           };
+        } else {
+          console.error('Retry without order_splits also failed:', retryRes.status, retryData);
         }
       }
 
